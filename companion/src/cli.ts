@@ -252,7 +252,12 @@ async function main(): Promise<void> {
     case "status": {
       const s = readSession(path);
       const view: Record<string, unknown> = publicView(s);
-      if (s.bridge_session_id && s.bridge_url) view.bridge = await bridgeSession(s.bridge_url, s.bridge_session_id).catch((e) => String(e));
+      if (s.bridge_session_id && s.bridge_url) {
+        const b = await bridgeSession(s.bridge_url, s.bridge_session_id).catch((e) => ({ error: String(e) }));
+        delete b.proof_hex;
+        delete b.public_values_hex;
+        view.bridge = b;
+      }
       const registry = str(flags, "registry", "NACHWEIS_REGISTRY");
       if (registry) view.is_eligible = await isEligible(str(flags, "rpc", "NACHWEIS_RPC_URL", "http://127.0.0.1:8545")!, registry as `0x${string}`, s.bound_address as `0x${string}`, policyIdOf(str(flags, "policy-id", "NACHWEIS_POLICY_ID")));
       process.stdout.write(JSON.stringify(view, null, 2) + "\n");
