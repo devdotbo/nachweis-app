@@ -18,7 +18,9 @@ cargo test                     # unit tests + the anvil end-to-end test (skips i
 | `RPC_URL` | Ethereum JSON-RPC (anvil, Sepolia) | unset: attest and revoke endpoints answer 503 |
 | `OPERATOR_PRIVATE_KEY` | key that sends `attestWithProof`, `attestByOperator`, `revoke`; must be an operator of `POLICY_ID` for the last two | unset |
 | `REGISTRY` | `AttestationRegistry` address | unset |
-| `POLICY_ID` | `0x` + 32-byte hex, or any string which is `keccak256`-hashed | `nachweis-demo-policy` (`0x6445…1a48`) |
+| `POLICY_ID` | `0x` + 32-byte hex, or any string which is `keccak256`-hashed | `nachweis.pid.over18.v1` = `0xd27260f1ca509ba75dea6cd27b2985a96e423550e16db3350d2945e215e3d05f` |
+| `REQUIRE_ADDRESS_PROOF` | require the EIP-191 address proof before `attest` and `attest-operator` | `true` (`false` for scripted demos) |
+| `CORS_ORIGINS` | comma-separated allowed origins for the browser app, e.g. `http://localhost:5173` | unset: any origin |
 | `VERIFIER_URL` | verifier-service base URL; enables verifier mode (see below) | unset: local mode |
 | `PROOF_MODE` | `mock`, `execute`, `compressed`, `groth16` | `mock` |
 | `PROVER_ARTIFACTS` | directory with `calldata-groth16.json` (mock proof), `vkey.txt`, optionally the guest ELF `nachweis-pid-program` | `../prover-sp1/fixtures` |
@@ -36,10 +38,11 @@ Build with `--no-default-features` to let sp1-sdk use the Docker image instead.
 
 | method, path | body | effect |
 |---|---|---|
-| `POST /sessions` | `{bound_address, challenge_hex?}` | new session; challenge = 32 random bytes unless given; nonce = hex(sha256(address20 ‖ challenge32)). Verifier mode also creates the presentation request. Returns `{session_id, nonce, challenge_hex, openid4vp_uri, request_uri, mode}` |
-| `GET /sessions/:id` | | state, error, public values, proof, tx hash, decoded `Attested` event. The presentation is never returned |
+| `POST /sessions` | `{bound_address, challenge_hex?}` | new session; challenge = 32 random bytes unless given; nonce = hex(sha256(address20 ‖ challenge32)). Verifier mode creates the presentation request first and uses the verifier's session id as `session_id`, so the app polls one id. Returns `{session_id, nonce, challenge_hex, openid4vp_uri, request_uri, mode, address_proof_message}` |
+| `POST /sessions/:id/address-proof` | `{signature}` | EIP-191 personal-message signature over `nachweis:session:<session_id>` by the bound address (`personal_sign` in the wallet). Recovers the signer with alloy; 401 if it is not `bound_address`. Sets `address_verified` |
+| `GET /sessions/:id` | | `state`, `detail` (one human-readable line), `error`, `address_verified`, public values, proof, `tx_hash`, decoded `Attested` event; 404 for unknown ids. The presentation is never returned |
 | `POST /sessions/:id/presentation` | `{sd_jwt_presentation}` | local mode entry: runs the statement natively (422 with the statement's error on failure), then generates the proof per `PROOF_MODE`. Returns `{status, public_values_hex, public_values, proof_hex, proof_system, vkey, cycles}`. Blocks until the proof is done |
-| `POST /sessions/:id/attest` | `{tier?}` | `attestWithProof` with the session's proof; 409 unless the session is `proved`. Returns `{tx_hash, attested, call}` |
+| `POST /sessions/:id/attest` | `{tier?}` | `attestWithProof` with the session's proof; 409 unless the session is `proved` and (with `REQUIRE_ADDRESS_PROOF`) `address_verified`. Reverts come back as 502 with the typed error decoded (registry, `Sp1PidVerifier`, gateway) plus the raw revert data. Returns `{tx_hash, attested, call}` |
 | `POST /sessions/:id/attest-operator` | `{tier?, bits?}` | `attestByOperator` (fallback demo); needs at least a natively verified session. `bits` overrides the proof-path bits, e.g. `"0x7"` for the FundToken demo policy |
 | `POST /revoke` | `{subject}` | `revoke(subject, POLICY_ID)` |
 | `GET /health` | | mode, proof mode, registry, operator |
@@ -136,8 +139,12 @@ list, freshness window) stay in front of the bridge, which then proves the state
 3. The FundToken demo policy expects `REQUIRED_BITS = 0x7` (adult, EU resident, not sanctioned);
    the proof path can only assert `0x3`. Either lower `REQUIRED_BITS` to the provable bits or use
    `attest-operator` with `bits: "0x7"` for the fund token demo.
-4. `nonce` is in the public values but not in `publicInputs`; on-chain replay protection rests on
-   `expiry` and the sticky `revoked` flag. `tier` and `statusRef` are unbound by design.
+4. Replay: the registry consumes `verifier.nonceOf(proof)` once per policy (`NonceConsumed`). With the
+   SP1 adapter that is the nonce from the public values, so one proof attests once. With
+   `MockProofVerifier` the nonce is the first 32 bytes of the proof argument, which for
+   `abi.encode(bytes, bytes)` is always the offset word `0x…40`: the second proof-path attest on a
+   policy backed by the mock reverts `NonceConsumed`. Use one policy per mock demo run, or the
+   operator path. `tier` and `statusRef` are unbound by design.
 
 ## Tests
 
@@ -145,7 +152,8 @@ list, freshness window) stay in front of the bridge, which then proves the state
 - `cargo test --test anvil`: starts `anvil` on a free port, deploys `AttestationRegistry` and
   `MockProofVerifier` from `contracts/out` (runs `forge build` if missing), sets verifier and
   operator, then drives the HTTP API in mock mode with the fixture vector: nonce matches the
-  fixture KB-JWT, wrong challenge fails with the statement's nonce error, `attest` emits
+  fixture KB-JWT, address proof (wrong signer 401, right signer sets `address_verified`),
+  wrong challenge fails with the statement's nonce error, `attest` emits
   `Attested` with bits `0x3` and `statusRef = keccak(session id)`, `isEligible` true, `revoke`
   makes it false and blocks re-attestation, `attest-operator` reopens it, revoke again. Skips with
   a message when `anvil` is not installed.
@@ -172,7 +180,9 @@ cd service && cargo build --release
 export RPC_URL=http://127.0.0.1:8545
 export OPERATOR_PRIVATE_KEY=0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
 export REGISTRY=<deployed AttestationRegistry with setVerifier(POLICY_ID, verifier) and setOperator(POLICY_ID, operator, true)>
-export POLICY_ID=nachweis-demo-policy
+export POLICY_ID=nachweis.pid.over18.v1          # default; keccak256 -> 0xd27260f1…d05f
+export REQUIRE_ADDRESS_PROOF=true                # false for a scripted run without a wallet signature
+export CORS_ORIGINS=http://localhost:5173
 export PROOF_MODE=mock                      # or groth16 with SP1_PROVER=cpu and the SP1 adapter as verifier
 export PROVER_ARTIFACTS=$PWD/../prover-sp1/fixtures
 export PROVER_ELF=$PWD/../prover-sp1/target/elf-compilation/riscv64im-succinct-zkvm-elf/release/nachweis-pid-program
