@@ -245,6 +245,41 @@ contract NachweisTest is Test {
         assertFalse(registry.isEligible(alice, POLICY, REQUIRED));
     }
 
+    function test_attestWithProofNonceReplayReverts() public {
+        vm.prank(owner);
+        registry.setVerifier(POLICY, verifier);
+        Decision memory d = _decision(REQUIRED, uint64(block.timestamp + 1 days));
+        bytes32 nonce = keccak256("nonce/1");
+        bytes memory proof = abi.encodePacked(nonce, hex"01");
+        registry.attestWithProof(alice, d, proof, _inputs(alice, d));
+        assertTrue(registry.nonceConsumed(keccak256(abi.encode(POLICY, nonce))));
+
+        vm.expectRevert(abi.encodeWithSelector(AttestationRegistry.NonceConsumed.selector, POLICY, nonce));
+        registry.attestWithProof(alice, d, proof, _inputs(alice, d));
+        // same nonce for another subject is a replay too (the proof binds the subject anyway)
+        vm.expectRevert(abi.encodeWithSelector(AttestationRegistry.NonceConsumed.selector, POLICY, nonce));
+        registry.attestWithProof(bob, d, proof, _inputs(bob, d));
+
+        // a fresh nonce passes; nonces are scoped per policy
+        bytes memory proof2 = abi.encodePacked(keccak256("nonce/2"), hex"01");
+        registry.attestWithProof(alice, d, proof2, _inputs(alice, d));
+        bytes32 other = keccak256("other");
+        vm.prank(owner);
+        registry.setVerifier(other, verifier);
+        Decision memory d2 = d;
+        d2.policyId = other;
+        registry.attestWithProof(alice, d2, proof, _inputs(alice, d2));
+    }
+
+    function test_attestWithProofZeroNonceNotConsumed() public {
+        vm.prank(owner);
+        registry.setVerifier(POLICY, verifier);
+        Decision memory d = _decision(REQUIRED, uint64(block.timestamp + 1 days));
+        registry.attestWithProof(alice, d, hex"01", _inputs(alice, d));
+        registry.attestWithProof(alice, d, hex"01", _inputs(alice, d));
+        assertFalse(registry.nonceConsumed(keccak256(abi.encode(POLICY, bytes32(0)))));
+    }
+
     // ------------------------------------------------------------------
     // Subscription and FundToken
     // ------------------------------------------------------------------
