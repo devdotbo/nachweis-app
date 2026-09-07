@@ -60,24 +60,30 @@ Or open `NachweisProver.xcodeproj` in Xcode, pick the simulator, Run.
 
 ## Flow in the app
 
-1. Session: bridge URL, verifier (relay) URL, bound address, issuer key,
-   redirect URI. Request: `POST /sessions` on the bridge (it picks the
-   32-byte challenge), P-256 key (Secure Enclave when available, the ECDH
-   runs inside it; CryptoKit in memory on the simulator), `POST /relay/request`
-   with the public JWK, the challenge and `redirect_uri`. The relay nonce is
-   checked against the bridge nonce.
+1. Session: bridge URL, verifier (relay) URL, bound address, optional issuer
+   key override (empty: x5c leaf), optional `aud` (empty: circuit default),
+   redirect URI. Request, in the companion CLI's order: random 32-byte
+   challenge, P-256 key (Secure Enclave when available, the ECDH runs inside
+   it; CryptoKit in memory on the simulator), `POST /relay/request` with the
+   public JWK, the challenge and `redirect_uri`.
 2. Waiting: QR of `openid4vp_uri` for a second phone, or "Open in wallet" on
    the same phone; polls `GET /relay/status/:id` every 2 s. The wallet's
    redirect to `nachweis://return?response_code=...` brings the app back and
    moves to pickup (the code is compared with the one from creation).
 3. Pickup: `GET /relay/response/:id` with `X-Pickup-Token` (one time),
-   decrypt ECDH-ES A128GCM with CryptoKit, extract the SD-JWT from
-   `vp_token`. Shows "presentation received, N bytes" only.
+   decrypt ECDH-ES A128GCM or A256GCM with CryptoKit (Concat KDF, AAD =
+   protected header), extract the SD-JWT from `vp_token`. Shows
+   "presentation received, N bytes" only.
 4. Prove: `derive_inputs` in the core (same as `circuits/tools/gen-prover.ts`),
    then `prove` with the bundled artifact, SRS and keccak VK. Shows witness
    time, bb time, total, peak footprint, local verification, proof hash.
-5. Submit: `POST /sessions/:id/noir-proof {proof_hex, public_inputs_hex[]}`,
-   then polls `GET /sessions/:id` and shows the state until `attested`.
+5. Submit: `POST /sessions {bound_address, challenge_hex}` with the same
+   challenge (bridge nonce = KB-JWT nonce), then
+   `POST /sessions/:id/noir-proof {proof_hex, public_inputs_hex[86], tier: 1}`
+   (`service/src/noir.rs`), then polls `GET /sessions/:id` and shows the
+   state until `attested`. With `REQUIRE_ADDRESS_PROOF=true` the bridge
+   answers 401 until the investor's browser has posted the EIP-191 address
+   proof for that session; the phone holds no key.
 
 "Load test presentation" skips 1 to 3 with the bundled synthetic vector.
 
@@ -123,17 +129,19 @@ Program membership needed.
 
 ## What is stubbed or not done
 
-- Bridge endpoint `POST /sessions/:id/noir-proof` is on branch wp5-companion,
-  not on main; the app implements the request shape from that branch and
-  shows whatever the bridge answers (404 on main).
-- The test-vector path creates a fresh bridge session for Submit; the bridge
-  picks its own challenge, so the fixture's nonce will not match and the
-  bridge rejects it. Only the relay path yields a session whose nonce matches.
+- Submit was exercised against the request shape in `service/src/noir.rs`,
+  not against a running bridge with anvil (the companion README's four-process
+  recipe); the address proof step is the browser's.
 - Universal link return (https) is not set up; the custom scheme
   `nachweis://return` is. A universal link needs an apple-app-site-association
   on the verifier domain and the Associated Domains entitlement (paid team).
-- The issuer key is a configuration field (test issuer key by default); the
-  circuit does not check the x5c chain, the contract pins issuerKeyHash.
+- The issuer key comes from the x5c leaf (the circuit does not check the
+  chain, the contract pins issuerKeyHash); the override field exists because
+  the synthetic test vector is signed with a fresh key.
+- Circuit revisions (wp13): the app reads bounds and witness order from
+  `pid_sdjwt.json`; replace that file and `vk_keccak.bin`, set the `aud`
+  field to the registered client_id, re-run the parity test with the new
+  `Prover.toml`. No Swift constants to change.
 - The proof is not sent to NoirPidVerifier directly (no key on the phone).
 - No JAR signature check of the relay request (the client could fetch
   `request_uri` and verify the JAR carries its own JWK, see blind-relay.md).

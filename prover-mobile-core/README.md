@@ -19,9 +19,11 @@ Responsibilities:
 ## API (UniFFI, same names in Swift camelCase and Kotlin)
 
 ```
-derive_inputs(presentation, issuer_key_sec1_hex, bound_address_hex, challenge_hex)
-    -> DerivedInputs { prover_toml, witness: Vec<String>, issuer_key_hash_hex,
-                       over18, expiry, nonce_hex, subject_hex, public_inputs_hex: Vec<String> }
+derive_inputs(circuit_json_path, presentation, issuer_key_sec1_hex, bound_address_hex, challenge_hex, expected_aud)
+    -> DerivedInputs { prover_toml, witness: Vec<String>, issuer_key_hash_hex, over18, expiry,
+                       nonce_hex, subject_hex, issuer_key_sec1_hex, public_inputs_hex: Vec<String> }
+    // issuer_key_sec1_hex "" = from the x5c leaf of the issuer JWT header (as bridge and companion do)
+    // expected_aud "" = the circuit's pinned aud (DEFAULT_AUD); pass the registered client_id after wp13
 circuit_dyadic_size(circuit_json_path) -> u32                   // 1_048_576 for pid-sdjwt
 setup_srs(circuit_json_path, srs_path) -> u32                   // points loaded (dyadic + 1)
 compute_verification_key(circuit_json_path, srs_path, on_chain) -> Vec<u8>   // heavy; apps bundle the desktop VK
@@ -38,8 +40,12 @@ Errors: `CoreError::Input(msg)` (presentation does not fit the circuit) and
   downloaded on first run (`prover-ios/scripts/fetch-srs.sh` shows both).
 - `vk`: `circuits/pid-sdjwt/out/adapted/vk` from `bb write_vk -t evm`
   (1,888 bytes), bundled; `on_chain = true` selects the keccak transcript.
-- `witness`: `DerivedInputs.witness`, 4,281 decimal strings in ABI order
-  (BoundedVec = storage then len).
+- `witness`: `DerivedInputs.witness`, 4,281 decimal strings for today's
+  circuit. The order and the BoundedVec capacities are read from the
+  artifact's ABI (`Bounds::from_abi`, `CircuitInputs::to_flat_witness(abi)`),
+  so a revised circuit (wp13: larger payload and disclosure bounds, aud pinned
+  to the client_id) is a swap of `pid_sdjwt.json` and the VK plus the
+  `expected_aud` argument; a parameter the core does not derive fails loudly.
 - `ProofResult.proof` is byte for byte what `bb prove` writes to `proof`
   (10,304 bytes); `public_inputs` concatenated is bb's `public_inputs`
   (86 x 32 bytes: subject 20, issuer_key_hash 32, over18, expiry, nonce 32).
