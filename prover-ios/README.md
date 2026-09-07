@@ -35,9 +35,20 @@ scripts/verify-desktop.sh       bb verify of a phone proof against the desktop V
 ## Build and run (simulator)
 
 Prerequisites: Xcode 26.6 with the iOS platform installed (Xcode > Settings >
-Components, or `xcodebuild -downloadPlatform iOS`), `xcodegen` (brew), Rust
-1.92 with targets `aarch64-apple-ios-sim` and `aarch64-apple-ios`, an iOS
-simulator (`xcrun simctl create "iPhone 16 Pro" com.apple.CoreSimulator.SimDeviceType.iPhone-16-Pro com.apple.CoreSimulator.SimRuntime.iOS-18-5`).
+Components, or `xcodebuild -downloadPlatform iOS`; without it Xcode 26 lists
+no iOS destination at all, not even older simulator runtimes), `xcodegen`
+(brew), Rust 1.92 with targets `aarch64-apple-ios-sim` and
+`aarch64-apple-ios`, an iOS simulator (`xcrun simctl create "iPhone 16 Pro Max"
+com.apple.CoreSimulator.SimDeviceType.iPhone-16-Pro-Max
+com.apple.CoreSimulator.SimRuntime.iOS-26-5`).
+
+If `xcodebuild -downloadPlatform iOS` stalls (on this Mac mobileassetd never
+started the 8.5 GB transfer), the runtime can be fetched by hand: the asset
+catalog `/System/Library/AssetsV2/com_apple_MobileAsset_iOSSimulatorRuntime/*.xml`
+lists `__BaseURL` + `__RelativePath` (an `.aar`) and `ArchiveDecryptionKey`;
+`aea decrypt -i x.aar -o x.aa -key-value base64:<key>`, `aa extract -d out -i x.aa`
+(the outer archive is a manifest wrapper; the dmg lands in
+`out/AssetData/Restore/*.dmg`), then `xcrun simctl runtime add <dmg>`.
 
 ```
 cd prover-ios
@@ -45,7 +56,7 @@ scripts/build-core.sh                 # simulator xcframework (first run downloa
 scripts/fetch-srs.sh                  # 64 MB SRS into Resources
 xcodegen generate
 xcodebuild -project NachweisProver.xcodeproj -scheme NachweisProver \
-  -destination 'platform=iOS Simulator,name=iPhone 16 Pro' -derivedDataPath build/DerivedData build
+  -destination 'platform=iOS Simulator,name=iPhone 16 Pro Max' -derivedDataPath build/DerivedData build
 xcodebuild ... test                   # unit tests (parity with Prover.toml, JWE KAT and round trip)
 xcrun simctl install booted build/DerivedData/Build/Products/Debug-iphonesimulator/NachweisProver.app
 xcrun simctl launch booted io.nachweis.prover --autoprove      # test vector, no taps
@@ -89,7 +100,38 @@ Or open `NachweisProver.xcodeproj` in Xcode, pick the simulator, Run.
 
 ## Results
 
-MEASUREMENTS_PLACEHOLDER
+### Simulator (iPhone 16 Pro Max simulator, iOS 26.5, on an M3 Max, 2026-09-07; simulator, not a phone)
+
+`--autoprove` on the bundled realistic test presentation (WP13 circuit,
+4,966 byte presentation, age shape A), Debug app build, release Rust core:
+
+| step | value |
+| --- | --- |
+| witness (acvm execute) | 639 ms |
+| bb prove, keccak transcript, ZK | 5,211 ms |
+| total prove() call incl. SRS load and local verify | 8,060 ms |
+| peak memory footprint (phys_footprint, 100 ms samples) | 2,194 MB |
+| proof / public inputs | 10,304 B / 86 |
+| local verify (core, same VK) | ok |
+| desktop `bb verify -t evm` against `circuits/pid-sdjwt/out/adapted/vk` | Proof verified successfully |
+| public_inputs vs desktop `bb prove -t evm` | byte-identical |
+
+The simulator runs the arm64 static library natively on the Mac's cores
+with no memory ceiling, so this is a functional and byte-compatibility
+result, not a phone timing. The desktop `bb prove` of the same witness takes
+4.05 s wall (16 threads) and 2.24 GB RSS; the core on macOS 6.0 s total.
+Screenshot: `docs/prove-simulator.png`.
+
+Unit tests (`xcodebuild test`, 7 passed): Prover.toml parity with
+gen-prover.ts on the realistic vector (witness 6,787 values), x5c issuer key
+equals the fixture key, wrong aud rejected, tampered challenge rejected,
+RFC 7518 Appendix C Concat KDF known answer, ECDH-ES A128GCM round trip,
+public JWK shape.
+
+### Device (iPhone 16 Pro Max)
+
+Not yet run; see the checklist below. Expected band from the circuit's
+single-thread desktop numbers: unverified.
 
 ## Install on the iPhone (free development signing)
 

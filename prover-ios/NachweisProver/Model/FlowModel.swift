@@ -134,7 +134,7 @@ final class FlowModel: ObservableObject {
 
     /// `{ vp_token: { <query id>: [<sd-jwt+kb>] } }` (OpenID4VP 1.0 with DCQL);
     /// also accepts a bare string or an array.
-    static func extractPresentation(from plaintext: Data) throws -> String {
+    nonisolated static func extractPresentation(from plaintext: Data) throws -> String {
         let obj = try JSONSerialization.jsonObject(with: plaintext)
         guard let dict = obj as? [String: Any], let vp = dict["vp_token"] else { throw Fail("decrypted response has no vp_token") }
         func first(_ v: Any) -> String? {

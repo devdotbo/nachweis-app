@@ -56,9 +56,9 @@ enum ProverEngine {
         let sampler = MemorySampler(); sampler.start()
         defer { sampler.stop() }
         let t0 = DispatchTime.now()
-        let r = try prove(circuitJsonPath: circuit, srsPath: srs, vk: vk, witness: inputs.witness, onChain: true, lowMemory: lowMemory)
+        let r = try NachweisProver.prove(circuitJsonPath: circuit, srsPath: srs, vk: vk, witness: inputs.witness, onChain: true, lowMemory: lowMemory)
         let total = (DispatchTime.now().uptimeNanoseconds - t0.uptimeNanoseconds) / 1_000_000
-        let ok = (try? verify(proof: r.proof, publicInputs: r.publicInputs, vk: vk, onChain: true)) ?? false
+        let ok = (try? NachweisProver.verify(proof: r.proof, publicInputs: r.publicInputs, vk: vk, onChain: true)) ?? false
         sampler.stop()
         return Outcome(proof: r.proof, publicInputs: r.publicInputs, executeMs: r.executeMs, proveMs: r.proveMs, totalMs: total,
                        peakFootprintBytes: max(sampler.peak, r.peakRssBytes), verifiedLocally: ok)
