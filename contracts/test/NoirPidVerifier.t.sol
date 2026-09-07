@@ -13,7 +13,7 @@ import {NoirFixture} from "./NoirFixture.sol";
 ///         (test/fixtures/noir). Every honk verification costs about 2.85 M gas.
 contract NoirPidVerifierTest is Test {
     bytes32 constant POLICY = keccak256("nachweis.pid.over18.v1");
-    bytes32 constant ISSUER_KEY_HASH = 0x841e741b14eacdfdeca2e96fd95af5b987b5b872f88f8e359df29f7635556656;
+    bytes32 constant ISSUER_KEY_HASH = 0x78cf23963b47d3e393c79ea091c4ed80ebbae4ff78992058dd92fd34e1635183;
     uint256 constant BITS_BOTH = 0x3;
     uint256 constant EIP170_LIMIT = 24_576;
 
@@ -27,7 +27,8 @@ contract NoirPidVerifierTest is Test {
 
     function setUp() public {
         f = NoirFixture.load();
-        vm.warp(f.expiry - 1);
+        vm.warp(1_800_000_000); // a realistic clock; the fixture expiry (issuer exp, 2027-09-01) lies ahead of it
+        assertGt(f.expiry, block.timestamp, "fixture expiry (issuer exp) must lie ahead of the test clock");
         registry = new AttestationRegistry(owner);
         honk = new HonkVerifier();
         verifier = new NoirPidVerifier(IHonkVerifier(address(honk)), ISSUER_KEY_HASH, POLICY);

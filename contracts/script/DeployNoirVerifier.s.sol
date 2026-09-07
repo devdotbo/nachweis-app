@@ -25,7 +25,7 @@ import {HonkVerifier} from "../src/noir/PidSdJwtUltraHonkVerifier.sol";
 ///   forge script script/DeployNoirVerifier.s.sol:DeployNoirVerifier --rpc-url sepolia
 /// Broadcast requires an explicit --broadcast and is not part of this work package.
 contract DeployNoirVerifier is Script {
-    bytes32 constant FIXTURE_ISSUER_KEY_HASH = 0x841e741b14eacdfdeca2e96fd95af5b987b5b872f88f8e359df29f7635556656;
+    bytes32 constant FIXTURE_ISSUER_KEY_HASH = 0x78cf23963b47d3e393c79ea091c4ed80ebbae4ff78992058dd92fd34e1635183;
     uint256 constant EIP170_LIMIT = 24_576;
 
     function run() external {

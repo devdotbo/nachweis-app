@@ -23,8 +23,8 @@ import {ISP1Verifier} from "../src/sp1/interfaces/ISP1Verifier.sol";
 /// Broadcast requires an explicit --broadcast and is not part of this work package.
 contract DeploySp1Verifier is Script {
     address constant SEPOLIA_SP1_GATEWAY = 0x397A5f7f3dBd538f23DE225B51f532c34448dA9B;
-    bytes32 constant FIXTURE_VKEY = 0x00b092add2a7d3fffa027c1178c7b0d77155f3c9e078925928fcfce4b39a4cc9;
-    bytes32 constant FIXTURE_ISSUER_KEY_HASH = 0x841e741b14eacdfdeca2e96fd95af5b987b5b872f88f8e359df29f7635556656;
+    bytes32 constant FIXTURE_VKEY = 0x00cc4d3b31d47abf4e069acd7e90fb0efec8aef32da11c78a2eaf01c5552f71f;
+    bytes32 constant FIXTURE_ISSUER_KEY_HASH = 0x78cf23963b47d3e393c79ea091c4ed80ebbae4ff78992058dd92fd34e1635183;
     bytes32 constant PID_DE_VCT_HASH = 0x27b2d76921e41420732d759e6a3f345b9132e37fae97b1930f39ec58cf9a567d;
 
     function run() external {
