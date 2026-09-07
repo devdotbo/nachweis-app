@@ -18,6 +18,7 @@ cargo test                     # unit tests + the anvil end-to-end test (skips i
 | `RPC_URL` | Ethereum JSON-RPC (anvil, Sepolia) | unset: attest and revoke endpoints answer 503 |
 | `OPERATOR_PRIVATE_KEY` | key that sends `attestWithProof`, `attestByOperator`, `revoke`; must be an operator of `POLICY_ID` for the last two | unset |
 | `REGISTRY` | `AttestationRegistry` address | unset |
+| `NOIR_VERIFIER` | `NoirPidVerifier` address for the client-side Noir path: `POST /sessions/:id/noir-proof` dry-runs `verify` with an `eth_call` before sending, so a bad proof answers 422 with the typed revert instead of a failed transaction | unset: no dry run |
 | `POLICY_ID` | `0x` + 32-byte hex, or any string which is `keccak256`-hashed | `nachweis.pid.over18.v1` = `0xd27260f1ca509ba75dea6cd27b2985a96e423550e16db3350d2945e215e3d05f` |
 | `REQUIRE_ADDRESS_PROOF` | require the EIP-191 address proof before `attest` and `attest-operator` | `true` (`false` for scripted demos) |
 | `CORS_ORIGINS` | comma-separated allowed origins for the browser app, e.g. `http://localhost:5173` | unset: any origin |
@@ -45,6 +46,7 @@ Build with `--no-default-features` to let sp1-sdk use the Docker image instead.
 | `POST /sessions/:id/address-proof` | `{signature}` | EIP-191 personal-message signature over `nachweis:session:<session_id>` by the bound address (`personal_sign` in the wallet). Recovers the signer with alloy; 401 if it is not `bound_address`. Sets `address_verified` |
 | `GET /sessions/:id` | | `state`, `detail` (one human-readable line), `error`, `address_verified`, public values, proof, `tx_hash`, decoded `Attested` event; 404 for unknown ids. The presentation is never returned |
 | `POST /sessions/:id/presentation` | `{sd_jwt_presentation}` | local mode entry: runs the statement natively (422 with the statement's error on failure), then generates the proof per `PROOF_MODE`. Returns `{status, public_values_hex, public_values, proof_hex, proof_system, vkey, cycles}`. Blocks until the proof is done |
+| `POST /sessions/:id/noir-proof` | `{proof_hex, public_inputs_hex[86], tier?}` | client-side path (`/companion`): the holder's device decrypted the blind-relayed presentation and proved the statement with `/circuits/pid-sdjwt`; the bridge receives only the bb proof (10,304 bytes) and the 86 public input field elements. Decodes them as `NoirPidVerifier` does (subject 20, issuerKeyHash 32, over18, expiry, nonce 32), requires `subject == bound_address`, `nonce == session nonce`, over18 = 1, expiry ahead of now (422 otherwise), with `REQUIRE_ADDRESS_PROOF` the address proof (409), dry-runs `NoirPidVerifier.verify` when `NOIR_VERIFIER` is set (422 with the typed revert), then sends `attestWithProof(subject, Decision, abi.encode(bytes proof, bytes32[] publicInputs), [subject, policyId, bits, expiry])`. `created` or `proved` -> `proved` -> `attested`. Returns `{status: attested, path: noir, tx_hash, attested, public_values, call}`. The bridge never sees a presentation on this path |
 | `POST /sessions/:id/attest` | `{tier?}` | `attestWithProof` with the session's proof; 409 unless the session is `proved` and (with `REQUIRE_ADDRESS_PROOF`) `address_verified`. Reverts come back as 502 with the typed error decoded (registry, `Sp1PidVerifier`, gateway) plus the raw revert data. Returns `{tx_hash, attested, call}` |
 | `POST /sessions/:id/attest-operator` | `{tier?, bits?}` | `attestByOperator` (fallback demo); needs at least a natively verified session. `bits` overrides the proof-path bits (default `0x3` = identity evidence \| over 18, which is `FundToken.DEFAULT_REQUIRED_BITS`); bits `0x4` (EU resident) and `0x8` (not sanctioned) are reserved and required nowhere |
 | `POST /revoke` | `{subject}` | `revoke(subject, POLICY_ID)` |
@@ -60,7 +62,9 @@ created ──presentation──> presented ──native statement ok──> ver
 ```
 
 `failed` is terminal and carries `error`. `attest-operator` may run from `verified` onward and
-also lands in `attested`. With `PROOF_MODE=execute` or `compressed` the session reaches `proved`
+also lands in `attested`. The client-side Noir path (`noir-proof`) skips `presented` and
+`verified`: it goes `created -> proved -> attested` in one request, because the statement was
+checked and proved on the holder's device. With `PROOF_MODE=execute` or `compressed` the session reaches `proved`
 with `proof_hex: null`; `attest` then answers 409, because there is no on-chain proof.
 
 ## Sequence
@@ -153,7 +157,8 @@ list, freshness window) stay in front of the bridge, which then proves the state
 
 ## Tests
 
-- `cargo test --lib`: ABI encoding of the proof argument and the `publicInputs` layout.
+- `cargo test --lib`: ABI encoding of the proof argument and the `publicInputs` layout; decoding of
+  the Noir public inputs against `contracts/test/fixtures/noir/public_inputs.bin`.
 - `cargo test --test anvil`: starts `anvil` on a free port, deploys `AttestationRegistry` and
   `MockProofVerifier` from `contracts/out` (runs `forge build` if missing), sets verifier and
   operator, then drives the HTTP API in mock mode with the fixture vector: nonce matches the
@@ -162,6 +167,13 @@ list, freshness window) stay in front of the bridge, which then proves the state
   `Attested` with bits `0x3` and `statusRef = keccak(session id)`, `isEligible` true, `revoke`
   makes it false and blocks re-attestation, `attest-operator` reopens it, revoke again. Skips with
   a message when `anvil` is not installed.
+- `cargo test --test anvil noir_proof`: deploys `ZKTranscriptLib`, the bb-generated `HonkVerifier`
+  (linked, `optimizer_runs = 1` artifact) and a `NoirPidVerifier` pinned to the fixture issuer, then
+  posts `contracts/test/fixtures/noir/{proof,public_inputs}.bin` to `noir-proof`: wrong session
+  nonce 422, 85 inputs 400, one flipped proof byte 422 from the `verify` dry run (no tx), the real
+  proof attests through the on-chain UltraHonk verification with bits `0x3`, `isEligible` true, a
+  second post on the attested session 409, and with `REQUIRE_ADDRESS_PROOF` the endpoint answers
+  409 until the bound address has signed.
 
 ## Privacy statement
 
@@ -172,9 +184,10 @@ the bridge is the ABI-encoded public values (two hashes, the over-18 bit, the bo
 expiry, the nonce commitment), the proof, and the `Decision`. The chain learns which address
 holds a decision for which policy and nothing else.
 
-Blind-relay mode is the client-side follow-up on branch `nachweis-relay`: the wallet response is
-relayed encrypted to the holder's device, the statement runs and proves there, and the bridge only
-ever handles public values and proof bytes.
+Blind-relay mode (`/companion` plus `POST /sessions/:id/noir-proof`): the wallet response is
+relayed encrypted to the holder's device, the statement runs and proves there with the Noir
+circuit, and the bridge only ever handles the proof bytes and the 86 public input field elements.
+See `/companion/README.md` for the end-to-end run.
 
 ## Video run
 
