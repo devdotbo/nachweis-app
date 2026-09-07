@@ -1,13 +1,14 @@
 #!/usr/bin/env bun
 // nachweis-companion: the holder's own device in the blind-relay flow.
 //
-//   request | wait | pickup | prove | submit | run | status
+//   request | wait | pickup | prove | submit | run | handoff | status
 //   issuer-key | mint-test-presentation   (stand-in for the phone)
 //
 // Progress goes to stderr; the OpenID4VP URI, the QR and JSON results go to stdout.
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { generateP256 } from "./crypto";
+import { parseHandoff } from "./handoff";
 import { answerAsWallet, loadOrCreateIssuerKey, mintPresentation, type AgeShape } from "./mint";
 import { defaultCircuitDir, prove, repoRoot } from "./prove";
 import { terminalQr } from "./qr";
@@ -69,6 +70,11 @@ commands
                          --sender-key 0x.. (NACHWEIS_SENDER_KEY)  --policy-id (nachweis.pid.over18.v1)
   run          request, wait, pickup, prove, submit in one go (all flags above)
                --stub-wallet ISSUER_KEY_FILE: answer the request inline with a minted test presentation (no phone)
+  handoff X    two-device flow: X is the handoff the browser shows after the wallet signed the bridge session
+               (compact JSON {v,s,a,c,r,b}, the nachweis://handoff?... URI, or the bridge's GET /sessions/:id/handoff body).
+               Runs request (same address and challenge, so the same nonce), wait, pickup, prove, then submits the
+               proof to THAT bridge session; the address proof came from the browser. --verifier/--bridge override
+               URLs the handoff does not carry; --stub-wallet as in run
   status       print the session file without secrets or claims
 
 stand-in for the phone
@@ -88,7 +94,9 @@ async function cmdRequest(flags: Flags, tl?: Timeline): Promise<SessionFile> {
   const verifier = need(flags, "verifier", "NACHWEIS_VERIFIER_URL", "http://127.0.0.1:8090").replace(/\/+$/, "");
   const addressBytes = parseAddress(need(flags, "address", "NACHWEIS_ADDRESS"));
   const address = "0x" + hex(addressBytes);
-  const challenge = random32();
+  // A fixed challenge (two-device handoff) makes the relay nonce equal the bridge session's nonce.
+  const challenge = flags.challenge ? fromHex(String(flags.challenge)) : random32();
+  if (challenge.length !== 32) fail("--challenge must be 32 bytes of hex");
   const { privateJwk, publicJwk } = await generateP256();
   const nonce = hex(nonceOf(addressBytes, challenge));
   log(`ephemeral P-256 key generated; challenge ${hex(challenge)}; nonce ${nonce}`);
@@ -325,6 +333,40 @@ async function main(): Promise<void> {
     case "mint-fixture":
       await cmdMintFixture(flags);
       return;
+    case "handoff": {
+      const raw = positional[0] ?? str(flags, "handoff");
+      if (!raw) fail("handoff <json-or-uri>");
+      const h = parseHandoff(raw);
+      const verifier = (h.verifier_url ?? str(flags, "verifier", "NACHWEIS_VERIFIER_URL", "http://127.0.0.1:8090"))!.replace(/\/+$/, "");
+      const bridgeUrl = (h.bridge_url ?? str(flags, "bridge", "NACHWEIS_BRIDGE_URL", "http://127.0.0.1:8787"))!.replace(/\/+$/, "");
+      log(`handoff: bridge session ${h.session_id} bound to ${h.bound_address}, nonce ${h.nonce}; verifier ${verifier}, bridge ${bridgeUrl}`);
+      const tl = new Timeline();
+      // The bridge session must exist, still wait for a proof, and carry the same nonce.
+      const b = await bridgeSession(bridgeUrl, h.session_id);
+      if (b.nonce !== h.nonce) fail(`bridge session nonce ${b.nonce} differs from the handoff nonce ${h.nonce}`);
+      if (String(b.bound_address).toLowerCase() !== h.bound_address) fail(`bridge session is bound to ${b.bound_address}, handoff says ${h.bound_address}`);
+      if (b.state !== "created" && b.state !== "presented") fail(`bridge session is ${b.state}; the handoff is only valid while it waits for a proof`);
+      if (!b.address_verified) log("warning: the bridge session has no address proof yet; the bridge will answer 409 unless it runs with REQUIRE_ADDRESS_PROOF=false");
+      tl.mark(`bridge session checked (address_verified ${b.address_verified})`);
+      const runFlags: Flags = { ...flags, verifier, address: h.bound_address, challenge: h.challenge_hex, bridge: bridgeUrl };
+      let s = await cmdRequest(runFlags, tl);
+      if (s.nonce !== h.nonce) fail(`relay nonce ${s.nonce} differs from the handoff nonce ${h.nonce}`);
+      s = { ...s, bridge_url: bridgeUrl, bridge_session_id: h.session_id, address_verified: Boolean(b.address_verified) };
+      writeSession(path, s);
+      if (flags["stub-wallet"]) {
+        await cmdMint({ ...runFlags, "issuer-key": String(flags["stub-wallet"]), session: path }, tl);
+      } else {
+        log("scan the QR with the wallet; waiting for the response");
+      }
+      await cmdWait(runFlags, s, tl);
+      s = await cmdPickup(runFlags, s, path, tl);
+      s = await cmdProve(runFlags, s, path, tl);
+      s = await cmdSubmit(runFlags, s, path, tl);
+      const after = await bridgeSession(bridgeUrl, h.session_id);
+      tl.mark(`bridge session ${after.state}`);
+      process.stderr.write("\ntimeline\n" + tl.render() + "\n");
+      return;
+    }
     case "run": {
       const tl = new Timeline();
       let s = await cmdRequest(flags, tl);
