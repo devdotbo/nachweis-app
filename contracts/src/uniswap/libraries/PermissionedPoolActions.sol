@@ -31,23 +31,28 @@ library PermissionedPoolActions {
         bytes hookData;
     }
 
+    /// @dev The MINT_POSITION parameters as PositionManager decodes them (CalldataDecoder.decodeMintParams).
+    struct MintParams {
+        PoolKeyLite key;
+        int24 tickLower;
+        int24 tickUpper;
+        uint256 liquidity;
+        uint128 amount0Max;
+        uint128 amount1Max;
+        address recipient;
+        bytes hookData;
+    }
+
     /// @notice `unlockData` for PositionManager.modifyLiquidities: MINT_POSITION then SETTLE_PAIR, the sequence
     ///         the provide-liquidity guide prescribes. The position manager pulls both currencies from the caller
     ///         through Permit2; for the adapter currency it pulls the underlying FundToken and wraps it.
-    function mintUnlockData(
-        PoolKeyLite memory key,
-        int24 tickLower,
-        int24 tickUpper,
-        uint256 liquidity,
-        uint128 amount0Max,
-        uint128 amount1Max,
-        address recipient,
-        bytes memory hookData
-    ) internal pure returns (bytes memory unlockData) {
+    function mintUnlockData(MintParams memory m) internal pure returns (bytes memory unlockData) {
         bytes memory actions = abi.encodePacked(MINT_POSITION, SETTLE_PAIR);
         bytes[] memory params = new bytes[](2);
-        params[0] = abi.encode(key, tickLower, tickUpper, liquidity, amount0Max, amount1Max, recipient, hookData);
-        params[1] = abi.encode(key.currency0, key.currency1);
+        params[0] = abi.encode(
+            m.key, m.tickLower, m.tickUpper, m.liquidity, m.amount0Max, m.amount1Max, m.recipient, m.hookData
+        );
+        params[1] = abi.encode(m.key.currency0, m.key.currency1);
         unlockData = abi.encode(actions, params);
     }
 
