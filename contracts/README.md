@@ -16,12 +16,38 @@ forge test
 - `src/interfaces/IProofVerifier.sol`: pluggable proof verifier, one per policy (`verify` plus `nonceOf` for replay protection).
 - `src/sp1/Sp1PidVerifier.sol`: `IProofVerifier` for the SP1 Groth16 proof of the EUDI PID verification (see below).
 - `src/sp1/interfaces/ISP1Verifier.sol`: SP1 verifier interface, vendored from sp1-contracts v6.1.0.
-- `src/uniswap/EudiAllowlistChecker.sol`: Uniswap v4 permissioned-pool `IAllowlistChecker` backed by the registry. Interfaces copied from v4-periphery under `src/uniswap/interfaces` and `src/uniswap/libraries`; Sepolia addresses in `src/uniswap/UniswapSepolia.sol`. See `docs/uniswap-permissioned-pool.md`.
+- `src/uniswap/EudiAllowlistChecker.sol`: Uniswap v4 permissioned-pool `IAllowlistChecker` backed by the registry. Interfaces copied from v4-periphery under `src/uniswap/interfaces` and `src/uniswap/libraries`; Sepolia addresses in `src/uniswap/UniswapSepolia.sol`. See the section "Uniswap v4 permissioned pool" below and `docs/uniswap-permissioned-pool.md`.
 - `src/test/MockProofVerifier.sol`, `src/test/MockSp1Gateway.sol`: test doubles. Not for deployment.
 - `src/test/MockStable.sol`: unrestricted 6-decimal demo stablecoin for the pool's second currency. Not for deployment beyond testnets.
 - `script/Deploy.s.sol`: deploys and configures everything from env vars. See the header comment; RPC URL and keys come from `.env` (template in `/.env.example`).
 - `script/DeploySp1Verifier.s.sol`: deploys `Sp1PidVerifier` for one policy and optionally registers it. Dry run only so far.
-- `script/CreatePermissionedPool.s.sol`: onboards the FundToken into a Uniswap v4 permissioned pool on Sepolia (deploy guide steps 1 to 6). Dry-run only so far.
+- `script/CreatePermissionedPool.s.sol`: onboards the FundToken into a Uniswap v4 permissioned pool on Sepolia (deploy guide steps 1 to 6, shared with the fork tests through `script/lib/PermissionedPoolOnboarding.sol`). Dry-run only so far.
+- `script/AddLiquidityPermissioned.s.sol`, `script/SwapPermissioned.s.sol` (both on `script/PermissionedPoolScriptBase.s.sol`): the initial liquidity mint through the PermissionedPositionManager and an investor swap through the permissioned Universal Router; `REVOKE_INVESTOR=true` shows the swap failing after a revoke. Dry-run only so far.
+
+## Uniswap v4 permissioned pool
+
+The FundToken trades in a Uniswap v4 permissioned pool on Sepolia. The pool's allowlist checker reads `AttestationRegistry.isEligible`, so one revoke closes token transfers, subscriptions and the pool. Uniswap code is used in these files and lines:
+
+| File | Lines | What |
+|---|---|---|
+| `src/uniswap/EudiAllowlistChecker.sol` | 1 to 67 | `IAllowlistChecker` implementation (`checkAllowlist` at 58 to 61, ERC-165 at 64 to 66); the contract Uniswap's `PermissionsAdapter` calls |
+| `src/uniswap/interfaces/IAllowlistChecker.sol`, `libraries/PermissionFlags.sol`, `interfaces/IPermissionsAdapterFactory.sol` | whole files | copied from v4-periphery `src/hooks/permissionedPools` (MIT, commit in each header) |
+| `src/uniswap/interfaces/IPermissionsAdapterLite.sol`, `IPoolManagerLite.sol`, `IPermissionedPositionManagerLite.sol`, `IUniversalRouterLite.sol`, `IPermit2Lite.sol`, `IStateViewLite.sol` | whole files | ABI subsets of PermissionsAdapter, PoolManager, PermissionedPositionManager, the permissioned Universal Router, Permit2 and StateView |
+| `src/uniswap/libraries/PermissionedPoolActions.sol` | 25 to 32 (`ExactInputSingleParams`), 35 to 58 (mint calldata), 63 to 89 (V4_SWAP calldata), 92 to 94 (PoolId) | the bytes the position manager and the router decode |
+| `src/uniswap/libraries/TickMath.sol`, `LiquidityAmounts.sol` | whole files | trimmed copies from v4-core (MIT) |
+| `src/uniswap/UniswapSepolia.sol` | 1 to 37 | the Sepolia addresses and how each was verified |
+| `script/lib/PermissionedPoolOnboarding.sol` | 32 to 93 (`onboard`: deploy guide steps 1 to 6), 95 to 97 (initial price) | factory `createPermissionsAdapter` / `verifyPermissionsAdapter`, adapter `depositForVerification` / `updateAllowedWrapper` / `updateAllowedHook` / `updateSwappingEnabled`, `PoolManager.initialize` with `PermissionedHooks` |
+| `script/CreatePermissionedPool.s.sol` | 52 to 74 | step 0 (Nachweis contracts) and the call into the onboarding library; step 7 printed at 89 to 95 |
+| `script/PermissionedPoolScriptBase.s.sol` | 54 to 103 (load or bootstrap the pool), 128 to 131 (`StateView.getSlot0`), 134 to 165 (size a position), 167 to 197 (Permit2 approvals and `modifyLiquidities`) | shared script plumbing |
+| `script/AddLiquidityPermissioned.s.sol` | 24 to 54 | the liquidity mint |
+| `script/SwapPermissioned.s.sol` | 33 to 92 (Permit2 approvals at 77 to 78, `UniversalRouter.execute` at 79) | the investor swap and the revoke beat |
+| `test/EudiAllowlistChecker.t.sol` | whole file | checker unit tests |
+| `test/PermissionedPoolFactory.t.sol` | 21 to 210 (real factory and adapter bytecode from `test/fixtures/PermissionsAdapterFactory.json`), 212 to 255 (Sepolia fork: live factory) | onboarding steps 1 to 5 |
+| `test/PermissionedPoolSwap.fork.t.sol` | 62 to 96 (onboard and mint on a Sepolia fork), 187 to 286 (mint, swap, revoke, unattested cases) | the full sequence against the live PoolManager, hook, position manager, router and Permit2 |
+
+Deployed Sepolia contracts used (all Uniswap Labs deployments, verified read-only on 2026-09-07): PoolManager 0xE03A1074c86CFeDd5C142C4F04F1a1536e203543, PermissionsAdapterFactory 0xE6B0d96919334C33d06266d1420F97f6f434fA2B, PermissionedHooks 0x51247E2291d290d17C08813A175AC86465EdE8c0, PermissionedPositionManager 0xf99D553912084c99F6299291b75Fe9B7119Aa1A7, permissioned Universal Router 0x54C707Df83f03bc9cA64ED2CcF9C99B63FD854b7, Permit2 0x000000000022D473030F116dDEE9F6B43aC78BA3, StateView 0xE1Dd9c3fA50EDB962E442f60DfBc432e24537E4C, V4Quoter 0x61B3f2011A92d183C7dbaDBdA940a7555Ccf9227, MixedRouteQuoterV2 0x4745F77b56a0E2294426E3936dc4Fab68d9543Cd.
+
+Fork tests (`SEPOLIA_RPC_URL` set): 6 tests, all passing on 2026-09-07. Details, dry-run results and the viem calldata for the app: `docs/uniswap-permissioned-pool.md`. Developer feedback for Uniswap: `/FEEDBACK.md`.
 
 ## Decision layout
 
