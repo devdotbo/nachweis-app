@@ -184,9 +184,14 @@ cd "$ROOT"
 # non-https response_uri), the service itself only uses PUBLIC_URL to build request_uri/response_uri,
 # and our synthetic wallet posts directly. No RP key (ephemeral cert) and no TRUST_ANCHOR_PATH: the
 # e2e issuer is self-signed, so issuer trust is not enforced here; Sp1PidVerifier pins its key hash.
+# The binaries run as copies under run-specific names ($RUN_DIR/bin/e2e-*): the machine is shared
+# with other sessions, and a foreign `pkill nachweis-bridge` during the 5 minute proof would end the run.
+mkdir -p "$RUN_DIR/bin"
+cp -f "$VERIFIER_BIN" "$RUN_DIR/bin/e2e-verifier-service"
+cp -f "$BRIDGE_BIN" "$RUN_DIR/bin/e2e-nachweis-bridge"
 (cd "$VERIFIER_REPO" && exec env PORT=$VPORT HOST=127.0.0.1 PUBLIC_URL="$VERIFIER_URL/" RESULT_INCLUDES_PRESENTATION=true \
-  "$VERIFIER_BIN") >"$RUN_DIR/verifier.log" 2>&1 &
-echo "$! verifier-service" >> "$PIDFILE"
+  "$RUN_DIR/bin/e2e-verifier-service") >"$RUN_DIR/verifier.log" 2>&1 &
+echo "$! e2e-verifier-service" >> "$PIDFILE"
 wait_http "$VERIFIER_URL/" 30 '^200$' || die "verifier-service did not come up, see $RUN_DIR/verifier.log"
 CLIENT_ID=$(grep -m1 'client_id' "$RUN_DIR/verifier.log" | awk '{print $NF}')
 [ -n "$CLIENT_ID" ] || die "verifier-service did not print its client_id"
@@ -200,8 +205,9 @@ BRIDGE_ENV=(BIND="127.0.0.1:$BPORT" RPC_URL="$RPC_URL" OPERATOR_PRIVATE_KEY="$DE
   VERIFIER_URL="$VERIFIER_URL" PROOF_MODE="$MODE" PROVER_ARTIFACTS="$ROOT/prover-sp1/fixtures" PROVER_ELF="$GUEST_ELF"
   EXPECTED_AUD="$CLIENT_ID" REQUIRE_ADDRESS_PROOF=true CORS_ORIGINS="http://localhost:5173" RUST_LOG="${RUST_LOG:-info}")
 [ "$MODE" = groth16 ] && BRIDGE_ENV+=(SP1_PROVER=cpu)
-(cd "$ROOT/service" && exec env "${BRIDGE_ENV[@]}" "$BRIDGE_BIN") >"$RUN_DIR/bridge.log" 2>&1 &
-echo "$! nachweis-bridge" >> "$PIDFILE"
+(cd "$ROOT/service" && exec env "${BRIDGE_ENV[@]}" "$RUN_DIR/bin/e2e-nachweis-bridge") >"$RUN_DIR/bridge.log" 2>&1 &
+BRIDGE_PID=$!
+echo "$BRIDGE_PID e2e-nachweis-bridge" >> "$PIDFILE"
 wait_http "$BRIDGE_URL/health" 60 '^200$' || die "bridge did not come up, see $RUN_DIR/bridge.log"
 mark bridge "$BRIDGE_URL $(curl -s "$BRIDGE_URL/health" | jq -c '{mode,proof_mode}')"
 
@@ -223,7 +229,9 @@ mark wallet-posted "verifier answered $(echo "$WALLET" | jq -c '.answer | {statu
 case "$MODE" in groth16) WAIT=1500 ;; *) WAIT=300 ;; esac
 LAST=""; STATE=""
 for i in $(seq 1 "$WAIT"); do
-  S=$(curl -sf "$BRIDGE_URL/sessions/$SID") || die "GET /sessions/$SID failed"
+  S=$(curl -sf "$BRIDGE_URL/sessions/$SID") || {
+    kill -0 "$BRIDGE_PID" 2>/dev/null || die "the bridge process ($BRIDGE_PID) is gone during '$LAST' (killed from outside? no panic in $RUN_DIR/bridge.log means a signal)"
+    die "GET /sessions/$SID failed"; }
   STATE=$(echo "$S" | jq -r .state)
   if [ "$STATE" != "$LAST" ]; then
     case "$STATE" in
