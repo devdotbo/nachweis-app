@@ -269,7 +269,7 @@ const bridgeClient: VerifierClient = {
     return {
       state: 'presented',
       claims,
-      receivedAt: s.updated_at,
+      receivedAt: typeof s.updated_at === 'number' ? new Date(s.updated_at * 1000).toISOString() : s.updated_at,
       note: 'Public values of the proof statement, from the bridge. The presentation itself stays at the bridge; no name reaches this app.',
     }
   },

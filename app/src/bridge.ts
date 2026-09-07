@@ -55,7 +55,8 @@ export interface BridgeSessionRaw {
   request_uri?: string | null
   public_values?: BridgePublicValues | null
   tx_hash?: string | null
-  updated_at?: string
+  /** Unix seconds from the bridge. */
+  updated_at?: string | number
 }
 
 export interface BridgeCreated {

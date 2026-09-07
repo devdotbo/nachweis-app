@@ -35,7 +35,7 @@ code,.mono{font-family:var(--mono);font-size:.82em;word-break:break-all;overflow
 
 .app{max-width:1180px;margin:0 auto;padding:24px clamp(16px,4vw,48px) 64px}
 
-.header{display:flex;align-items:center;gap:20px;flex-wrap:wrap;padding-bottom:20px;border-bottom:1px solid var(--line);margin-bottom:28px}
+.header{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding-bottom:20px;border-bottom:1px solid var(--line);margin-bottom:28px}
 .wordmark{font-family:var(--display);font-weight:800;font-size:1.35rem;letter-spacing:-.02em}
 .wordmark span{color:var(--yellow)}
 .tag{font-family:var(--display);font-weight:500;font-size:.66rem;letter-spacing:.16em;text-transform:uppercase;color:var(--paper-mute);padding:4px 8px;border:1px solid var(--line);border-radius:999px}
@@ -99,7 +99,7 @@ pre.raw{margin:0;padding:14px;background:var(--ink-2);border:1px solid var(--lin
 .note.mint{border-color:var(--mint);background:rgba(61,242,165,.06)}
 .note.coral{border-color:var(--coral);background:rgba(255,77,109,.06)}
 .err{color:var(--coral);font-size:.85rem;font-family:var(--mono)}
-.muted{color:var(--paper-mute);font-size:.85rem}
+.muted{color:var(--paper-mute);font-size:.85rem;overflow-wrap:anywhere}
 
 .list{display:flex;flex-direction:column;gap:10px}
 .item{border:1px solid var(--line);border-radius:12px;padding:14px;background:var(--ink-2);display:flex;flex-direction:column;gap:8px}

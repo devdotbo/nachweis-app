@@ -100,7 +100,7 @@ export function PresentCard({ wallet, session }: { wallet: Wallet; session?: Ses
                 </a>
               </>
             ) : (
-              <p className="muted">Bridge in local mode: no wallet request. The presentation is posted to the bridge (POST /sessions/{session.request.sessionId}/presentation) by a script.</p>
+              <p className="muted">Bridge in local mode: no wallet QR here. Prove on your phone with the handoff below (2b), or post the presentation to the bridge with a script (POST /sessions/{session.request.sessionId}/presentation).</p>
             )}
             <dl className="kv" style={{ marginTop: 10 }}>
               <dt>session</dt>
