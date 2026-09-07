@@ -10,10 +10,13 @@
 # (barretenberg-rs downloads the prebuilt libbb-external.a per target).
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
-CORE="$HERE/core"
+CORE="$(cd "$HERE/../prover-mobile-core" && pwd)"
 APP="$HERE/app"
 export ANDROID_HOME="${ANDROID_HOME:-$HOME/Library/Android/sdk}"
-export ANDROID_NDK_HOME="${ANDROID_NDK_HOME:-$(ls -d "$ANDROID_HOME"/ndk/27.* | tail -1)}"
+# NDK 29 (LLVM 20): the prebuilt libbb-external.a references libc++ symbols
+# (VTT/vtable of basic_stringstream and friends) that the libc++_shared.so of
+# NDK 27 does not export; the app must ship the newer libc++_shared.so.
+export ANDROID_NDK_HOME="${ANDROID_NDK_HOME:-$(ls -d "$ANDROID_HOME"/ndk/29.* | tail -1)}"
 ABIS="${ABIS:-arm64-v8a}"
 API=30
 

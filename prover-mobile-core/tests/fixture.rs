@@ -2,12 +2,12 @@
 //! the desktop artefacts so `bb verify` can check byte compatibility:
 //!
 //!   cargo test --release -- --nocapture
-//!   bb verify -k circuits/pid-sdjwt/out/adapted/vk -p prover-android/core/target/host-proof/proof \
-//!       -i prover-android/core/target/host-proof/public_inputs -t evm
+//!   bb verify -k circuits/pid-sdjwt/out/adapted/vk -p prover-mobile-core/target/host-proof/proof \
+//!       -i prover-mobile-core/target/host-proof/public_inputs -t evm
 use std::path::PathBuf;
 
 fn repo() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..").canonicalize().unwrap()
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").canonicalize().unwrap()
 }
 
 #[test]

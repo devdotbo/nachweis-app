@@ -27,7 +27,7 @@ The same crate exists as `barretenberg-rs = "=5.0.0-nightly.20260324"`
 (published 2026-03-24, 516 versions on crates.io) and the matching GitHub
 release carries `barretenberg-static-arm64-android.tar.gz` and
 `barretenberg-static-x86_64-android.tar.gz` (checked with `curl -I`, HTTP 200).
-So instead of forking noir-rs, `prover-android/core` is a small crate that
+So instead of forking noir-rs, `prover-mobile-core` is a small crate that
 does what noir-rs `main` does, pinned to our versions:
 
 | piece | version | why |
@@ -38,7 +38,7 @@ does what noir-rs `main` does, pinned to our versions:
 | Rust | 1.92.0 (noir beta.21 asks for 1.89) | |
 | NDK | 27.0.12077973, API 30 (`cargo ndk -t arm64-v8a -p 30`) | NDK 29 in the SDK directory is an unfinished download |
 
-What the core does (`core/src/lib.rs`):
+What the core does (`prover-mobile-core/src/lib.rs`):
 
 1. `Format::Toml.parse(prover_toml, &abi)` + `abi.encode` (noirc_abi) exactly
    as `nargo execute` does with `Prover.toml`;
@@ -53,10 +53,10 @@ What the core does (`core/src/lib.rs`):
 
 ## Outcome
 
-- Host (Apple M3 Max, `cargo test --release` in `core/`): witness 0.28 s,
+- Host (Apple M3 Max, `cargo test --release` in `prover-mobile-core/`): witness 0.28 s,
   proof 3.5 s (5.9 s cold), peak RSS 2.1 GB, proof 10,304 B, 86 public inputs.
   The proof file verifies with the desktop binary:
-  `bb verify -k circuits/pid-sdjwt/out/adapted/vk -p core/target/host-proof/proof -i core/target/host-proof/public_inputs -t evm`
+  `bb verify -k circuits/pid-sdjwt/out/adapted/vk -p prover-mobile-core/target/host-proof/proof -i prover-mobile-core/target/host-proof/public_inputs -t evm`
   -> "Proof verified successfully", and `public_inputs` is byte-identical to
   the desktop `bb prove` output. So the crate pair reproduces the desktop
   proving system; the VK hash `c0d55f4d...5018` in

@@ -1,3 +1,7 @@
 [bindings.kotlin]
 package_name = "org.nachweis.prover.core"
 cdylib_name = "nachweis_prover"
+
+[bindings.swift]
+module_name = "NachweisProver"
+cdylib_name = "nachweis_prover"

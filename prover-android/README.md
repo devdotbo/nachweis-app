@@ -10,7 +10,7 @@ Toolchain decision and versions: `TOOLCHAIN.md`. Measurements: below.
 
 ## Layout
 
-    core/        Rust cdylib (uniffi): Prover.toml -> witness -> UltraHonk keccak proof
+    ../prover-mobile-core/  Rust cdylib (uniffi), shared with the iOS app: Prover.toml -> witness -> UltraHonk keccak proof
     app/         Android app; app/src/main/java/org/nachweis/prover
       circuit/   ProverInputs.kt (port of circuits/tools/gen-prover.ts), PublicInputs.kt, IssuerKey.kt
       crypto/    EcKeys.kt (P-256 JWK), Jwe.kt (ECDH-ES A128GCM/A256GCM compact decrypt)
@@ -37,14 +37,14 @@ Prerequisites: Rust (1.89+), `rustup target add aarch64-linux-android`,
 
     cd prover-android
     scripts/prepare-assets.sh          # SRS from ~/.bb-crs or crs.aztec.network
-    scripts/build-rust.sh              # core -> app/src/main/jniLibs/arm64-v8a + bindings
+    scripts/build-rust.sh              # prover-mobile-core -> app/src/main/jniLibs/arm64-v8a + bindings
     ./gradlew testDebugUnitTest        # ProverInputs vs Prover.toml, JWE, public inputs
     ./gradlew assembleDebug            # app/build/outputs/apk/debug/app-debug.apk
 
 Host check of the Rust core (proves the committed vector, writes the proof for
 `bb verify`):
 
-    cd prover-android/core && cargo test --release -- --nocapture
+    cd prover-mobile-core && cargo test --release -- --nocapture
     bb verify -k ../../circuits/pid-sdjwt/out/adapted/vk -p target/host-proof/proof -i target/host-proof/public_inputs -t evm
 
 `circuits/pid-sdjwt/target` and `out/adapted` come from the commands in
@@ -145,7 +145,7 @@ EMULATOR_RESULTS_PLACEHOLDER
 
 ## Licences
 
-- `core/` and `app/` are new code for this repository (repository licence).
+- `prover-mobile-core/` and `app/` are new code for this repository (repository licence).
 - The structure of the Rust core follows `zkmopro/noir-rs` `main`
   (MIT/Apache-2.0); no file is copied.
 - The reference app `eid-privacy/zkp-android` (MPL-2.0) was read for its
