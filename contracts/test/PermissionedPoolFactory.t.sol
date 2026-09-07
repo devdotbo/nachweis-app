@@ -20,7 +20,7 @@ import {UniswapSepolia} from "../src/uniswap/UniswapSepolia.sol";
 ///         FundToken; step 6 (pool initialisation) needs the PoolManager and hook and is covered by the fork test.
 contract PermissionedPoolFactoryTest is Test {
     bytes32 constant POLICY = keccak256("nachweis.demo.fund.v1");
-    uint256 constant REQUIRED = 0x7;
+    uint256 constant REQUIRED = 0x3; // identity evidence | over 18
 
     address owner = makeAddr("owner");
     address issuer = makeAddr("issuer");
@@ -139,7 +139,7 @@ contract PermissionedPoolFactoryTest is Test {
     function test_ownerCanSwapCheckerForNewPolicy() public {
         IPermissionsAdapterLite adapter = _createAdapter();
         EudiAllowlistChecker stricter = new EudiAllowlistChecker(registry, POLICY, 0xF);
-        _attest(alice); // bits 0x7, does not cover 0xF
+        _attest(alice); // bits 0x3, does not cover 0xF
         assertTrue(adapter.isAllowed(alice, PermissionFlags.SWAP_ALLOWED));
         vm.prank(issuer);
         adapter.updateAllowListChecker(stricter);
@@ -211,7 +211,7 @@ contract PermissionedPoolFactoryTest is Test {
 ///         adapter for a fresh registry and FundToken against the live factory. Nothing is broadcast.
 contract PermissionedPoolSepoliaForkTest is Test {
     bytes32 constant POLICY = keccak256("nachweis.demo.fund.v1");
-    uint256 constant REQUIRED = 0x7;
+    uint256 constant REQUIRED = 0x3; // identity evidence | over 18
 
     function test_forkLiveFactoryAcceptsChecker() public {
         string memory rpc = vm.envOr("SEPOLIA_RPC_URL", string(""));

@@ -3,7 +3,7 @@ pragma solidity 0.8.28;
 
 /// @notice One eligibility decision per (subject, policyId). No names, no strings, no personal data.
 /// @param policyId Issuer policy identifier (e.g. keccak256 of a policy document hash).
-/// @param bits Predicate bits the policy verified (e.g. bit 0 = age over 18, bit 1 = EU resident). Meaning is per policy.
+/// @param bits Predicate bits the policy verified (demo policy: bit 0 = identity evidence, bit 1 = over 18). Meaning is per policy.
 /// @param tier Issuer-defined tier (e.g. retail / professional). Informational, not enforced by the registry.
 /// @param expiry Unix timestamp after which the decision no longer counts.
 /// @param statusRef Opaque reference to an off-chain status entry (e.g. hash of a status list URI + index). Never a name.

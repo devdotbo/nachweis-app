@@ -26,7 +26,7 @@ import {UniswapSepolia} from "../src/uniswap/UniswapSepolia.sol";
 ///   REGISTRY_ADDRESS       optional; existing AttestationRegistry (deployer must be operator for POLICY_ID)
 ///   FUND_TOKEN_ADDRESS     optional; existing FundToken (deployer must be its issuer); requires REGISTRY_ADDRESS
 ///   POLICY_ID              optional bytes32 (default: keccak256("nachweis.demo.fund.v1"))
-///   REQUIRED_BITS          optional uint (default: 0x7)
+///   REQUIRED_BITS          optional uint (default: FundToken.DEFAULT_REQUIRED_BITS = 0x3, identity evidence | over 18)
 ///   POOL_FEE               optional uint24 (default: 3000)
 ///   TICK_SPACING           optional int24 (default: 60)
 ///
@@ -42,7 +42,7 @@ contract CreatePermissionedPool is Script {
         uint256 deployerKey = vm.envUint("DEPLOYER_PRIVATE_KEY");
         address deployer = vm.addr(deployerKey);
         bytes32 policyId = vm.envOr("POLICY_ID", keccak256("nachweis.demo.fund.v1"));
-        uint256 requiredBits = vm.envOr("REQUIRED_BITS", uint256(0x7));
+        uint256 requiredBits = vm.envOr("REQUIRED_BITS", FundToken.DEFAULT_REQUIRED_BITS);
         uint24 fee = uint24(vm.envOr("POOL_FEE", uint256(3000)));
         int24 tickSpacing = int24(int256(vm.envOr("TICK_SPACING", uint256(60))));
 
