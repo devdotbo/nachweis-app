@@ -2,6 +2,7 @@
 pub mod api;
 pub mod chain;
 pub mod config;
+pub mod noir;
 pub mod prover;
 pub mod session;
 pub mod statement;

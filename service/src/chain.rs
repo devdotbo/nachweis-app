@@ -62,6 +62,34 @@ sol! {
     }
 }
 
+sol! {
+    /// NoirPidVerifier (contracts/src/noir): `verify` for the eth_call pre-check, typed reverts for error text.
+    #[sol(rpc)]
+    #[derive(Debug)]
+    interface NoirPidVerifier {
+        error PublicInputsLength(uint256 got, uint256 want);
+        error HonkPublicInputsLength(uint256 got, uint256 want);
+        error FieldNotByte(uint256 index, uint256 value);
+        error FieldNotU64(uint256 index, uint256 value);
+        error IssuerKeyHashMismatch(bytes32 got, bytes32 want);
+        error SubjectMismatch(address got, address want);
+        error PolicyMismatch(bytes32 got, bytes32 want);
+        error BitsMismatch(uint256 got, uint256 want);
+        error ExpiryMismatch(uint64 got, uint64 want);
+        error Expired(uint64 expiry, uint256 blockTimestamp);
+        error HonkVerifyFailed();
+        error SumcheckFailed();
+        error ShpleminiFailed();
+        error ProofLengthWrong();
+        error ProofLengthWrongWithLogN(uint256 logN, uint256 actualLength, uint256 expectedLength);
+        error PublicInputsLengthWrong();
+        error ConsistencyCheckFailed();
+        error GeminiChallengeInSubgroup();
+        function verify(bytes calldata proof, bytes32[] calldata publicInputs) external view returns (bool);
+        function nonceOf(bytes calldata proof) external pure returns (bytes32);
+    }
+}
+
 pub use AttestationRegistry::Decision;
 
 /// EIP-191 personal message the bound address signs to prove control of the key.
@@ -83,6 +111,7 @@ pub fn describe_error(context: &str, e: alloy::contract::Error) -> anyhow::Error
         AttestationRegistry::AttestationRegistryErrors::abi_decode(&data)
             .map(|r| format!("{r:?}"))
             .or_else(|_| Sp1Errors::Sp1ErrorsErrors::abi_decode(&data).map(|s| format!("{s:?}")))
+            .or_else(|_| NoirPidVerifier::NoirPidVerifierErrors::abi_decode(&data).map(|n| format!("{n:?}")))
             .ok()
             .map(|d| format!("{context}: reverted with {d} (data 0x{})", hex::encode(&data)))
     });
@@ -195,6 +224,21 @@ impl Chain {
         Ok((receipt.transaction_hash, ev))
     }
 
+    /// eth_call `NoirPidVerifier.verify` (no transaction): Ok(()) when it returns true, the decoded
+    /// typed revert otherwise. Runs the full UltraHonk verification (about 2.85 M gas) on the node.
+    pub async fn noir_verify(&self, verifier: Address, proof_arg: Bytes, inputs: Vec<B256>) -> Result<()> {
+        let ok = NoirPidVerifier::new(verifier, self.provider.clone())
+            .verify(proof_arg, inputs)
+            .call()
+            .await
+            .map_err(|e| describe_error("NoirPidVerifier.verify", e))?;
+        if ok {
+            Ok(())
+        } else {
+            Err(anyhow!("NoirPidVerifier.verify returned false"))
+        }
+    }
+
     pub async fn attest_by_operator(&self, subject: Address, decision: Decision) -> Result<(B256, AttestedEvent)> {
         let receipt = self
             .contract()
@@ -283,9 +327,33 @@ impl Chain {
 
 /// Creation bytecode from a forge artifact JSON (`bytecode.object`).
 pub fn creation_code_from_artifact(json: &str) -> Result<Vec<u8>> {
+    creation_code_linked(json, &[])
+}
+
+/// Creation bytecode with external libraries linked: every `bytecode.linkReferences` entry whose
+/// library name is in `libs` gets its placeholder replaced by the deployed address (what forge does
+/// at deploy time; the bb-generated HonkVerifier links ZKTranscriptLib this way).
+pub fn creation_code_linked(json: &str, libs: &[(&str, Address)]) -> Result<Vec<u8>> {
     let v: serde_json::Value = serde_json::from_str(json).context("artifact json")?;
     let obj = v["bytecode"]["object"].as_str().ok_or_else(|| anyhow!("artifact has no bytecode.object"))?;
-    hex::decode(obj.trim_start_matches("0x")).context("artifact bytecode hex")
+    let mut hex_code = obj.trim_start_matches("0x").to_string();
+    if let Some(files) = v["bytecode"]["linkReferences"].as_object() {
+        for refs in files.values() {
+            for (name, places) in refs.as_object().into_iter().flat_map(|m| m.iter()) {
+                let addr = libs
+                    .iter()
+                    .find(|(n, _)| n == name)
+                    .map(|(_, a)| *a)
+                    .ok_or_else(|| anyhow!("artifact needs library {name} linked"))?;
+                for place in places.as_array().into_iter().flatten() {
+                    let start = place["start"].as_u64().unwrap_or(0) as usize * 2;
+                    let len = place["length"].as_u64().unwrap_or(20) as usize * 2;
+                    hex_code.replace_range(start..start + len, &hex::encode(addr.as_slice()));
+                }
+            }
+        }
+    }
+    hex::decode(&hex_code).context("artifact bytecode hex")
 }
 
 #[cfg(test)]

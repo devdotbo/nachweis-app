@@ -15,6 +15,9 @@ pub struct Config {
     pub operator_private_key: Option<String>,
     /// AttestationRegistry address (REGISTRY).
     pub registry: Option<Address>,
+    /// NoirPidVerifier address (NOIR_VERIFIER). When set, a client-side Noir proof is checked with an
+    /// eth_call to `verify` before attestWithProof is sent, so a bad proof answers 422 instead of 502.
+    pub noir_verifier: Option<Address>,
     /// Policy id (POLICY_ID): 0x-prefixed 32-byte hex, or any string which is keccak256-hashed.
     pub policy_id: B256,
     /// verifier-service base URL (VERIFIER_URL). Unset selects local mode.
@@ -73,6 +76,10 @@ impl Config {
             Some(a) => Some(a.parse::<Address>().context("REGISTRY")?),
             None => None,
         };
+        let noir_verifier = match env_opt("NOIR_VERIFIER") {
+            Some(a) => Some(a.parse::<Address>().context("NOIR_VERIFIER")?),
+            None => None,
+        };
         let policy_id = parse_policy_id(&env_opt("POLICY_ID").unwrap_or_else(|| DEFAULT_POLICY.into()))?;
         let proof_mode = env_opt("PROOF_MODE").unwrap_or_else(|| "mock".into()).parse()?;
         let prover_artifacts = env_opt("PROVER_ARTIFACTS")
@@ -101,6 +108,7 @@ impl Config {
             rpc_url: env_opt("RPC_URL"),
             operator_private_key: env_opt("OPERATOR_PRIVATE_KEY"),
             registry,
+            noir_verifier,
             policy_id,
             verifier_url: env_opt("VERIFIER_URL").map(|u| u.trim_end_matches('/').to_string()),
             proof_mode,
