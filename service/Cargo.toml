@@ -1,0 +1,45 @@
+[package]
+name = "nachweis-bridge"
+version = "0.1.0"
+edition = "2021"
+description = "Nachweis service bridge: verified EUDI presentation -> SP1 proof -> AttestationRegistry"
+license = "Apache-2.0"
+default-run = "nachweis-bridge"
+
+# Standalone workspace so the crate is not picked up by any parent manifest.
+[workspace]
+
+[features]
+default = ["native-gnark"]
+# Groth16 wrapping through the in-process gnark prover (needs Go). Without it sp1-sdk
+# falls back to the Docker image for PROOF_MODE=groth16.
+native-gnark = ["sp1-sdk/native-gnark"]
+
+[dependencies]
+axum = "0.7"
+tokio = { version = "1", features = ["full"] }
+alloy = { version = "1", features = ["contract", "provider-http", "signer-local", "rpc-types", "sol-types", "network", "consensus", "json-abi"] }
+reqwest = { version = "0.12", features = ["json"] }
+tower-http = { version = "0.6", features = ["cors"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+hex = "0.4"
+rand = "0.8"
+sha2 = "0.10"
+base64 = "0.22"
+x509-cert = { version = "0.2.4", default-features = false }
+nachweis-pid-lib = { path = "../prover-sp1/lib" }
+sp1-sdk = { version = "=6.1.0", features = ["blocking"] }
+
+[dev-dependencies]
+# nothing extra: the anvil integration test uses reqwest, tokio and alloy from above
+
+# Mirror of prover-sp1/Cargo.toml: the shared statement library is compiled against the
+# SP1-patched p256 and sha2 so host and guest resolve the same crates.
+[patch.crates-io]
+p256 = { git = "https://github.com/sp1-patches/elliptic-curves", tag = "patch-p256-13.2-sp1-6.0.0" }
+sha2 = { git = "https://github.com/sp1-patches/RustCrypto-hashes", package = "sha2", tag = "patch-sha2-0.10.9-sp1-6.0.0" }
