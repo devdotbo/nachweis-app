@@ -1,0 +1,42 @@
+[package]
+name = "prover_mobile_core"
+version = "0.1.0"
+edition = "2021"
+description = "Nachweis on-phone prover core: pid-sdjwt input derivation, witness, UltraHonk proof via Mopro/noir-rs"
+license = "MIT"
+
+[lib]
+crate-type = ["lib", "cdylib", "staticlib"]
+name = "prover_mobile_core"
+
+[features]
+default = ["uniffi", "noir"]
+uniffi = ["mopro-ffi/uniffi"]
+noir = ["dep:acvm", "dep:acvm_blackbox_solver", "dep:bn254_blackbox_solver", "dep:nargo", "dep:barretenberg-rs", "dep:flate2"]
+
+[dependencies]
+mopro-ffi = { version = "0.3.4" }
+thiserror = "2"
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+hex = "0.4"
+base64 = "0.22"
+num-bigint = "0.4"
+libc = "0.2"
+
+# NOIR_DEPENDENCIES: see TOOLCHAIN.md. acvm/nargo at the tag our circuit was
+# compiled with; barretenberg-rs at the bb version `bbup -nv 1.0.0-beta.21` installs.
+acvm = { git = "https://github.com/noir-lang/noir.git", rev = "v1.0.0-beta.21", optional = true }
+acvm_blackbox_solver = { git = "https://github.com/noir-lang/noir.git", rev = "v1.0.0-beta.21", optional = true }
+bn254_blackbox_solver = { git = "https://github.com/noir-lang/noir.git", rev = "v1.0.0-beta.21", optional = true }
+nargo = { git = "https://github.com/noir-lang/noir.git", rev = "v1.0.0-beta.21", optional = true }
+barretenberg-rs = { version = "=5.0.0-nightly.20260324", default-features = false, features = ["ffi"], optional = true }
+flate2 = { version = "1", optional = true }
+
+[dev-dependencies]
+mopro-ffi = { version = "0.3.4", features = ["uniffi-tests"] }
+serial_test = "3"
+
+[build-dependencies]
