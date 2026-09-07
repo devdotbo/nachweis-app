@@ -94,6 +94,14 @@ repo's `optimizer_runs = 200`, 600 bytes over the EIP-170 limit; with
 per-file compiler profile or `optimizer_runs = 1` before deploying. Any change
 to the circuit changes the VK and requires regenerating this file.
 
+On-chain adapter: `contracts/src/noir/NoirPidVerifier.sol` wraps this verifier
+as an `IProofVerifier` for the AttestationRegistry (proof encoding, public input
+layout, bits mapping and the EIP-170 workaround via a per-file `optimizer_runs =
+1` compilation restriction are documented in `contracts/README.md`, section
+NoirPidVerifier). The proof and public inputs of the minted vector are committed
+as test fixtures in `contracts/test/fixtures/noir/` (see `SOURCE.md` there);
+regenerate them together with the verifier whenever the circuit changes.
+
 ## What the circuit does not check
 
 - x5c chain of the issuer header to a trust anchor. The contract must pin
