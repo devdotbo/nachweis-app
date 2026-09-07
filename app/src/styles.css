@@ -115,3 +115,11 @@ pre.raw{margin:0;padding:14px;background:var(--ink-2);border:1px solid var(--lin
 .log .ev.attested .name{color:var(--mint)}
 .log .ev.revoked .name{color:var(--coral)}
 .empty{color:var(--paper-mute);font-size:.88rem;padding:12px;border:1px dashed var(--line);border-radius:10px;text-align:center}
+
+.steps{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.step{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;border:1px solid var(--line);font-family:var(--display);font-size:.66rem;letter-spacing:.06em;text-transform:uppercase;color:var(--paper-mute)}
+.step::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor;opacity:.6}
+.step.done{border-color:rgba(61,242,165,.5);color:var(--mint)}
+.step.current{border-color:var(--yellow);color:var(--yellow);box-shadow:0 0 0 3px rgba(255,204,0,.15)}
+.step.failed{border-color:var(--coral);color:var(--coral)}
+.sub{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:.88rem;color:var(--paper-dim)}

@@ -1,10 +1,12 @@
 import QRCode from 'qrcode'
 import { useEffect, useState } from 'react'
-import type { Address } from 'viem'
+import { bridge, sessionMessage } from '../bridge'
 import { verifier } from '../verifier'
-import { addSession, type Session } from '../lib/sessions'
+import { addSession, updateSession, type Session } from '../lib/sessions'
+import type { Wallet } from '../lib/wallet'
 
-export function PresentCard({ address, session }: { address?: Address; session?: Session }) {
+export function PresentCard({ wallet, session }: { wallet: Wallet; session?: Session }) {
+  const address = wallet.address
   const [creating, setCreating] = useState(false)
   const [error, setError] = useState<string>()
   const [qr, setQr] = useState<string>()
@@ -26,16 +28,29 @@ export function PresentCard({ address, session }: { address?: Address; session?:
     }
   }, [uri])
 
+  /** Beat "wallet signs the session": EIP-191 signature of "nachweis:session:<id>", sent to the bridge. */
+  const sign = async (sessionId: string) => {
+    updateSession(sessionId, { signature: 'pending', signatureError: undefined })
+    try {
+      const signature = await wallet.signMessage(sessionMessage(sessionId))
+      await bridge.submitAddressProof(sessionId, signature)
+      updateSession(sessionId, { signature: 'signed' })
+    } catch (e) {
+      updateSession(sessionId, { signature: 'failed', signatureError: e instanceof Error ? e.message : String(e) })
+    }
+  }
+
   const create = async () => {
     if (!address) return
     setCreating(true)
     setError(undefined)
     try {
       const request = await verifier.createRequest(address)
-      addSession({ request, boundAddress: address, createdAt: Date.now(), state: 'pending' })
+      addSession({ request, boundAddress: address, createdAt: Date.now(), state: 'pending', signature: 'pending' })
+      setCreating(false)
+      await sign(request.sessionId)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
-    } finally {
       setCreating(false)
     }
   }
@@ -47,7 +62,8 @@ export function PresentCard({ address, session }: { address?: Address; session?:
         <span className="n">2</span>Present your ID
       </h2>
       <p className="lead">
-        Scan with the German EUDI test wallet (sample identity). The verifier-service checks the presentation; this app never sees a name or a document.
+        Scan with the German EUDI test wallet (sample identity). The verifier-service checks the presentation; the nonce binds it to your address; this app never sees a name or a
+        document.
       </p>
       <div className="row">
         <button type="button" className="btn btn-yellow" onClick={create} disabled={locked || creating}>
@@ -55,6 +71,23 @@ export function PresentCard({ address, session }: { address?: Address; session?:
         </button>
         {session ? <SessionBadge session={session} /> : null}
       </div>
+      {session ? (
+        <div className="sub">
+          <span>wallet signs the session</span>
+          {session.signature === 'pending' ? <span className="status waiting">waiting for signature</span> : null}
+          {session.signature === 'signed' ? <span className="status open">signed, sent to bridge</span> : null}
+          {session.signature === 'failed' ? (
+            <>
+              <span className="status closed">not signed</span>
+              <button type="button" className="btn btn-ghost" onClick={() => void sign(session.request.sessionId)}>
+                Retry
+              </button>
+            </>
+          ) : null}
+          <code className="muted">{sessionMessage(session.request.sessionId)}</code>
+        </div>
+      ) : null}
+      {session?.signatureError ? <p className="err">{session.signatureError}</p> : null}
       {session && uri ? (
         <div className="qr">
           {qr ? <img src={qr} alt="QR code for the openid4vp request" /> : <div className="empty">rendering QR</div>}
@@ -97,7 +130,7 @@ function SessionBadge({ session }: { session: Session }) {
     case 'presented':
       return <span className="status open">presented</span>
     case 'attested':
-      return <span className="status open">presented, approved</span>
+      return <span className="status open">presented, attested</span>
     case 'revoked':
       return <span className="status closed">revoked</span>
     case 'rejected':
