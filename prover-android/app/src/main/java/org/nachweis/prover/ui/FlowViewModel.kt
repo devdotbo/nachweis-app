@@ -73,7 +73,7 @@ class FlowViewModel(app: Application) : AndroidViewModel(app) {
 
     // Prove
     var lowMemory by mutableStateOf(false)
-    var derived by mutableStateOf<ProverInputs.Derived?>(null); private set
+    var derived by mutableStateOf<uniffi.mopro.DerivedInputs?>(null); private set
     var proof by mutableStateOf<ProofSummary?>(null); private set
     var proverVersion by mutableStateOf(""); private set
 
@@ -83,8 +83,14 @@ class FlowViewModel(app: Application) : AndroidViewModel(app) {
 
     init {
         viewModelScope.launch(Dispatchers.IO) {
-            runCatching { prover.version() }.onSuccess { v -> withContext(Dispatchers.Main) { proverVersion = v } }
-                .onFailure { e -> withContext(Dispatchers.Main) { proverVersion = "core not loaded: ${e.message}" } }
+            // Touching the bindings loads libprover_mobile_core.so; a dlopen problem shows here, not mid-flow.
+            runCatching { prover.derive("", "", "", "") }
+                .onFailure { e ->
+                    val msg = e.message ?: e.toString()
+                    withContext(Dispatchers.Main) {
+                        proverVersion = if (e is uniffi.mopro.CoreException) "prover-mobile-core loaded (Noir beta.21, bb 5.0.0-nightly.20260324)" else "core not loaded: $msg"
+                    }
+                }
         }
     }
 
@@ -214,10 +220,20 @@ class FlowViewModel(app: Application) : AndroidViewModel(app) {
         val pres = presentation ?: throw IllegalStateException("no presentation")
         val issuerKey = issuerKeyOverrideHex.trim().ifEmpty { IssuerKey.fromPresentationX5c(pres) }
         val b = bounds
-        val d = ProverInputs.derive(pres, issuerKey, boundAddress.trim(), challengeHex, b, expectedAud.trim())
+        // Kotlin port (bounds from the artifact ABI, aud from the field) and the Rust port in
+        // prover-mobile-core must agree line by line; the Rust witness is what gets proved.
+        val kt = ProverInputs.derive(pres, issuerKey, boundAddress.trim(), challengeHex, b, expectedAud.trim())
+        val d = prover.derive(pres, issuerKey, boundAddress.trim(), challengeHex)
+        val ktLines = kt.toml.lines().filter { it.isNotBlank() && !it.startsWith("#") }
+        val rsLines = d.proverToml.lines().filter { it.isNotBlank() && !it.startsWith("#") }
+        if (ktLines != rsLines) {
+            val i = ktLines.indices.firstOrNull { it >= rsLines.size || ktLines[it] != rsLines[it] } ?: -1
+            throw IllegalStateException("Kotlin and Rust input derivation differ at line $i (${ktLines.getOrNull(i)?.substringBefore(" = ")})")
+        }
+        if (d.nonceHex != kt.expected.nonceHex) throw IllegalStateException("nonce differs between Kotlin and Rust derivation")
         withContext(Dispatchers.Main) {
             derived = d; step = Step.PROVE
-            logLine("inputs derived (bounds header ${b.headerB64Max}, payload ${b.payloadMax}, tail ${b.tailMax}, kb ${b.kbPayloadMax}): nonce ${d.expected.nonceHex.take(16)}..., expiry ${d.expected.expiry}")
+            logLine("inputs derived (bounds header ${b.headerB64Max}, payload ${b.payloadMax}, tail ${b.tailMax}, kb ${b.kbPayloadMax}; Kotlin and Rust ports agree): witness ${d.witness.size} values, nonce ${d.nonceHex.take(16)}..., expiry ${d.expiry}")
         }
     }
 
@@ -229,19 +245,18 @@ class FlowViewModel(app: Application) : AndroidViewModel(app) {
         val points = prover.loadSrs()
         withContext(Dispatchers.Main) { logLine("SRS ready: $points points; proving (lowMemory=$lowMemory)") }
         val t0 = System.nanoTime()
-        val r = prover.prove(d.toml, lowMemory)
+        val r = prover.prove(d.witness, lowMemory)
         val wall = (System.nanoTime() - t0) / 1_000_000
         val decoded = PublicInputs.decode(r.publicInputs)
-        if (decoded.nonceHex != d.expected.nonceHex) throw IllegalStateException("public nonce differs from expected")
-        if (decoded.subjectHex != d.expected.subjectHex) throw IllegalStateException("public subject differs from expected")
-        val verified = runCatching {
-            org.nachweis.prover.core.verifyPidSdjwt(prover.ensureAssets().vk.absolutePath, r.proof, r.publicInputs)
-        }.getOrNull()
+        if (decoded.nonceHex != d.nonceHex) throw IllegalStateException("public nonce differs from expected")
+        if (decoded.subjectHex != d.subjectHex) throw IllegalStateException("public subject differs from expected")
+        if (r.publicInputs.map { ProverInputs.toHex(it) } != d.publicInputsHex) throw IllegalStateException("public inputs differ from the derived expectation")
+        val verified = runCatching { prover.verify(r.proof, r.publicInputs) }.getOrNull()
         val summary = ProofSummary(
             proofHex = ProverInputs.toHex(r.proof),
             publicInputsHex = r.publicInputs.map { ProverInputs.toHex(it) },
             decoded = decoded,
-            witnessMs = r.witnessMs.toLong(),
+            witnessMs = r.executeMs.toLong(),
             proveMs = r.proveMs.toLong(),
             wallMs = wall,
             peakRssBytes = r.peakRssBytes.toLong(),
@@ -260,7 +275,7 @@ class FlowViewModel(app: Application) : AndroidViewModel(app) {
         }
         withContext(Dispatchers.Main) {
             proof = summary
-            logLine("proof ${r.proof.size} B, ${r.publicInputs.size} public inputs, witness ${r.witnessMs} ms, prove ${r.proveMs} ms, wall $wall ms, peak RSS ${r.peakRssBytes.toLong() / 1_000_000} MB, on-device verify $verified")
+            logLine("proof ${r.proof.size} B, ${r.publicInputs.size} public inputs, execute ${r.executeMs} ms, prove ${r.proveMs} ms, wall $wall ms, peak RSS ${r.peakRssBytes.toLong() / 1_000_000} MB, on-device verify $verified")
         }
     }
 

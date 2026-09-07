@@ -10,14 +10,14 @@ Toolchain decision and versions: `TOOLCHAIN.md`. Measurements: below.
 
 ## Layout
 
-    ../prover-mobile-core/  Rust cdylib (uniffi), shared with the iOS app: Prover.toml -> witness -> UltraHonk keccak proof
+    ../prover-mobile-core/  shared Rust core (mopro/uniffi): input derivation, witness, UltraHonk keccak proof
     app/         Android app; app/src/main/java/org/nachweis/prover
       circuit/   ProverInputs.kt (port of circuits/tools/gen-prover.ts), PublicInputs.kt, IssuerKey.kt
       crypto/    EcKeys.kt (P-256 JWK), Jwe.kt (ECDH-ES A128GCM/A256GCM compact decrypt)
       net/       RelayClient.kt (/relay/request, /relay/status, /relay/response), BridgeClient.kt
       prover/    ProverService.kt (asset staging, SRS load, prove)
       ui/        FlowViewModel.kt, Screens.kt (Session, Waiting, Pickup, Prove, Submit)
-      core/      generated uniffi bindings (gitignored, scripts/build-rust.sh)
+    app/src/main/java/uniffi/mopro/mopro.kt   generated bindings (gitignored, scripts/build-rust.sh)
     app/src/main/assets/
       pid_sdjwt.json          compiled circuit (nargo 1.0.0-beta.21), committed
       pid_sdjwt_evm.vk        desktop VK, bb write_vk -t evm, committed (1,888 B)
@@ -25,19 +25,19 @@ Toolchain decision and versions: `TOOLCHAIN.md`. Measurements: below.
       bn254_g1.dat            SRS, 2^20 + 1 points, 64 MB, gitignored (scripts/prepare-assets.sh)
       bn254_g2.dat            128 B
       test-vector.json        prover-sp1/fixtures/input.json (synthetic PID presentation)
-    scripts/build-rust.sh     cargo ndk build + libc++_shared.so + uniffi Kotlin bindings
+    scripts/build-rust.sh     mopro Android build of the core (cargo ndk + bindings) copied into app/
     scripts/prepare-assets.sh SRS and test vector into assets
 
 ## Build
 
 Prerequisites: Rust (1.89+), `rustup target add aarch64-linux-android`,
-`cargo install cargo-ndk`, Android SDK with NDK 27 and platform 35, JDK 17
+`cargo install cargo-ndk`, Android SDK with NDK 29 and platform 35, JDK 17
 (`export JAVA_HOME=...`), network for the first build (barretenberg-rs downloads
 `libbb-external.a`, Gradle downloads AGP 8.13.2 / Kotlin 2.2.21).
 
     cd prover-android
     scripts/prepare-assets.sh          # SRS from ~/.bb-crs or crs.aztec.network
-    scripts/build-rust.sh              # prover-mobile-core -> app/src/main/jniLibs/arm64-v8a + bindings
+    scripts/build-rust.sh              # prover-mobile-core -> app/src/main/jniLibs/arm64-v8a + java/uniffi/mopro
     ./gradlew testDebugUnitTest        # ProverInputs vs Prover.toml, JWE, public inputs
     ./gradlew assembleDebug            # app/build/outputs/apk/debug/app-debug.apk
 
@@ -77,11 +77,14 @@ verifier `http://10.0.2.2:8080`, bridge `http://10.0.2.2:8787`).
    decrypt (ECDH-ES, A128GCM or A256GCM) with the session key, shows only
    "presentation received, N bytes". The debug checkbox lists the disclosed
    claims.
-4. Prove: derives `Prover.toml` like `circuits/tools/gen-prover.ts` (unit test
-   compares both line by line for the test vector), solves the witness, proves
-   with the bundled desktop VK, verifies on device, shows witness time, proof
-   time, wall time and peak RSS (`VmHWM` of the app process). Public inputs
-   are decoded and the nonce and subject are compared with the expected ones.
+4. Prove: derives the circuit inputs twice, in Kotlin (`ProverInputs.kt`,
+   bounds from the artifact ABI; unit test compares it line by line with the
+   `Prover.toml` of `gen-prover.ts`) and in Rust (`prover-mobile-core`
+   `derive_inputs`), and refuses to continue if the two TOMLs differ. The
+   Rust witness is proved with the bundled desktop VK (keccak, ZK), verified
+   on device, and execute time, proof time, wall time and peak RSS
+   (`ru_maxrss` of the app process) are shown. The public inputs are checked
+   against the derived expectation (subject, nonce, all 86 words).
 5. Submit: `POST /sessions` (bound address + the same challenge, so the
    bridge computes the same nonce) if no bridge session exists, then
    `POST /sessions/:id/noir-proof {proof_hex, public_inputs_hex[86]}`

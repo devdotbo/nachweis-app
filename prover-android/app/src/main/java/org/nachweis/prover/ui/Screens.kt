@@ -104,17 +104,17 @@ fun PickupScreen(vm: FlowViewModel) {
 fun ProveScreen(vm: FlowViewModel) {
     val d = vm.derived
     if (d != null) {
-        Text("Inputs derived (${d.toml.length} chars of Prover.toml)")
-        Text("expected issuer_key_hash ${d.expected.issuerKeyHashHex}", style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace)
-        Text("expected nonce ${d.expected.nonceHex}", style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace)
-        Text("expiry ${d.expected.expiry}", style = MaterialTheme.typography.bodySmall)
+        Text("Inputs derived (${d.witness.size} witness values, ${d.proverToml.length} chars of Prover.toml)")
+        Text("expected issuer_key_hash ${d.issuerKeyHashHex}", style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace)
+        Text("expected nonce ${d.nonceHex}", style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace)
+        Text("expiry ${d.expiry}", style = MaterialTheme.typography.bodySmall)
     }
     Row { Checkbox(vm.lowMemory, { vm.lowMemory = it }); Text("Low memory mode (file backed polynomials, slower)", Modifier.padding(top = 12.dp)) }
     Button(onClick = { vm.prove() }, enabled = !vm.busy && d != null && vm.proof == null) { Text(if (vm.busy) "Proving..." else "Prove on this device") }
     vm.proof?.let { p ->
         Spacer(Modifier.height(8.dp))
         Text("Proof ${p.proofHex.length / 2} bytes, ${p.publicInputsHex.size} public inputs", style = MaterialTheme.typography.titleSmall)
-        Text("witness ${p.witnessMs} ms, prove ${p.proveMs} ms, wall ${p.wallMs} ms")
+        Text("execute ${p.witnessMs} ms, prove ${p.proveMs} ms, wall ${p.wallMs} ms")
         Text("peak RSS ${p.peakRssBytes / 1_000_000} MB (VmHWM), low memory ${p.lowMemory}")
         Text("on-device verify: ${p.verifiedOnDevice}")
         Text("over18 ${p.decoded.over18}, expiry ${p.decoded.expiry}", style = MaterialTheme.typography.bodySmall)

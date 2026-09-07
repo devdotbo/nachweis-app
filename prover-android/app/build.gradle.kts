@@ -62,7 +62,7 @@ dependencies {
     implementation(libs.okhttp)
     implementation(libs.zxing.core)
     implementation(libs.kotlinx.coroutines.android)
-    // uniffi generated bindings load the Rust cdylib through JNA
+    // mopro/uniffi generated bindings (uniffi.mopro) load libprover_mobile_core.so through JNA
     implementation("${libs.jna.get()}@aar")
     testImplementation(libs.junit)
     testImplementation("org.json:json:20240303")

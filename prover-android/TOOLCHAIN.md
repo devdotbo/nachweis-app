@@ -1,94 +1,44 @@
-# Toolchain decision: Noir 1.0.0-beta.21 + bb 5.0.0-nightly.20260324 on Android
+# Android toolchain notes
 
-## The problem
+The proving core and its toolchain decision live in `../prover-mobile-core`
+(`TOOLCHAIN.md` there: Noir crates at `v1.0.0-beta.21`, `barretenberg-rs
+=5.0.0-nightly.20260324`, mopro-ffi 0.3.7 for the uniffi scaffolding and the
+platform build entry points, no noir-rs since no branch matches beta.21).
 
-The reference app `eid-privacy/zkp-android` pins
-`noir_rs = { git = "https://github.com/zkmopro/noir-rs", branch = "v1.0.0-beta.8-3" }`
-(Noir 1.0.0-beta.8, bb `1.0.0-nightly.20250723` built from source inside the
-`bb` crate). Our circuit `circuits/pid-sdjwt/target/pid_sdjwt.json` is
-compiled with nargo 1.0.0-beta.21 and the desktop VK, proof fixtures and the
-Solidity verifier `contracts/src/noir/PidSdJwtUltraHonkVerifier.sol` come from
-bb 5.0.0-nightly.20260324 (`bbup -nv 1.0.0-beta.21`). A proof made on the
-phone must verify with that VK, so the phone needs the same proving system
-version, not just "a" bb.
+Android specifics, measured on this Mac (2026-09-07):
 
-## Option (a), chosen: build on Noir beta.21 crates and barretenberg-rs, no noir-rs
-
-State of zkmopro/noir-rs at 2026-09-07 (`git ls-remote`): branches
-`v1.0.0-beta.3-2`, `v1.0.0-beta.7-4`, `v1.0.0-beta.8-3`, `upgrade-noir-beta19`,
-`main`; tags `v1.0.0-beta.3`, `v1.0.0-beta.8`, `v1.0.0-beta.19`. Nothing for
-beta.21. `main` (= beta.19) no longer builds bb itself; it depends on the
-crates.io crate `barretenberg-rs = "=4.2.0-aztecnr-rc.2"` (features `ffi`),
-which downloads a prebuilt `libbb-external.a` per target from
-`https://github.com/AztecProtocol/barretenberg/releases/download/v<version>/barretenberg-static-<arch>.tar.gz`
-(arch: arm64-android, x86_64-android, arm64-darwin, ...).
-
-The same crate exists as `barretenberg-rs = "=5.0.0-nightly.20260324"`
-(published 2026-03-24, 516 versions on crates.io) and the matching GitHub
-release carries `barretenberg-static-arm64-android.tar.gz` and
-`barretenberg-static-x86_64-android.tar.gz` (checked with `curl -I`, HTTP 200).
-So instead of forking noir-rs, `prover-mobile-core` is a small crate that
-does what noir-rs `main` does, pinned to our versions:
-
-| piece | version | why |
+| piece | version | note |
 | --- | --- | --- |
-| `acvm`, `bn254_blackbox_solver`, `nargo`, `noirc_abi` | git `noir-lang/noir` tag `v1.0.0-beta.21` | the compiler that produced the artifact; ACIR and witness serialisation formats match what nargo writes and bb reads |
-| `barretenberg-rs` | `=5.0.0-nightly.20260324`, `default-features = false`, `features = ["ffi"]` | the bb the desktop VK / Solidity verifier come from; FFI (static) backend, msgpack API `circuit_prove`, `circuit_verify`, `srs_init_srs` |
-| `uniffi` | 0.29 (proc macros, library mode bindgen) | Kotlin bindings without mopro-ffi (mopro-ffi 0.3.x pins its own noir) |
-| Rust | 1.92.0 (noir beta.21 asks for 1.89) | |
-| NDK | 27.0.12077973, API 30 (`cargo ndk -t arm64-v8a -p 30`) | NDK 29 in the SDK directory is an unfinished download |
+| NDK | 29.0.13599879 (LLVM 20) | required by the prebuilt Barretenberg library, see below |
+| cargo-ndk | installed via `cargo install cargo-ndk`; mopro's `cargo run --bin android` calls `cargo ndk -t arm64-v8a build --link-libcxx-shared --lib --release` | |
+| Rust | 1.92.0, targets `aarch64-linux-android` (`x86_64-linux-android` optional) | |
+| AGP / Kotlin / Gradle | 8.13.2 / 2.2.21 (compose plugin) / 9.1.0 | JDK 17 (`JAVA_HOME`) |
+| JNA | 5.17.0 (`@aar`) | what the uniffi Kotlin bindings load the .so with |
+| minSdk / target | 30 / 35 | |
 
-What the core does (`prover-mobile-core/src/lib.rs`):
+## libc++: NDK 27 links, NDK 29 runs
 
-1. `Format::Toml.parse(prover_toml, &abi)` + `abi.encode` (noirc_abi) exactly
-   as `nargo execute` does with `Prover.toml`;
-2. `nargo::ops::execute_program` with `Bn254BlackBoxSolver` (the P-256 ECDSA
-   and SHA-256 blackboxes), `WitnessStack::serialize` then gunzip;
-3. bytecode = base64 decode + gunzip of the artifact's `bytecode` field,
-   passed raw (no re-serialisation);
-4. `circuit_prove(CircuitInput{bytecode, verification_key: <desktop vk>}, witness, ProofSystemSettings{oracle_hash_type: "keccak", disable_zk: false, ipa_accumulation: false, optimized_solidity_verifier: false})`,
-   which is `bb prove -t evm` (keccak transcript, ZK on; `circuits/README.md`);
-5. SRS: `srs_init_srs(g1, 2^20 + 1 points, g2)` from files bundled in the app
-   (`~/.bb-crs/bn254_g1.dat` slice, 64 MB; the circuit is 2^20 gates).
+`libbb-external.a` for arm64-android is built with Zig clang 20.1.2. Linked
+with NDK 27 (LLVM 18) the app's `libprover_mobile_core.so` builds, but on the
+device `dlopen` fails:
 
-## Outcome
+    cannot locate symbol "_ZTTNSt3__119basic_ostringstreamIcNS_11char_traitsIcEENS_9allocatorIcEEEE"
+    referenced by ".../lib/arm64/libprover_mobile_core.so"
 
-- Host (Apple M3 Max, `cargo test --release` in `prover-mobile-core/`): witness 0.28 s,
-  proof 3.5 s (5.9 s cold), peak RSS 2.1 GB, proof 10,304 B, 86 public inputs.
-  The proof file verifies with the desktop binary:
-  `bb verify -k circuits/pid-sdjwt/out/adapted/vk -p prover-mobile-core/target/host-proof/proof -i prover-mobile-core/target/host-proof/public_inputs -t evm`
-  -> "Proof verified successfully", and `public_inputs` is byte-identical to
-  the desktop `bb prove` output. So the crate pair reproduces the desktop
-  proving system; the VK hash `c0d55f4d...5018` in
-  `contracts/test/fixtures/noir/vk_hash.bin` is the one the app ships.
-- Android arm64: `cargo ndk -t arm64-v8a -p 30 build --release` links
-  `libbb-external.a` (arm64-android) without changes; the resulting
-  `libnachweis_prover.so` is 16 MB and needs `libc++_shared.so` from the NDK
-  next to it (barretenberg-rs emits `rustc-link-lib=dylib=c++`). The emulator
-  result is in `README.md`.
+(VTT of `std::basic_ostringstream`; also `basic_istringstream`,
+`basic_stringstream` vtables). NDK 27's `libc++_shared.so` does not export
+them, NDK 29's does. `scripts/build-rust.sh` therefore defaults to
+`$ANDROID_HOME/ndk/29.*` and ships NDK 29's `libc++_shared.so` in
+`jniLibs/arm64-v8a` next to the core. NDK 29 was installed with
+`sdkmanager --install "ndk;29.0.13599879"` (the SDK's `ndk/29.0.13599879`
+directory was an unfinished Android Studio download before).
 
-Build errors hit on the way: one, `to_be_bytes` on `FieldElement` needs
-`use acvm::AcirField` (trait method). No patching of any dependency.
+## Earlier Android-side core (superseded)
 
-## Option (b), not taken: recompile the circuit for beta.8
-
-Not attempted because (a) worked without a fork. It would also have meant a
-different VK, a regenerated Solidity verifier and a second circuit build in
-the repo. For the record, the blockers it would have met: `noir_base64
-v0.5.0` and `sha256 v0.3.0` are beta.19+ era libraries (the upstream
-`zkp-pocs` pins the same beta.21 pair through devbox), and the reference
-app's `bb` crate builds Barretenberg from source (`cc`), which is slow on a
-laptop and has no prebuilt Android binary.
-
-## Things to know
-
-- `barretenberg-rs` downloads the static library at build time with `curl`;
-  offline builds need `BB_LIB_DIR` pointing at an unpacked
-  `libbb-external.a`.
-- bb's low-memory mode (`BB_SLOW_LOW_MEMORY`, file-backed polynomials) is
-  exposed as a toggle (`prove_pid_sdjwt(..., low_memory = true)`); it is off
-  by default.
-- The Rust core never computes the VK on the phone (`compute_vk` exists for a
-  one-off check; it needs about 1.4 GB on the desktop). The bundled
-  `pid_sdjwt_evm.vk` must be regenerated with every circuit change, together
-  with the Solidity verifier.
+Before the shared core existed, this branch carried its own uniffi crate on
+the same crate pair (commit c5a2174, moved to `prover-mobile-core` in
+491c2c4, replaced by the wp12-ios core in 74b58f2). Its host proof of the
+committed vector verified with the desktop `bb verify -t evm` and the desktop
+VK, with byte-identical public inputs, which is what settled the crate pair;
+the adopted core reproduces that (`prover-mobile-core/TOOLCHAIN.md`,
+"Verified on the desktop").

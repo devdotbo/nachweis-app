@@ -73,3 +73,19 @@ accepts the core's proof (10,304 bytes). See `tests/prove_desktop.rs`.
 - mopro-ffi 0.3.7, uniffi as pinned by mopro-ffi
 - Xcode 26.6 (17F113), iOS SDK 26.5, simulator runtime iOS 18.5, deployment target iOS 17.0
 - Android: same crate with `IOS_ARCHS` replaced by `ANDROID_ARCHS` (arm64-android static lib exists for this bb tag; not built here)
+
+## Android: the prebuilt Barretenberg library needs LLVM 20's libc++ (NDK 29)
+
+`barretenberg-static-arm64-android.tar.gz` (v5.0.0-nightly.20260324) is built
+with `clang version 20.1.2 (zig-bootstrap)` (`strings libbb-external.a`). It
+references libc++ symbols that only LLVM 19+/20 export from `libc++_shared.so`,
+for example the VTT and vtable of `std::basic_ostringstream`,
+`basic_istringstream` and `basic_stringstream`
+(`_ZTTNSt3__119basic_ostringstreamIcNS_11char_traitsIcEENS_9allocatorIcEEEE`).
+With NDK 27 (LLVM 18) the .so links, but `dlopen` on the phone fails with
+"cannot locate symbol ..." (seen on the API 35 arm64 emulator). NDK 29
+(29.0.13599879, LLVM 20) exports them. So: build with `ANDROID_NDK_HOME`
+pointing at NDK 29 and ship that NDK's `libc++_shared.so` next to
+`libprover_mobile_core.so` (mopro's Android build passes
+`--link-libcxx-shared` to cargo-ndk, which copies it into jniLibs).
+iOS is unaffected (libc++ comes with the OS).
