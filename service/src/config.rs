@@ -30,10 +30,17 @@ pub struct Config {
     pub expected_vct: String,
     /// KB-JWT audience the statement expects (EXPECTED_AUD, default https://self-issued.me/v2).
     pub expected_aud: String,
+    /// Require an EIP-191 signature from the bound address before attest (REQUIRE_ADDRESS_PROOF, default true).
+    pub require_address_proof: bool,
+    /// Allowed CORS origins (CORS_ORIGINS, comma separated). Unset or "*" allows any origin.
+    pub cors_origins: Option<Vec<String>>,
     /// Issuer P-256 key, SEC1 uncompressed hex (ISSUER_KEY_SEC1_HEX). When unset the key is
     /// taken from the x5c leaf certificate in the issuer JWT header.
     pub issuer_key_sec1: Option<Vec<u8>>,
 }
+
+/// Default policy: keccak256("nachweis.pid.over18.v1") = 0xd27260f1ca509ba75dea6cd27b2985a96e423550e16db3350d2945e215e3d05f.
+pub const DEFAULT_POLICY: &str = "nachweis.pid.over18.v1";
 
 fn env_opt(name: &str) -> Option<String> {
     std::env::var(name).ok().filter(|s| !s.trim().is_empty())
@@ -59,7 +66,7 @@ impl Config {
             Some(a) => Some(a.parse::<Address>().context("REGISTRY")?),
             None => None,
         };
-        let policy_id = parse_policy_id(&env_opt("POLICY_ID").unwrap_or_else(|| "nachweis-demo-policy".into()))?;
+        let policy_id = parse_policy_id(&env_opt("POLICY_ID").unwrap_or_else(|| DEFAULT_POLICY.into()))?;
         let proof_mode = env_opt("PROOF_MODE").unwrap_or_else(|| "mock".into()).parse()?;
         let prover_artifacts = env_opt("PROVER_ARTIFACTS")
             .map(PathBuf::from)
@@ -68,6 +75,13 @@ impl Config {
             Some(h) => Some(hex::decode(h.trim_start_matches("0x")).context("ISSUER_KEY_SEC1_HEX")?),
             None => None,
         };
+        let require_address_proof = match env_opt("REQUIRE_ADDRESS_PROOF").as_deref() {
+            None => true,
+            Some(v) => !matches!(v.to_ascii_lowercase().as_str(), "0" | "false" | "no" | "off"),
+        };
+        let cors_origins = env_opt("CORS_ORIGINS")
+            .filter(|v| v.trim() != "*")
+            .map(|v| v.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect());
         Ok(Self {
             bind,
             rpc_url: env_opt("RPC_URL"),
@@ -80,6 +94,8 @@ impl Config {
             prover_elf: env_opt("PROVER_ELF").map(PathBuf::from),
             expected_vct: env_opt("EXPECTED_VCT").unwrap_or_else(|| "urn:eudi:pid:de:1".into()),
             expected_aud: env_opt("EXPECTED_AUD").unwrap_or_else(|| "https://self-issued.me/v2".into()),
+            require_address_proof,
+            cors_origins,
             issuer_key_sec1,
         })
     }
