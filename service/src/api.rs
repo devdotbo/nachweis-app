@@ -8,7 +8,7 @@ use crate::statement;
 use crate::verifier::VerifierClient;
 use alloy::primitives::{Address, U256};
 use axum::extract::{Path, State as AxState};
-use axum::http::StatusCode;
+use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
@@ -75,6 +75,7 @@ pub fn router(state: Shared) -> Router {
         .route("/health", get(health))
         .route("/sessions", post(create_session))
         .route("/sessions/:id", get(get_session))
+        .route("/sessions/:id/handoff", get(handoff))
         .route("/sessions/:id/presentation", post(post_presentation))
         .route("/sessions/:id/address-proof", post(address_proof))
         .route("/sessions/:id/noir-proof", post(noir_proof))
@@ -196,6 +197,77 @@ fn spawn_poller(st: Shared, id: Uuid, verifier_session: String) {
 async fn get_session(AxState(st): AxState<Shared>, Path(id): Path<String>) -> Result<Json<Value>, AppError> {
     let id = parse_session_id(&id)?;
     with_session(&st, id, |s| Json(s.to_json()))
+}
+
+/// How long a handoff stays valid after session creation: the verifier-mode poller gives the
+/// wallet the same ten minutes.
+pub const HANDOFF_TTL_SECS: u64 = 600;
+
+/// RFC 3986 percent-encoding of everything outside the unreserved set (for the nachweis:// URI).
+fn percent_encode(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for b in s.bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => out.push(b as char),
+            _ => out.push_str(&format!("%{b:02X}")),
+        }
+    }
+    out
+}
+
+/// Everything the phone prover needs to join this session. The compact form goes into the QR
+/// the browser shows: `{v:1, s:session_id, a:bound_address, c:challenge_hex, r:verifier_url, b:bridge_url}`.
+pub fn handoff_json(session: &Session, verifier_url: Option<&str>, bridge_url: &str) -> Value {
+    let challenge_hex = hex::encode(session.challenge);
+    let address = format!("{:#x}", session.bound_address);
+    let expires_at = session.created_at + HANDOFF_TTL_SECS;
+    let mut uri = format!(
+        "nachweis://handoff?v=1&s={}&a={}&c={}&b={}",
+        session.id,
+        address,
+        challenge_hex,
+        percent_encode(bridge_url)
+    );
+    if let Some(r) = verifier_url {
+        uri.push_str(&format!("&r={}", percent_encode(r)));
+    }
+    json!({
+        "session_id": session.id,
+        "bound_address": address,
+        "challenge_hex": challenge_hex,
+        "nonce": session.nonce_hex,
+        "verifier_url": verifier_url,
+        "bridge_url": bridge_url,
+        "expires_at": expires_at,
+        "address_verified": session.address_verified,
+        "state": session.state,
+        "uri": uri,
+    })
+}
+
+/// Two-device flow: the browser bound the session to its wallet, the phone proves. The phone has
+/// no Ethereum key, so it must join THIS session (same challenge, hence the same nonce in the
+/// KB-JWT) and post its noir-proof here. Only while the session still waits for a presentation.
+async fn handoff(AxState(st): AxState<Shared>, Path(id): Path<String>, headers: HeaderMap) -> Result<Json<Value>, AppError> {
+    let id = parse_session_id(&id)?;
+    let session = with_session(&st, id, |s| s.clone())?;
+    if !matches!(session.state, State::Created | State::Presented) {
+        return Err(conflict(format!("session is {:?}, handoff is only available while created or presented", session.state).to_lowercase()));
+    }
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+    if now > session.created_at + HANDOFF_TTL_SECS {
+        return Err(conflict("handoff expired"));
+    }
+    let verifier_url = st.cfg.handoff_verifier_url.clone().or_else(|| st.cfg.verifier_url.clone());
+    let bridge_url = match &st.cfg.handoff_bridge_url {
+        Some(u) => u.clone(),
+        None => {
+            let host = headers.get("host").and_then(|h| h.to_str().ok()).unwrap_or("127.0.0.1");
+            let scheme = headers.get("x-forwarded-proto").and_then(|h| h.to_str().ok()).unwrap_or("http");
+            format!("{scheme}://{host}")
+        }
+    };
+    Ok(Json(handoff_json(&session, verifier_url.as_deref(), &bridge_url)))
 }
 
 #[derive(Deserialize)]

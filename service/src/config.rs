@@ -44,6 +44,12 @@ pub struct Config {
     /// must lie within the window ahead of now and `iat` must not be older than the window.
     /// `None` (env value 0) disables the check; only for stored fixtures whose KB-JWT is stale.
     pub kb_jwt_window_secs: Option<u64>,
+    /// Verifier (blind relay) base URL the phone prover should call, as advertised by
+    /// `GET /sessions/:id/handoff` (HANDOFF_VERIFIER_URL; falls back to VERIFIER_URL).
+    pub handoff_verifier_url: Option<String>,
+    /// This bridge's base URL as reachable from the phone (HANDOFF_BRIDGE_URL; falls back to the
+    /// scheme and Host of the request that fetched the handoff).
+    pub handoff_bridge_url: Option<String>,
 }
 
 /// Default KB-JWT freshness window (10 minutes): sandbox wallets mint KB-JWTs with exp = iat + 300.
@@ -120,6 +126,8 @@ impl Config {
             cors_origins,
             issuer_key_sec1,
             kb_jwt_window_secs,
+            handoff_verifier_url: env_opt("HANDOFF_VERIFIER_URL").map(|u| u.trim_end_matches('/').to_string()),
+            handoff_bridge_url: env_opt("HANDOFF_BRIDGE_URL").map(|u| u.trim_end_matches('/').to_string()),
         })
     }
 
