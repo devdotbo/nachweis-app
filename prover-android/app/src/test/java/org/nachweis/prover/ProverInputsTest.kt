@@ -4,6 +4,7 @@ import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.nachweis.prover.circuit.CircuitBounds
 import org.nachweis.prover.circuit.ProverInputs
 import java.io.File
 
@@ -12,6 +13,9 @@ class ProverInputsTest {
         javaClass.classLoader!!.getResourceAsStream(name)!!.bufferedReader().readText()
 
     private fun vector(): JSONObject = JSONObject(resource("input.json"))
+
+    /** Bounds from the artifact the app ships (working directory of unit tests is app/). */
+    private val bounds: CircuitBounds by lazy { CircuitBounds.fromArtifact(File("src/main/assets/pid_sdjwt.json").inputStream()) }
 
     /** Comment lines differ (tool name, input path); every input line must be identical. */
     private fun body(toml: String): List<String> = toml.lines().filter { it.isNotBlank() && !it.startsWith("#") }
@@ -24,6 +28,7 @@ class ProverInputsTest {
             issuerKeySec1Hex = v.getString("issuer_key_sec1_hex"),
             boundAddressHex = v.getString("bound_address_hex"),
             challengeHex = v.getString("challenge_hex"),
+            bounds = bounds,
             expectedAud = v.getString("expected_aud"),
         )
         val expected = body(resource("Prover.expected.toml"))
@@ -43,7 +48,7 @@ class ProverInputsTest {
         val v = vector()
         val bad = "00" + v.getString("challenge_hex").removePrefix("0x").drop(2)
         val e = runCatching {
-            ProverInputs.derive(v.getString("presentation"), v.getString("issuer_key_sec1_hex"), v.getString("bound_address_hex"), bad)
+            ProverInputs.derive(v.getString("presentation"), v.getString("issuer_key_sec1_hex"), v.getString("bound_address_hex"), bad, bounds)
         }.exceptionOrNull()
         assertTrue(e is ProverInputs.DerivationException)
         assertTrue(e!!.message!!.contains("nonce"))
@@ -53,7 +58,7 @@ class ProverInputsTest {
     fun rejectsWrongSubject() {
         val v = vector()
         val e = runCatching {
-            ProverInputs.derive(v.getString("presentation"), v.getString("issuer_key_sec1_hex"), "0x0000000000000000000000000000000000000001", v.getString("challenge_hex"))
+            ProverInputs.derive(v.getString("presentation"), v.getString("issuer_key_sec1_hex"), "0x0000000000000000000000000000000000000001", v.getString("challenge_hex"), bounds)
         }.exceptionOrNull()
         assertTrue(e is ProverInputs.DerivationException)
     }
@@ -72,17 +77,20 @@ class ProverInputsTest {
     }
 
     @Test
-    fun constantsMatchConstantsNr() {
-        // Runs only inside the repository checkout; keeps the Kotlin limits aligned with the circuit.
+    fun boundsFromArtifactMatchConstantsNr() {
+        // Runs only inside the repository checkout: the shipped artifact must be the circuit's current build.
         val f = File("../../circuits/pid-sdjwt/src/constants.nr")
         if (!f.exists()) return
         val src = f.readText()
         fun c(name: String) = Regex("pub global $name: u32 = (\\d+);").find(src)!!.groupValues[1].toInt()
-        assertEquals(c("HEADER_B64_MAX"), ProverInputs.HEADER_B64_MAX)
-        assertEquals(c("PAYLOAD_MAX_LEN"), ProverInputs.PAYLOAD_MAX_LEN)
-        assertEquals(c("TAIL_MAX"), ProverInputs.TAIL_MAX)
-        assertEquals(c("KB_PAYLOAD_MAX"), ProverInputs.KB_PAYLOAD_MAX)
-        assertEquals(c("SALT_MAX_LEN"), ProverInputs.SALT_MAX_LEN)
-        assertEquals(c("MAX_AGE_ENTRIES"), ProverInputs.MAX_AGE_ENTRIES)
+        assertEquals(c("HEADER_B64_MAX"), bounds.headerB64Max)
+        assertEquals(c("PAYLOAD_MAX_LEN"), bounds.payloadMax)
+        assertEquals(c("TAIL_MAX"), bounds.tailMax)
+        assertEquals(c("KB_PAYLOAD_MAX"), bounds.kbPayloadMax)
+        assertEquals(c("SALT_MAX_LEN"), bounds.saltMax)
+        assertEquals(c("MAX_AGE_ENTRIES"), bounds.maxAgeEntries)
+        assertEquals(c("B64_64_LEN"), bounds.issuerSigB64Len)
+        assertEquals(20, bounds.subjectLen)
+        assertEquals(32, bounds.challengeLen)
     }
 }

@@ -13,6 +13,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
+import org.nachweis.prover.circuit.CircuitBounds
 import org.nachweis.prover.circuit.IssuerKey
 import org.nachweis.prover.circuit.ProverInputs
 import org.nachweis.prover.circuit.PublicInputs
@@ -56,6 +57,8 @@ class FlowViewModel(app: Application) : AndroidViewModel(app) {
     var bridgeUrl by mutableStateOf("http://10.0.2.2:8787")
     var boundAddress by mutableStateOf("0xf99edde971f4e9c88715a79ca78963284a2955dc")
     var issuerKeyOverrideHex by mutableStateOf("")
+    var expectedAud by mutableStateOf(ProverInputs.DEFAULT_AUD)
+    private val bounds: CircuitBounds by lazy { CircuitBounds.fromArtifact(getApplication<Application>().assets.open("pid_sdjwt.json")) }
     var challengeHex by mutableStateOf(""); private set
     private var keyPair: KeyPair? = null
     var relaySession by mutableStateOf<RelayClient.Session?>(null); private set
@@ -195,6 +198,7 @@ class FlowViewModel(app: Application) : AndroidViewModel(app) {
             boundAddress = v.getString("bound_address_hex")
             challengeHex = v.getString("challenge_hex").removePrefix("0x")
             issuerKeyOverrideHex = v.getString("issuer_key_sec1_hex")
+            expectedAud = v.optString("expected_aud", ProverInputs.DEFAULT_AUD)
             presentation = v.getString("presentation")
             presentationSource = "bundled test vector (synthetic PID, prover-sp1/fixtures/input.json)"
             claims = ProverInputs.disclosedClaims(v.getString("presentation"))
@@ -209,10 +213,11 @@ class FlowViewModel(app: Application) : AndroidViewModel(app) {
     private suspend fun toProveBlocking() {
         val pres = presentation ?: throw IllegalStateException("no presentation")
         val issuerKey = issuerKeyOverrideHex.trim().ifEmpty { IssuerKey.fromPresentationX5c(pres) }
-        val d = ProverInputs.derive(pres, issuerKey, boundAddress.trim(), challengeHex)
+        val b = bounds
+        val d = ProverInputs.derive(pres, issuerKey, boundAddress.trim(), challengeHex, b, expectedAud.trim())
         withContext(Dispatchers.Main) {
             derived = d; step = Step.PROVE
-            logLine("inputs derived: nonce ${d.expected.nonceHex.take(16)}..., expiry ${d.expected.expiry}")
+            logLine("inputs derived (bounds header ${b.headerB64Max}, payload ${b.payloadMax}, tail ${b.tailMax}, kb ${b.kbPayloadMax}): nonce ${d.expected.nonceHex.take(16)}..., expiry ${d.expected.expiry}")
         }
     }
 

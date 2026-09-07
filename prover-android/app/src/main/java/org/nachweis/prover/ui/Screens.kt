@@ -64,6 +64,7 @@ fun SessionScreen(vm: FlowViewModel) {
     OutlinedTextField(vm.verifierUrl, { vm.verifierUrl = it }, label = { Text("Verifier (blind relay) URL") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
     OutlinedTextField(vm.bridgeUrl, { vm.bridgeUrl = it }, label = { Text("Bridge URL (submission)") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
     OutlinedTextField(vm.boundAddress, { vm.boundAddress = it }, label = { Text("Bound Ethereum address") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+    OutlinedTextField(vm.expectedAud, { vm.expectedAud = it }, label = { Text("KB-JWT aud pinned by the circuit") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
     OutlinedTextField(vm.issuerKeyOverrideHex, { vm.issuerKeyOverrideHex = it }, label = { Text("Issuer key SEC1 hex (optional, default: x5c leaf)") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
     Spacer(Modifier.height(8.dp))
     Button(onClick = { vm.requestPresentation() }, enabled = !vm.busy) { Text("Request presentation") }
