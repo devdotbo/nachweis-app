@@ -14,6 +14,7 @@ Input: the customer presents an SD-JWT credential from an EU Digital Identity Wa
 - `service/`: bridge between the Rust verifier and the registry operator key (to be added).
 - `app/`: issuer and customer front end (to be added).
 - `circuits/`: zero-knowledge circuits and verifier glue (to be added).
+- `companion/`: desktop companion prover (bun CLI): picks up the blind-relayed, encrypted wallet response, decrypts and proves the PID statement locally with `circuits/pid-sdjwt`, submits the proof; the verifier and the bridge never see the presentation. See `companion/README.md`.
 - `docs/`: design notes.
 
 ## Uniswap
