@@ -3,6 +3,8 @@
  * verifier outcome, runs the prover and sends attestWithProof with the operator
  * key. The investor never sends a transaction.
  *
+ *   POST /sessions {bound_address} -> {session_id, nonce, openid4vp_uri?, request_uri?, mode, address_proof_message}
+ *        (when VITE_BRIDGE_URL is set; the bridge creates the presentation request at the verifier itself)
  *   POST /sessions/:id/address-proof {signature}   EIP-191 signature of "nachweis:session:<id>"
  *   GET  /sessions/:id -> {state: created|presented|verified|proving|proved|attested|failed, tx_hash?, detail?}
  *
@@ -28,6 +30,68 @@ export interface BridgeClient {
   getSession(sessionId: string): Promise<BridgeSession>
 }
 
+/** Public values the bridge decodes from the prover output once the presentation is verified. */
+export interface BridgePublicValues {
+  issuer_key_hash: string
+  vct_hash: string
+  over18: number
+  subject: string
+  expiry: number
+  nonce: string
+}
+
+/** The bridge's own view of a session, `GET /sessions/:id`, as far as the app reads it. */
+export interface BridgeSessionRaw {
+  state: BridgeState
+  detail?: string
+  error?: string
+  address_verified?: boolean
+  openid4vp_uri?: string | null
+  request_uri?: string | null
+  public_values?: BridgePublicValues | null
+  tx_hash?: string | null
+  updated_at?: string
+}
+
+export interface BridgeCreated {
+  sessionId: string
+  nonce: string
+  openid4vpUri?: string
+  requestUri?: string
+  mode: 'verifier' | 'local'
+}
+
+/** `POST /sessions {bound_address}`: the bridge derives the nonce from the address, creates the verifier request (verifier mode) and binds the session to the address. */
+export async function createBridgeSession(boundAddress: Address): Promise<BridgeCreated> {
+  const res = await fetch(`${BRIDGE_URL}/sessions`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', accept: 'application/json' },
+    body: JSON.stringify({ bound_address: boundAddress }),
+  })
+  if (!res.ok) throw new Error(`bridge ${res.status}: ${(await res.text().catch(() => '')) || 'session creation failed'}`)
+  const body = (await res.json()) as Record<string, unknown>
+  const id = String(body.session_id ?? '')
+  if (!id) throw new Error('bridge: POST /sessions returned no session_id')
+  return {
+    sessionId: id,
+    nonce: String(body.nonce ?? ''),
+    openid4vpUri: typeof body.openid4vp_uri === 'string' && body.openid4vp_uri !== '' ? body.openid4vp_uri : undefined,
+    requestUri: typeof body.request_uri === 'string' && body.request_uri !== '' ? body.request_uri : undefined,
+    mode: body.mode === 'local' ? 'local' : 'verifier',
+  }
+}
+
+/** `GET /sessions/:id` as the bridge returns it; `state: created` for an unknown id (404). */
+export async function fetchBridgeSession(sessionId: string): Promise<BridgeSessionRaw> {
+  const res = await fetch(`${BRIDGE_URL}/sessions/${encodeURIComponent(sessionId)}`, { headers: { accept: 'application/json' } })
+  if (res.status === 404) return { state: 'created' }
+  if (!res.ok) throw new Error(`bridge ${res.status}: ${await res.text().catch(() => '')}`)
+  const body = (await res.json()) as Record<string, unknown>
+  const raw = String(body.state ?? body.status ?? 'created')
+  const state = (BRIDGE_STATES as readonly string[]).includes(raw) ? (raw as BridgeState) : 'created'
+  return { ...(body as Omit<BridgeSessionRaw, 'state'>), state }
+}
+
 export function sessionMessage(sessionId: string): string {
   return `nachweis:session:${sessionId}`
 }
@@ -48,15 +112,10 @@ const httpClient: BridgeClient = {
     if (!res.ok) throw new Error(`bridge ${res.status}: ${(await res.text().catch(() => '')) || 'address proof rejected'}`)
   },
   async getSession(sessionId) {
-    const res = await fetch(`${BRIDGE_URL}/sessions/${encodeURIComponent(sessionId)}`, { headers: { accept: 'application/json' } })
-    if (res.status === 404) return { state: 'created' }
-    if (!res.ok) throw new Error(`bridge ${res.status}: ${await res.text().catch(() => '')}`)
-    const body = (await res.json()) as Record<string, unknown>
-    const raw = String(body.state ?? body.status ?? 'created')
-    const state = (BRIDGE_STATES as readonly string[]).includes(raw) ? (raw as BridgeState) : 'created'
-    const tx = (body.tx_hash ?? body.txHash ?? body.attest_tx) as string | undefined
-    const detail = (body.detail ?? body.message ?? body.error) as string | undefined
-    return { state, txHash: tx && /^0x[0-9a-fA-F]{64}$/.test(tx) ? (tx as Hex) : undefined, detail }
+    const body = await fetchBridgeSession(sessionId)
+    const tx = body.tx_hash ?? undefined
+    const detail = body.detail ?? body.error ?? undefined
+    return { state: body.state, txHash: tx && /^0x[0-9a-fA-F]{64}$/.test(tx) ? (tx as Hex) : undefined, detail }
   },
 }
 
