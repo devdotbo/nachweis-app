@@ -116,12 +116,11 @@ SP1 statement accept the first two, the circuit accepted only the first):
 | --- | --- | --- | --- |
 | HEADER_B64_MAX | 2048 | 2304 | 1855 chars (two-cert x5c) + 24 % |
 | PAYLOAD_MAX_LEN (raw) | 1024 | 2304 | 1708 bytes (objects disclosable) + 35 %, covers the decoy layout (2122) |
-| TAIL_MAX | 512 | 512 | 220 bytes with long names; 3 disclosures |
+| TAIL_MAX | 512 | 768 | 220 bytes with long names; 630 with the disclosed age object (shape B) |
 | KB_PAYLOAD_MAX (raw) | 320 | 384 | 228 bytes with the x509_hash aud + room for extra claims |
 | KB_HEADER_MAX (raw), new | (constant 30) | 128 | 56 bytes with kid |
 | AGE_OBJ_DISC_MAX (raw), new | (unsupported) | 512 | 332 bytes nested age object disclosure + 54 % |
-| AGE_WINDOW (bytes scanned inside the age `_sd` array), new | 8 x 46 stride | 384 | 8 digests at 47 bytes (with a space after the comma) |
-| SD_WINDOW (bytes scanned inside the top-level `_sd` array), new | - | 1280 | 27 digests |
+| age `_sd` array length | 8 entries at a 46 byte stride | unlimited | prefix counts instead of a window scan |
 | CNF_WINDOW (x, y after `"cnf":{"jwk":{`) | 128 | 256 | a long kid before x |
 | SALT_MAX_LEN | 32 | 32 | 22 chars for 16-byte salts |
 
@@ -137,9 +136,10 @@ SP1 statement accept the first two, the circuit accepted only the first):
 4. Age object in shapes A, B, C (section 3): inputs `age_obj_disclosed`, `age_leaf_disclosed`,
    `age_obj_disclosure` (raw, max 512), `sd_offset`, `age_obj_digest_offset`,
    `age_sd_offset`, `age_target_offset`. The fixed 46-byte stride and `age_digest_index` are
-   replaced by an absolute target offset plus a scan that no `]` or `}` occurs between the
-   array (or object) start and the target, so the digest (or `"18":true`) is inside the age
-   container regardless of whitespace or digest length.
+   replaced by an absolute target offset plus prefix counts of `]` and `}` over the buffer:
+   none may occur between the array (or object) start and the target, so the digest (or
+   `"18":true`) is inside the age container regardless of whitespace, digest order or array
+   length (no window limit; the AGE_WINDOW / SD_WINDOW bounds of section 4 were dropped).
 5. `x` and `y` may lie up to 256 bytes after `"cnf":{"jwk":{`.
 6. SHA-256 prefix sharing: the signing input `header.payload` is hashed once up to its last
    full block (`partial_sha256_var_interstitial`); the issuer-signature hash and the sd_hash
@@ -151,8 +151,36 @@ nonce 32.
 
 ## 6. Results
 
-Filled in after the change; see the measurements table in `/circuits/README.md` for the full
-before/after comparison.
+| | before (minted vector) | after (realistic vector) |
+| --- | --- | --- |
+| ACIR opcodes | 135,831 | 255,170 |
+| UltraHonk circuit_size | 894,846 (2^20) | 1,038,584 (2^20, 10 k headroom) |
+| `nargo compile` | 12.6 s | 15.7 s, 1.69 GB |
+| `nargo execute` | 0.6 s | 0.9 s, 226 MB |
+| `bb write_vk` (evm) | 1.7 s | 2.0 s, 1.80 GB |
+| `bb prove` (evm, 16 threads) | 6.0 s wall, 25.8 s user, 1.84 GB (re-measured the same day; 3.5 s on the earlier run) | 4.0 s wall, 26.2 s user, 2.25 GB |
+| `bb prove` (HARDWARE_CONCURRENCY=1) | 18.5 s | 19.7 s |
+| vector | header 1855, payload 739, tail 186, KB payload 200, no kid | header 2138, payload 1563 (23 claims, nested age/address/place_of_birth, status), tail 186, KB payload 228, KB header 58 with kid |
+
+Intermediate steps: the first version with per-position window scans was 1,049,932 gates
+(1,356 over 2^20); the prefix-count anchoring brought it to 1,011,444; TAIL_MAX 512 to 768 for
+shape B (630 byte tail) to 1,038,584. All negative tests pass (issuer-sig, age-disclosure, nonce,
+kb-sig rejected), shapes B and C and the minimal no-kid layout solve, `nargo test` 9 pass,
+`forge test` 87 pass 10 skipped (NoirPidVerifier suite 21, attestWithProof 3.02 M gas), service
+`cargo test --test anvil` 2 pass, companion `bun test` 17 pass, and the companion end-to-end run
+with the stand-in wallet (relay verifier, anvil, bridge) attested on chain in 5.9 s (bb prove
+4.19 s).
+
+The realistic vector is `prover-sp1/fixtures/realistic-input.json` / `realistic-over18.sdjwt`,
+minted by `companion mint-fixture` with the SP1 fixture's subject and challenge (nonce unchanged),
+a fresh holder key and the companion test issuer key (self-signed two-certificate x5c, about 580
+DER bytes each). The SP1 fixture (`input.json`, `calldata-groth16.json`, `vkey.txt`) stays the
+older, shorter vector: the SP1 statement did not change, so its Groth16 proof is still valid,
+and the mock anvil test compares the bridge's native public values with that calldata. The
+ERICA capture `erica-vp-VALID.sdjwt` cannot run through the circuit (no age disclosure, UUID
+nonce, literal aud); its issuer signature verifies natively against the x5c leaf key, which is
+what `companion prove` and `gen-prover.ts` do for a real credential (companion test "x5c leaf
+is the signer").
 
 ## 7. Still unverified until a real phone run
 

@@ -184,8 +184,8 @@ Pinned values for the fixture (`test/fixtures/noir`, same PID vector as the SP1 
 
 | name | value |
 |---|---|
-| HonkVerifier `VK_HASH` | `0x096a8d359df7ea9127936b2702dbec9f2c6cddf467d682d5ff01ec9d1380ee14` (constant in the generated file, equals `bb write_vk` `vk_hash`) |
-| issuerKeyHash = sha256(issuer P-256 key, SEC1 uncompressed) | `0x78cf23963b47d3e393c79ea091c4ed80ebbae4ff78992058dd92fd34e1635183` (synthetic sandbox issuer) |
+| HonkVerifier `VK_HASH` | `0x24a16511ee04bb295ce6eab6e21c7847f23c3d342234bd07d3d7940634de7da6` (constant in the generated file, equals `bb write_vk` `vk_hash`) |
+| issuerKeyHash = sha256(issuer P-256 key, SEC1 uncompressed) | `0xb52359580c14e2d79d34605740d86338adc6a0868a22ec648d1896187813fd26` (companion test issuer of the realistic Noir vector; a real deployment pins the sandbox issuer's key, see `circuits/pid-sdjwt/REALISM.md`) |
 | policyId (default in the deploy script) | `keccak256("nachweis.pid.over18.v1")` |
 
 The circuit pins `vct` (`urn:eudi:pid:de:1`) as a constant, so there is no `vctHash` to pin here. The issuer key hash is the trust anchor, as for the SP1 adapter; the x5c chain is not checked anywhere.
