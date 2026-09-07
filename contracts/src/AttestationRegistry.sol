@@ -25,6 +25,7 @@ contract AttestationRegistry is IEligibility, Ownable {
     error PolicyIdZero();
     error NoDecision(address subject, bytes32 policyId);
     error DecisionRevoked(address subject, bytes32 policyId);
+    error NonceConsumed(bytes32 policyId, bytes32 nonce);
 
     // ---------------------------------------------------------------------
     // Events
@@ -55,6 +56,9 @@ contract AttestationRegistry is IEligibility, Ownable {
 
     /// @dev subject => policyId => decision
     mapping(address => mapping(bytes32 => Decision)) private _decisions;
+
+    /// @dev keccak256(abi.encode(policyId, nonce)) => consumed. Proof-path replay protection, see attestWithProof.
+    mapping(bytes32 => bool) public nonceConsumed;
 
     /// @notice Number of public inputs the proof path binds. See attestWithProof.
     uint256 public constant PUBLIC_INPUTS_LENGTH = 4;
@@ -118,6 +122,10 @@ contract AttestationRegistry is IEligibility, Ownable {
     ///
     /// A revoked decision cannot be reopened through this path (a valid proof could otherwise be
     /// replayed to undo a revoke); only an operator can re-attest after revoke.
+    ///
+    /// Replay: if the verifier reports a non-zero nonce for the proof (IProofVerifier.nonceOf), that
+    /// nonce is consumed for this policyId before verification and a second submission reverts with
+    /// NonceConsumed. Verifiers without a nonce return bytes32(0) and skip this check.
     function attestWithProof(
         address subject,
         Decision calldata decision,
@@ -134,6 +142,12 @@ contract AttestationRegistry is IEligibility, Ownable {
         if (publicInputs[2] != bytes32(decision.bits)) revert PublicInputMismatch(2);
         if (publicInputs[3] != bytes32(uint256(decision.expiry))) revert PublicInputMismatch(3);
         if (_decisions[subject][decision.policyId].revoked) revert DecisionRevoked(subject, decision.policyId);
+        bytes32 nonce = verifier.nonceOf(proof);
+        if (nonce != bytes32(0)) {
+            bytes32 key = keccak256(abi.encode(decision.policyId, nonce));
+            if (nonceConsumed[key]) revert NonceConsumed(decision.policyId, nonce);
+            nonceConsumed[key] = true;
+        }
         if (!verifier.verify(proof, publicInputs)) revert InvalidProof();
         _store(subject, decision);
     }

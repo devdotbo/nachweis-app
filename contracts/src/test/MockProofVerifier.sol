@@ -18,4 +18,9 @@ contract MockProofVerifier is IProofVerifier {
     function verify(bytes calldata, bytes32[] calldata) external view returns (bool) {
         return result;
     }
+
+    /// @dev Proof bytes are the nonce (first 32 bytes) when at least 32 bytes long, else no nonce.
+    function nonceOf(bytes calldata proof) external pure returns (bytes32) {
+        return proof.length >= 32 ? bytes32(proof[:32]) : bytes32(0);
+    }
 }

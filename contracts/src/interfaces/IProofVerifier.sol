@@ -10,4 +10,10 @@ interface IProofVerifier {
     /// @param publicInputs Public inputs, layout documented in AttestationRegistry.attestWithProof.
     /// @return True if the proof is valid for the given public inputs.
     function verify(bytes calldata proof, bytes32[] calldata publicInputs) external view returns (bool);
+
+    /// @notice Replay nonce carried by the proof, or bytes32(0) if the proving system has none.
+    ///         The registry consumes a non-zero nonce once per policyId, so the same proof cannot be
+    ///         submitted twice (tier and statusRef are not proof-bound, replay could rewrite them).
+    /// @dev Pure decode only, must not depend on chain state. Reverts on malformed proof bytes.
+    function nonceOf(bytes calldata proof) external pure returns (bytes32);
 }
