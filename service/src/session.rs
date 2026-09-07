@@ -56,6 +56,8 @@ pub struct Session {
     pub request_uri: Option<String>,
     pub state: State,
     pub error: Option<String>,
+    /// The bound address signed "nachweis:session:<id>" (EIP-191).
+    pub address_verified: bool,
     /// The presentation as handed to the bridge (server mode). Never serialized.
     pub presentation: Option<String>,
     pub public_values: Option<Vec<u8>>,
@@ -75,11 +77,12 @@ fn now() -> u64 {
 }
 
 impl Session {
-    pub fn new(bound_address: Address, challenge: [u8; 32]) -> Self {
+    /// `id` is the verifier session id in verifier mode so the front end polls one id everywhere.
+    pub fn new(id: Uuid, bound_address: Address, challenge: [u8; 32]) -> Self {
         let nonce = nachweis_pid_lib::nonce_commitment(&bound_address.0 .0, &challenge);
         let t = now();
         Self {
-            id: Uuid::new_v4(),
+            id,
             bound_address,
             challenge,
             nonce,
@@ -89,6 +92,7 @@ impl Session {
             request_uri: None,
             state: State::Created,
             error: None,
+            address_verified: false,
             presentation: None,
             public_values: None,
             decoded: None,
@@ -113,13 +117,40 @@ impl Session {
         self.set_state(State::Failed);
     }
 
+    /// One human-readable line for the front end.
+    pub fn detail(&self) -> String {
+        match self.state {
+            State::Created => {
+                if self.verifier_session.is_some() { "waiting for the wallet".into() } else { "waiting for the presentation".into() }
+            }
+            State::Presented => "checking the presentation".into(),
+            State::Verified => match &self.decoded {
+                Some(d) => format!("statement verified, over18={}", d.over18 == 1),
+                None => "statement verified".into(),
+            },
+            State::Proving => "generating proof".into(),
+            State::Proved => match (&self.proof_system, self.cycles) {
+                (Some(s), Some(c)) => format!("proof ready ({s}, {}k cycles)", c / 1000),
+                (Some(s), None) => format!("proof ready ({s})"),
+                _ => "proof ready".into(),
+            },
+            State::Attested => match self.tx_hash {
+                Some(h) => format!("attested in {h}"),
+                None => "attested".into(),
+            },
+            State::Failed => self.error.clone().unwrap_or_else(|| "failed".into()),
+        }
+    }
+
     /// JSON view. The presentation and the raw challenge never leave the process here;
     /// the challenge is returned once, by POST /sessions.
     pub fn to_json(&self) -> serde_json::Value {
         serde_json::json!({
             "session_id": self.id,
             "state": self.state,
+            "detail": self.detail(),
             "error": self.error,
+            "address_verified": self.address_verified,
             "bound_address": self.bound_address,
             "nonce": self.nonce_hex,
             "verifier_session": self.verifier_session,

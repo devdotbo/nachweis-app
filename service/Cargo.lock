@@ -3761,6 +3761,7 @@ dependencies = [
  "sha2",
  "sp1-sdk",
  "tokio",
+ "tower-http",
  "tracing",
  "tracing-subscriber",
  "uuid",

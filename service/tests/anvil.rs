@@ -4,8 +4,9 @@
 //! Skips (passes with a message) when `anvil` is not on PATH or the contracts are not built and
 //! `forge` is unavailable. Never touches a network other than the anvil it starts.
 use alloy::primitives::{keccak256, Address, U256};
+use alloy::signers::{local::PrivateKeySigner, Signer};
 use alloy::sol_types::SolValue;
-use nachweis_bridge::chain::{creation_code_from_artifact, status_ref, Chain};
+use nachweis_bridge::chain::{address_proof_message, creation_code_from_artifact, status_ref, Chain};
 use nachweis_bridge::prover::ProofMode;
 use nachweis_bridge::{router, AppState, Config};
 use std::net::TcpListener;
@@ -111,7 +112,8 @@ async fn mock_pipeline_attests_and_revokes_on_anvil() {
     wait_rpc(&rpc).await;
 
     // --- deploy and configure ---
-    let policy_id = keccak256(b"nachweis-demo-policy");
+    let policy_id = keccak256(b"nachweis.pid.over18.v1");
+    assert_eq!(format!("{policy_id}"), "0xd27260f1ca509ba75dea6cd27b2985a96e423550e16db3350d2945e215e3d05f");
     let mut chain = Chain::connect(&rpc, ANVIL_KEY0, Address::ZERO).await.unwrap();
     let owner = chain.operator;
     let reg_code = creation_code_from_artifact(&std::fs::read_to_string(artifact("AttestationRegistry")).unwrap()).unwrap();
@@ -140,12 +142,60 @@ async fn mock_pipeline_attests_and_revokes_on_anvil() {
         expected_vct: input.expected_vct.clone(),
         expected_aud: input.expected_aud.clone(),
         issuer_key_sec1: Some(hex::decode(&input.issuer_key_sec1_hex).unwrap()),
+        // The fixture address has no known key, so the pipeline instance runs without the address proof.
+        require_address_proof: false,
+        cors_origins: None,
     };
+    let strict_cfg = Config { require_address_proof: true, ..cfg.clone() };
     let state = Arc::new(AppState::new(cfg, Some(chain.clone())));
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}", listener.local_addr().unwrap());
     tokio::spawn(async move { axum::serve(listener, router(state)).await.unwrap() });
     let http = reqwest::Client::new();
+
+    // 0. Address proof on a strict instance: wrong signer 401, right signer sets address_verified.
+    let strict = Arc::new(AppState::new(strict_cfg, Some(chain.clone())));
+    let strict_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let strict_base = format!("http://{}", strict_listener.local_addr().unwrap());
+    tokio::spawn(async move { axum::serve(strict_listener, router(strict)).await.unwrap() });
+    let holder = PrivateKeySigner::random();
+    let created: serde_json::Value = http
+        .post(format!("{strict_base}/sessions"))
+        .json(&serde_json::json!({ "bound_address": holder.address() }))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let strict_id: uuid::Uuid = created["session_id"].as_str().unwrap().parse().unwrap();
+    assert_eq!(created["address_proof_message"], format!("nachweis:session:{strict_id}"));
+    let wrong = PrivateKeySigner::random().sign_message(address_proof_message(strict_id).as_bytes()).await.unwrap();
+    let r = http
+        .post(format!("{strict_base}/sessions/{strict_id}/address-proof"))
+        .json(&serde_json::json!({ "signature": format!("0x{}", hex::encode(wrong.as_bytes())) }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 401);
+    let right = holder.sign_message(address_proof_message(strict_id).as_bytes()).await.unwrap();
+    let r: serde_json::Value = http
+        .post(format!("{strict_base}/sessions/{strict_id}/address-proof"))
+        .json(&serde_json::json!({ "signature": format!("0x{}", hex::encode(right.as_bytes())) }))
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(r["address_verified"], true);
+    let s: serde_json::Value = http.get(format!("{strict_base}/sessions/{strict_id}")).send().await.unwrap().json().await.unwrap();
+    assert_eq!(s["address_verified"], true);
+    assert_eq!(s["state"], "created");
+    assert_eq!(s["detail"], "waiting for the presentation");
+    assert_eq!(http.get(format!("{strict_base}/sessions/{}", uuid::Uuid::new_v4())).send().await.unwrap().status(), 404);
 
     // 1. session with the fixture's address and challenge: nonce must match the fixture KB-JWT.
     let created: serde_json::Value = http
@@ -177,6 +227,8 @@ async fn mock_pipeline_attests_and_revokes_on_anvil() {
         .await
         .unwrap();
     assert_eq!(presented["status"], "proved", "{presented}");
+    let st: serde_json::Value = http.get(format!("{base}/sessions/{sid}")).send().await.unwrap().json().await.unwrap();
+    assert_eq!(st["detail"], "proof ready (mock-groth16)");
     assert_eq!(presented["public_values_hex"], calldata["publicValues"]);
     assert_eq!(presented["proof_hex"], calldata["proof"]);
     assert_eq!(presented["vkey"], calldata["vkey"]);
@@ -230,6 +282,8 @@ async fn mock_pipeline_attests_and_revokes_on_anvil() {
     assert_eq!(d.bits, U256::from(3));
     let st: serde_json::Value = http.get(format!("{base}/sessions/{sid}")).send().await.unwrap().json().await.unwrap();
     assert_eq!(st["state"], "attested");
+    assert_eq!(st["address_verified"], false);
+    assert!(st["detail"].as_str().unwrap().starts_with("attested in 0x"));
     assert!(st.get("presentation").is_none());
 
     // 4. revoke closes the decision; the proof path cannot reopen it.

@@ -1,17 +1,18 @@
 //! Ethereum side: AttestationRegistry binding, calldata construction, sending with the operator key.
 use crate::session::AttestedEvent;
 use alloy::network::{EthereumWallet, TransactionBuilder};
-use alloy::primitives::{keccak256, Address, Bytes, B256, U256};
+use alloy::primitives::{keccak256, Address, Bytes, Signature, B256, U256};
 use alloy::providers::{DynProvider, Provider, ProviderBuilder};
 use alloy::rpc::types::{TransactionReceipt, TransactionRequest};
 use alloy::signers::local::PrivateKeySigner;
 use alloy::sol;
-use alloy::sol_types::{SolEvent, SolValue};
+use alloy::sol_types::{SolEvent, SolInterface, SolValue};
 use anyhow::{anyhow, Context, Result};
 use uuid::Uuid;
 
 sol! {
     #[sol(rpc)]
+    #[derive(Debug)]
     contract AttestationRegistry {
         struct Decision {
             bytes32 policyId;
@@ -21,6 +22,15 @@ sol! {
             bytes32 statusRef;
             bool revoked;
         }
+        error NotOperator(bytes32 policyId, address caller);
+        error VerifierUnset(bytes32 policyId);
+        error InvalidProof();
+        error PublicInputsLength(uint256 got, uint256 want);
+        error PublicInputMismatch(uint256 index);
+        error PolicyIdZero();
+        error NoDecision(address subject, bytes32 policyId);
+        error DecisionRevoked(address subject, bytes32 policyId);
+        error NonceConsumed(bytes32 policyId, bytes32 nonce);
         event Attested(address indexed subject, bytes32 indexed policyId, uint256 bits, uint8 tier, uint64 expiry, bytes32 statusRef, address indexed attester);
         event Revoked(address indexed subject, bytes32 indexed policyId, address indexed operator);
         function setOperator(bytes32 policyId, address operator, bool enabled) external;
@@ -33,7 +43,54 @@ sol! {
     }
 }
 
+sol! {
+    /// Typed reverts of Sp1PidVerifier (contracts/src/sp1) and the SP1 gateway, for error text only.
+    #[derive(Debug)]
+    interface Sp1Errors {
+        error PublicValuesLength(uint256 got, uint256 want);
+        error IssuerKeyHashMismatch(bytes32 got, bytes32 want);
+        error VctHashMismatch(bytes32 got, bytes32 want);
+        error SubjectMismatch(address got, address want);
+        error PolicyMismatch(bytes32 got, bytes32 want);
+        error BitsMismatch(uint256 got, uint256 want);
+        error ExpiryMismatch(uint64 got, uint64 want);
+        error Expired(uint64 expiry, uint256 blockTimestamp);
+        error WrongVerifierSelector(bytes4 received, bytes4 expected);
+        error RouteNotFound(bytes4 selector);
+        error RouteIsFrozen(bytes4 selector);
+        error ProofInvalid();
+    }
+}
+
 pub use AttestationRegistry::Decision;
+
+/// EIP-191 personal message the bound address signs to prove control of the key.
+pub fn address_proof_message(session_id: Uuid) -> String {
+    format!("nachweis:session:{session_id}")
+}
+
+/// Recover the signer of the address-proof message from a 65-byte signature (hex, 0x optional).
+pub fn recover_address_proof(session_id: Uuid, signature_hex: &str) -> Result<Address> {
+    let bytes = hex::decode(signature_hex.trim().trim_start_matches("0x")).context("signature hex")?;
+    let sig = Signature::try_from(bytes.as_slice()).map_err(|e| anyhow!("signature: {e}"))?;
+    sig.recover_address_from_msg(address_proof_message(session_id).as_bytes())
+        .map_err(|e| anyhow!("signature recovery: {e}"))
+}
+
+/// Error text with the revert decoded when it is a registry, Sp1PidVerifier or gateway error.
+pub fn describe_error(context: &str, e: alloy::contract::Error) -> anyhow::Error {
+    let decoded = e.as_revert_data().and_then(|data| {
+        AttestationRegistry::AttestationRegistryErrors::abi_decode(&data)
+            .map(|r| format!("{r:?}"))
+            .or_else(|_| Sp1Errors::Sp1ErrorsErrors::abi_decode(&data).map(|s| format!("{s:?}")))
+            .ok()
+            .map(|d| format!("{context}: reverted with {d} (data 0x{})", hex::encode(&data)))
+    });
+    match decoded {
+        Some(d) => anyhow!(d),
+        None => anyhow!("{context}: {e}"),
+    }
+}
 
 /// Predicate bits as the SP1 adapter (branch wp2b-sp1-verifier) derives them from the public values.
 pub const BIT_IDENTITY: u64 = 1;
@@ -127,7 +184,7 @@ impl Chain {
             .attestWithProof(subject, decision, proof, inputs)
             .send()
             .await
-            .map_err(|e| anyhow!("attestWithProof send: {e}"))?
+            .map_err(|e| describe_error("attestWithProof", e))?
             .get_receipt()
             .await
             .context("attestWithProof receipt")?;
@@ -142,7 +199,7 @@ impl Chain {
             .attestByOperator(subject, decision)
             .send()
             .await
-            .map_err(|e| anyhow!("attestByOperator send: {e}"))?
+            .map_err(|e| describe_error("attestByOperator", e))?
             .get_receipt()
             .await
             .context("attestByOperator receipt")?;
@@ -157,7 +214,7 @@ impl Chain {
             .revoke(subject, policy_id)
             .send()
             .await
-            .map_err(|e| anyhow!("revoke send: {e}"))?
+            .map_err(|e| describe_error("revoke", e))?
             .get_receipt()
             .await
             .context("revoke receipt")?;
@@ -185,7 +242,7 @@ impl Chain {
             .setOperator(policy_id, operator, enabled)
             .send()
             .await
-            .map_err(|e| anyhow!("setOperator send: {e}"))?
+            .map_err(|e| describe_error("setOperator", e))?
             .get_receipt()
             .await?;
         check_receipt(&receipt)?;
@@ -198,7 +255,7 @@ impl Chain {
             .setVerifier(policy_id, verifier)
             .send()
             .await
-            .map_err(|e| anyhow!("setVerifier send: {e}"))?
+            .map_err(|e| describe_error("setVerifier", e))?
             .get_receipt()
             .await?;
         check_receipt(&receipt)?;
@@ -247,6 +304,17 @@ mod tests {
         let (a, b) = <(Bytes, Bytes)>::abi_decode_params(&enc).unwrap();
         assert_eq!(a.as_ref(), &pv[..]);
         assert_eq!(b.as_ref(), &pr[..]);
+    }
+
+    #[tokio::test]
+    async fn address_proof_roundtrip() {
+        use alloy::signers::{local::PrivateKeySigner, Signer};
+        let signer = PrivateKeySigner::random();
+        let id = Uuid::new_v4();
+        let sig = signer.sign_message(address_proof_message(id).as_bytes()).await.unwrap();
+        let hex_sig = format!("0x{}", hex::encode(sig.as_bytes()));
+        assert_eq!(recover_address_proof(id, &hex_sig).unwrap(), signer.address());
+        assert_ne!(recover_address_proof(Uuid::new_v4(), &hex_sig).unwrap(), signer.address());
     }
 
     #[test]

@@ -16,6 +16,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use std::sync::Arc;
 use std::time::Duration;
+use tower_http::cors::{AllowOrigin, Any, CorsLayer};
 use uuid::Uuid;
 
 pub struct AppState {
@@ -48,6 +49,9 @@ fn bad(m: impl Into<String>) -> AppError {
 fn not_found(m: impl Into<String>) -> AppError {
     AppError(StatusCode::NOT_FOUND, m.into())
 }
+fn unauthorized(m: impl Into<String>) -> AppError {
+    AppError(StatusCode::UNAUTHORIZED, m.into())
+}
 fn conflict(m: impl Into<String>) -> AppError {
     AppError(StatusCode::CONFLICT, m.into())
 }
@@ -59,15 +63,24 @@ fn internal(e: impl std::fmt::Display) -> AppError {
 }
 
 pub fn router(state: Shared) -> Router {
+    let cors = match &state.cfg.cors_origins {
+        None => CorsLayer::new().allow_origin(Any).allow_methods(Any).allow_headers(Any),
+        Some(list) => {
+            let origins: Vec<_> = list.iter().filter_map(|o| o.parse().ok()).collect();
+            CorsLayer::new().allow_origin(AllowOrigin::list(origins)).allow_methods(Any).allow_headers(Any)
+        }
+    };
     Router::new()
         .route("/health", get(health))
         .route("/sessions", post(create_session))
         .route("/sessions/:id", get(get_session))
         .route("/sessions/:id/presentation", post(post_presentation))
+        .route("/sessions/:id/address-proof", post(address_proof))
         .route("/sessions/:id/attest", post(attest))
         .route("/sessions/:id/attest-operator", post(attest_operator))
         .route("/revoke", post(revoke))
         .with_state(state)
+        .layer(cors)
 }
 
 async fn health(AxState(st): AxState<Shared>) -> Json<Value> {
@@ -77,6 +90,7 @@ async fn health(AxState(st): AxState<Shared>) -> Json<Value> {
         "mode": if st.verifier.is_some() { "verifier" } else { "local" },
         "chain": st.chain.as_ref().map(|c| json!({ "registry": c.registry, "operator": c.operator })),
         "policy_id": st.cfg.policy_id,
+        "require_address_proof": st.cfg.require_address_proof,
     }))
 }
 
@@ -109,14 +123,25 @@ async fn create_session(AxState(st): AxState<Shared>, Json(req): Json<CreateSess
         }
         None => rand::thread_rng().fill_bytes(&mut challenge),
     }
-    let mut session = Session::new(req.bound_address, challenge);
-
-    if let Some(v) = &st.verifier {
-        let created = v.create_request(&session.nonce_hex).await.map_err(|e| AppError(StatusCode::BAD_GATEWAY, e.to_string()))?;
+    let nonce_hex = nachweis_pid_lib::nonce_string(&req.bound_address.0 .0, &challenge);
+    // Verifier mode: the verifier's session id becomes the bridge session id, so the app polls one id.
+    let (id, created) = match &st.verifier {
+        Some(v) => {
+            let created = v.create_request(&nonce_hex).await.map_err(|e| AppError(StatusCode::BAD_GATEWAY, e.to_string()))?;
+            let id: Uuid = created
+                .session
+                .parse()
+                .map_err(|_| AppError(StatusCode::BAD_GATEWAY, format!("verifier session id is not a UUID: {}", created.session)))?;
+            (id, Some(created))
+        }
+        None => (Uuid::new_v4(), None),
+    };
+    let mut session = Session::new(id, req.bound_address, challenge);
+    if let Some(created) = created {
         session.verifier_session = Some(created.session.clone());
         session.openid4vp_uri = Some(created.authorization_request.clone());
         session.request_uri = created.request_uri.clone();
-        spawn_poller(st.clone(), session.id, created.session);
+        spawn_poller(st.clone(), id, created.session);
     }
 
     let id = session.id;
@@ -128,6 +153,7 @@ async fn create_session(AxState(st): AxState<Shared>, Json(req): Json<CreateSess
         "openid4vp_uri": session.openid4vp_uri,
         "request_uri": session.request_uri,
         "mode": if st.verifier.is_some() { "verifier" } else { "local" },
+        "address_proof_message": chain::address_proof_message(id),
     });
     st.sessions.lock().map_err(|_| internal("session store poisoned"))?.insert(id, session);
     Ok(Json(out))
@@ -167,6 +193,39 @@ fn spawn_poller(st: Shared, id: Uuid, verifier_session: String) {
 async fn get_session(AxState(st): AxState<Shared>, Path(id): Path<String>) -> Result<Json<Value>, AppError> {
     let id = parse_session_id(&id)?;
     with_session(&st, id, |s| Json(s.to_json()))
+}
+
+#[derive(Deserialize)]
+pub struct AddressProof {
+    pub signature: String,
+}
+
+/// The bound address proves control of its key: EIP-191 signature over "nachweis:session:<id>".
+async fn address_proof(
+    AxState(st): AxState<Shared>,
+    Path(id): Path<String>,
+    Json(req): Json<AddressProof>,
+) -> Result<Json<Value>, AppError> {
+    let id = parse_session_id(&id)?;
+    let bound = with_session(&st, id, |s| s.bound_address)?;
+    let signer = chain::recover_address_proof(id, &req.signature).map_err(|e| bad(e.to_string()))?;
+    if signer != bound {
+        return Err(unauthorized(format!("signature recovers to {signer}, session is bound to {bound}")));
+    }
+    with_session(&st, id, |s| s.address_verified = true)?;
+    Ok(Json(json!({ "session_id": id, "address_verified": true, "signer": signer })))
+}
+
+fn require_address_proof(st: &AppState, session: &Session) -> Result<(), AppError> {
+    if st.cfg.require_address_proof && !session.address_verified {
+        return Err(conflict(format!(
+            "address proof required: POST /sessions/{}/address-proof with an EIP-191 signature over \"{}\" by {}",
+            session.id,
+            chain::address_proof_message(session.id),
+            session.bound_address
+        )));
+    }
+    Ok(())
 }
 
 #[derive(Deserialize)]
@@ -283,6 +342,7 @@ async fn attest(
     if session.state != State::Proved {
         return Err(conflict(format!("session is {:?}, expected proved", session.state).to_lowercase()));
     }
+    require_address_proof(&st, &session)?;
     let pv = session.public_values.clone().ok_or_else(|| internal("no public values"))?;
     let proof = session
         .proof_bytes
@@ -331,6 +391,7 @@ async fn attest_operator(
     if !matches!(session.state, State::Verified | State::Proving | State::Proved | State::Attested) {
         return Err(conflict(format!("session is {:?}, the statement must have verified natively first", session.state).to_lowercase()));
     }
+    require_address_proof(&st, &session)?;
     let d = session.decoded.clone().ok_or_else(|| internal("no decoded public values"))?;
     let bits = match &body.bits {
         Some(b) => U256::from_str_radix(b.trim_start_matches("0x"), 16).map_err(|e| bad(format!("bits: {e}")))?,
