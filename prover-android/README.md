@@ -82,11 +82,20 @@ verifier `http://10.0.2.2:8080`, bridge `http://10.0.2.2:8787`).
    with the bundled desktop VK, verifies on device, shows witness time, proof
    time, wall time and peak RSS (`VmHWM` of the app process). Public inputs
    are decoded and the nonce and subject are compared with the expected ones.
-5. Submit: `POST /sessions` (bound address + the same challenge) on the bridge
-   if no session exists, then `POST /sessions/:id/noir-proof
-   {proof_hex, public_inputs_hex[]}` and polls `GET /sessions/:id` until
-   `attested` or `failed`. "Copy proof JSON" puts the same body on the
-   clipboard for manual submission.
+5. Submit: `POST /sessions` (bound address + the same challenge, so the
+   bridge computes the same nonce) if no bridge session exists, then
+   `POST /sessions/:id/noir-proof {proof_hex, public_inputs_hex[86]}`
+   (`service/src/noir.rs`: decodes the inputs, checks subject, nonce, over18
+   and expiry, dry-runs `NoirPidVerifier.verify`, sends `attestWithProof`,
+   answers `{status: attested, tx_hash}`), then polls `GET /sessions/:id`
+   and shows `state` and `detail`. With `REQUIRE_ADDRESS_PROOF=true` the
+   bridge answers 409 until an EIP-191 address proof was posted for the
+   session; the phone holds no Ethereum key, so for the phone path run the
+   bridge with `REQUIRE_ADDRESS_PROOF=false` or post the address proof from
+   the holder's wallet (`companion submit --wallet-key`) for the same session
+   id, which the app shows. "Copy proof JSON" puts the same body on the
+   clipboard for manual submission (`companion/README.md` has the laptop
+   version of this whole flow).
 
 "Load test presentation" on the Session screen skips 1 to 3 with the bundled
 synthetic vector (address `0xf99e...55dc`, the issuer key override from the
@@ -136,9 +145,8 @@ EMULATOR_RESULTS_PLACEHOLDER
 - No wallet or relay interaction was exercised end to end on a real wallet
   yet; the relay client follows `docs/blind-relay.md` and the JWE code is
   unit tested against RFC 7518 appendix C and a self-encrypted round trip.
-- The bridge endpoint `POST /sessions/:id/noir-proof` is being added on
-  branch wp5-companion; the client implements the agreed shape. Until it is
-  merged, the Submit step answers 404 and "Copy proof JSON" is the way out.
+- The app does not sign the EIP-191 address proof (no Ethereum key on the
+  phone); see step 5 above.
 - x86_64 emulator images are not built by default (`ABIS="arm64-v8a x86_64"
   scripts/build-rust.sh` adds them; barretenberg-rs has a prebuilt
   x86_64-android library).

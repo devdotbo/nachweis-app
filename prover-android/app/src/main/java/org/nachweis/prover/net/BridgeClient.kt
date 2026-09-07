@@ -7,10 +7,10 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /**
- * Bridge (service/) client. `POST /sessions/:id/noir-proof` is the endpoint
- * being added on branch wp5-companion; this client implements the agreed
- * shape `{proof_hex, public_inputs_hex[]}` and polls `GET /sessions/:id`
- * (`state`, `detail`, `tx_hash`) until `attested` or `failed`.
+ * Bridge (service/) client for `POST /sessions/:id/noir-proof`
+ * `{proof_hex, public_inputs_hex[86], tier?}` (service/src/noir.rs), which
+ * attests synchronously; the app then polls `GET /sessions/:id` (`state`,
+ * `detail`, `tx_hash`) to show the result.
  */
 class BridgeClient(private val http: OkHttpClient = RelayClient.defaultClient()) {
     data class SessionState(val state: String, val detail: String, val txHash: String?, val error: String?)
