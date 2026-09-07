@@ -5,16 +5,17 @@
 //   issuer-key | mint-test-presentation   (stand-in for the phone)
 //
 // Progress goes to stderr; the OpenID4VP URI, the QR and JSON results go to stdout.
-import { existsSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { generateP256 } from "./crypto";
-import { answerAsWallet, loadOrCreateIssuerKey } from "./mint";
-import { defaultCircuitDir, prove } from "./prove";
+import { answerAsWallet, loadOrCreateIssuerKey, mintPresentation, type AgeShape } from "./mint";
+import { defaultCircuitDir, prove, repoRoot } from "./prove";
 import { terminalQr } from "./qr";
 import { assertRequestIsOurs, createRelayRequest, fetchRequestObject, pickupResponse, relayStatus } from "./relay";
 import { decryptJwe } from "./crypto";
 import { defaultSessionPath, publicView, readSession, writeSession, type SessionFile } from "./session";
 import { bridgeSession, isEligible, policyIdOf, submitDirect, submitToBridge } from "./submit";
-import { fail, hex, log, nonceOf, nowUnix, parseAddress, random32, setQuiet, sleep, Timeline } from "./util";
+import { fail, fromHex, hex, log, nonceOf, nowUnix, parseAddress, PINNED_AUD, random32, setQuiet, sleep, Timeline } from "./util";
 
 type Flags = Record<string, string | boolean>;
 
@@ -60,7 +61,7 @@ commands
   wait         poll /relay/status until responded     --timeout SECS (600) --interval SECS (2)
   pickup       fetch the JWE once, decrypt it locally  --show (print the presentation; off by default)
   prove        native pre-check, Prover.toml, nargo execute, bb prove -t evm, decode public inputs
-               --kb-window SECS (600, 0 disables)  --aud (https://self-issued.me/v2)  --vct (urn:eudi:pid:de:1)
+               --kb-window SECS (600, 0 disables)  --aud (the pinned client_id, see circuits/pid-sdjwt/REALISM.md)  --vct (urn:eudi:pid:de:1)
                --issuer-key-sec1 HEX (default: x5c leaf)  --circuit-dir DIR  --vk FILE  --no-bb-verify
   submit       POST /sessions/:id/noir-proof to the bridge  --bridge URL (NACHWEIS_BRIDGE_URL, default http://127.0.0.1:8787)
                --wallet-key 0x.. (NACHWEIS_WALLET_KEY, signs the EIP-191 address proof)  --address-proof-signature 0x..  --tier N
@@ -73,9 +74,12 @@ commands
 stand-in for the phone
   issuer-key FILE                 create (if missing) the test issuer key; print its SEC1 hex and sha256 hash
   mint-test-presentation          mint an SD-JWT VC + KB-JWT for the request's nonce, encrypt to its key, POST it
-               --issuer-key FILE  --session FILE | --request-uri URI  --aud (https://self-issued.me/v2)
+               --issuer-key FILE  --session FILE | --request-uri URI  --aud (the pinned client_id)
                --nonce HEX (override, for negative tests)  --no-post (print the JWE only)
-               --given-name NAME  --family-name NAME
+               --given-name NAME  --family-name NAME  --age-shape nested|disclosed|plain  --minimal
+  mint-fixture                    mint the realistic Noir vector (prover-sp1 input.json layout) without a verifier
+               --issuer-key FILE  --out DIR (prover-sp1/fixtures)  --name realistic  --age-shape nested|disclosed|plain
+               --address 0x.. --challenge HEX (defaults: the SP1 fixture's, so subject and nonce stay)  --issuer-exp UNIX
 
 env  NACHWEIS_COMPANION_DIR (default ~/.nachweis-companion), NACHWEIS_SESSION, NACHWEIS_CIRCUIT_DIR, NACHWEIS_VK
 `;
@@ -164,7 +168,7 @@ async function cmdProve(flags: Flags, session: SessionFile, path: string, tl?: T
   const proof = await prove(session, path, {
     issuerKeySec1Hex: str(flags, "issuer-key-sec1", "NACHWEIS_ISSUER_KEY_SEC1_HEX"),
     expectedVct: str(flags, "vct", "NACHWEIS_EXPECTED_VCT", "urn:eudi:pid:de:1")!,
-    expectedAud: str(flags, "aud", "NACHWEIS_EXPECTED_AUD", "https://self-issued.me/v2")!,
+    expectedAud: str(flags, "aud", "NACHWEIS_EXPECTED_AUD", PINNED_AUD)!,
     kbWindowSecs: num(flags, "kb-window", "NACHWEIS_KB_WINDOW_SECS", 600),
     circuitDir: str(flags, "circuit-dir", "NACHWEIS_CIRCUIT_DIR", defaultCircuitDir())!,
     vkPath: str(flags, "vk", "NACHWEIS_VK"),
@@ -213,15 +217,60 @@ async function cmdMint(flags: Flags, tl?: Timeline): Promise<void> {
   const r = await answerAsWallet({
     requestUri,
     issuer,
-    aud: str(flags, "aud", "NACHWEIS_EXPECTED_AUD", "https://self-issued.me/v2")!,
+    aud: str(flags, "aud", "NACHWEIS_EXPECTED_AUD", PINNED_AUD)!,
     nonceOverride: str(flags, "nonce"),
     post: !flags["no-post"],
     givenName: str(flags, "given-name"),
     familyName: str(flags, "family-name"),
+    ageShape: ageShape(flags),
+    minimal: Boolean(flags.minimal),
   });
   tl?.mark("stand-in wallet posted the JWE");
   if (flags["no-post"]) process.stdout.write(r.jwe + "\n");
   else process.stdout.write(JSON.stringify({ posted: r.status, body: r.body }) + "\n");
+}
+
+function ageShape(flags: Flags): AgeShape {
+  const v = str(flags, "age-shape", "NACHWEIS_AGE_SHAPE", "nested")!;
+  if (v !== "nested" && v !== "disclosed" && v !== "plain") fail("--age-shape must be nested, disclosed or plain");
+  return v;
+}
+
+/// The realistic Noir vector: the SP1 fixture's subject and challenge (so nonce and subject stay
+/// what the contract tests pin), a fresh holder key, the persistent test issuer key with its
+/// self-signed x5c leaf. Writes <out>/<name>-input.json and <out>/<name>-over18.sdjwt.
+async function cmdMintFixture(flags: Flags): Promise<void> {
+  const issuer = await loadOrCreateIssuerKey(need(flags, "issuer-key", "NACHWEIS_TEST_ISSUER_KEY"));
+  const out = str(flags, "out") ?? join(repoRoot(), "prover-sp1", "fixtures");
+  const name = str(flags, "name") ?? "realistic";
+  const address = parseAddress(str(flags, "address") ?? "0xf99edde971f4e9c88715a79ca78963284a2955dc");
+  const challenge = fromHex(str(flags, "challenge") ?? "7426bd0ea9dbe592f719371e370251246c99a1838fe3c2bf5646e90221f69df2");
+  if (challenge.length !== 32) fail("--challenge must be 32 bytes");
+  const aud = str(flags, "aud", "NACHWEIS_EXPECTED_AUD", PINNED_AUD)!;
+  const nonce = hex(nonceOf(address, challenge));
+  const { presentation, disclosed } = await mintPresentation({
+    issuer,
+    nonce,
+    aud,
+    ageShape: ageShape(flags),
+    issuerExp: flags["issuer-exp"] ? Number(flags["issuer-exp"]) : 1819756800,
+    minimal: Boolean(flags.minimal),
+  });
+  const input = {
+    presentation,
+    issuer_key_sec1_hex: issuer.sec1_hex,
+    expected_vct: "urn:eudi:pid:de:1",
+    expected_aud: aud,
+    bound_address_hex: "0x" + hex(address),
+    challenge_hex: hex(challenge),
+  };
+  mkdirSync(out, { recursive: true });
+  writeFileSync(join(out, `${name}-input.json`), JSON.stringify(input, null, 2) + "\n");
+  writeFileSync(join(out, `${name}-over18.sdjwt`), presentation + "\n");
+  const issuerJwt = presentation.split("~")[0];
+  const payloadLen = Buffer.from(issuerJwt.split(".")[1], "base64url").length;
+  log(`wrote ${join(out, `${name}-input.json`)} and ${name}-over18.sdjwt: presentation ${presentation.length} chars, issuer payload ${payloadLen} bytes, disclosed ${disclosed.join(", ")}`);
+  process.stdout.write(JSON.stringify({ issuer_key_hash: issuer.issuer_key_hash, nonce: "0x" + nonce, subject: "0x" + hex(address), expiry: flags["issuer-exp"] ? Number(flags["issuer-exp"]) : 1819756800, presentation_chars: presentation.length, payload_bytes: payloadLen }, null, 2) + "\n");
 }
 
 async function main(): Promise<void> {
@@ -272,6 +321,9 @@ async function main(): Promise<void> {
     }
     case "mint-test-presentation":
       await cmdMint(flags);
+      return;
+    case "mint-fixture":
+      await cmdMintFixture(flags);
       return;
     case "run": {
       const tl = new Timeline();
