@@ -5,8 +5,9 @@ use alloy::sol_types::SolType;
 use anyhow::{anyhow, Context, Result};
 use base64::engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD};
 use base64::Engine;
-use nachweis_pid_lib::{prove_statement, GuestInput, PublicValuesStruct};
+use nachweis_pid_lib::{check_kb_freshness, prove_statement_with_facts, GuestInput, PublicValuesStruct};
 use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::time::SystemTime;
 use x509_cert::{der::Decode, Certificate};
 
 /// Issuer public key (SEC1 uncompressed) from the x5c leaf certificate in the issuer JWT header.
@@ -53,17 +54,22 @@ fn panic_message(p: Box<dyn std::any::Any + Send>) -> String {
     }
 }
 
-/// Run the statement natively. The library asserts on every check, so a failure surfaces as a
-/// panic which is caught and returned as the error text.
-pub fn run_native(input: &GuestInput) -> Result<(PublicValuesStruct, Vec<u8>)> {
-    let r = catch_unwind(AssertUnwindSafe(|| prove_statement(input)));
-    match r {
-        Ok(pv) => {
-            let bytes = PublicValuesStruct::abi_encode(&pv);
-            Ok((pv, bytes))
-        }
-        Err(p) => Err(anyhow!("statement failed: {}", panic_message(p))),
+/// Run the statement natively, then the KB-JWT freshness check the guest cannot do (it has no
+/// clock): with `kb_jwt_window_secs = Some(w)` the KB-JWT `exp` must lie in `(now, now + w]` and
+/// `iat` in `[now - w, now + w]`. The library asserts on every check, so a statement failure
+/// surfaces as a panic which is caught and returned as the error text.
+pub fn run_native(input: &GuestInput, kb_jwt_window_secs: Option<u64>) -> Result<(PublicValuesStruct, Vec<u8>)> {
+    let r = catch_unwind(AssertUnwindSafe(|| prove_statement_with_facts(input)));
+    let (pv, facts) = match r {
+        Ok(x) => x,
+        Err(p) => return Err(anyhow!("statement failed: {}", panic_message(p))),
+    };
+    if let Some(window) = kb_jwt_window_secs {
+        let now = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+        check_kb_freshness(&facts, now, window).map_err(|e| anyhow!("KB-JWT freshness: {e}"))?;
     }
+    let bytes = PublicValuesStruct::abi_encode(&pv);
+    Ok((pv, bytes))
 }
 
 pub fn decode_public_values(bytes: &[u8]) -> Result<DecodedPublicValues> {

@@ -37,7 +37,14 @@ pub struct Config {
     /// Issuer P-256 key, SEC1 uncompressed hex (ISSUER_KEY_SEC1_HEX). When unset the key is
     /// taken from the x5c leaf certificate in the issuer JWT header.
     pub issuer_key_sec1: Option<Vec<u8>>,
+    /// KB-JWT freshness window in seconds (KB_JWT_WINDOW_SECS, default 600): the KB-JWT `exp`
+    /// must lie within the window ahead of now and `iat` must not be older than the window.
+    /// `None` (env value 0) disables the check; only for stored fixtures whose KB-JWT is stale.
+    pub kb_jwt_window_secs: Option<u64>,
 }
+
+/// Default KB-JWT freshness window (10 minutes): sandbox wallets mint KB-JWTs with exp = iat + 300.
+pub const DEFAULT_KB_JWT_WINDOW_SECS: u64 = 600;
 
 /// Default policy: keccak256("nachweis.pid.over18.v1") = 0xd27260f1ca509ba75dea6cd27b2985a96e423550e16db3350d2945e215e3d05f.
 pub const DEFAULT_POLICY: &str = "nachweis.pid.over18.v1";
@@ -79,6 +86,13 @@ impl Config {
             None => true,
             Some(v) => !matches!(v.to_ascii_lowercase().as_str(), "0" | "false" | "no" | "off"),
         };
+        let kb_jwt_window_secs = match env_opt("KB_JWT_WINDOW_SECS") {
+            None => Some(DEFAULT_KB_JWT_WINDOW_SECS),
+            Some(v) => match v.trim().parse::<u64>().context("KB_JWT_WINDOW_SECS")? {
+                0 => None,
+                n => Some(n),
+            },
+        };
         let cors_origins = env_opt("CORS_ORIGINS")
             .filter(|v| v.trim() != "*")
             .map(|v| v.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect());
@@ -97,6 +111,7 @@ impl Config {
             require_address_proof,
             cors_origins,
             issuer_key_sec1,
+            kb_jwt_window_secs,
         })
     }
 
