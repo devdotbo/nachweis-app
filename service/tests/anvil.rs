@@ -6,7 +6,7 @@
 use alloy::primitives::{keccak256, Address, U256};
 use alloy::signers::{local::PrivateKeySigner, Signer};
 use alloy::sol_types::SolValue;
-use nachweis_bridge::chain::{address_proof_message, creation_code_from_artifact, status_ref, Chain};
+use nachweis_bridge::chain::{address_proof_message, creation_code_from_artifact, creation_code_linked, status_ref, Chain};
 use nachweis_bridge::prover::ProofMode;
 use nachweis_bridge::{router, AppState, Config};
 use std::net::TcpListener;
@@ -132,6 +132,7 @@ async fn mock_pipeline_attests_and_revokes_on_anvil() {
         rpc_url: Some(rpc.clone()),
         operator_private_key: Some(ANVIL_KEY0.into()),
         registry: Some(registry),
+        noir_verifier: None,
         policy_id,
         verifier_url: None,
         proof_mode: ProofMode::Mock,
@@ -352,3 +353,211 @@ async fn mock_pipeline_attests_and_revokes_on_anvil() {
     assert!(!chain.is_eligible(subject, policy_id, U256::from(1)).await.unwrap());
 }
 
+
+/// The client-side path: a Noir UltraHonk proof made elsewhere (here: the committed bb fixture of
+/// the realistic PID vector, contracts/test/fixtures/noir) is posted to `POST /sessions/:id/noir-proof`;
+/// the bridge binds it to the session, dry-runs NoirPidVerifier.verify, sends attestWithProof
+/// through the real HonkVerifier and reaches `attested`. No presentation ever reaches the bridge.
+#[tokio::test(flavor = "multi_thread")]
+async fn noir_proof_attests_through_noir_pid_verifier_on_anvil() {
+    let Some(anvil) = find_bin("anvil") else {
+        eprintln!("SKIP: anvil not found on PATH");
+        return;
+    };
+    if !ensure_artifacts() {
+        eprintln!("SKIP: contracts/out artifacts missing and forge unavailable");
+        return;
+    }
+    let honk_artifact = repo_root().join("contracts/out/PidSdJwtUltraHonkVerifier.sol/HonkVerifier.json");
+    if !honk_artifact.is_file() || !artifact("NoirPidVerifier").is_file() {
+        eprintln!("SKIP: HonkVerifier / NoirPidVerifier artifacts missing (run forge build in contracts/)");
+        return;
+    }
+
+    // --- fixture: proof, 86 public inputs, and the vector's address + challenge (same as the SP1 fixture) ---
+    let fixtures = repo_root().join("contracts/test/fixtures/noir");
+    let proof = std::fs::read(fixtures.join("proof.bin")).unwrap();
+    let raw_inputs = std::fs::read(fixtures.join("public_inputs.bin")).unwrap();
+    let words: Vec<alloy::primitives::B256> = raw_inputs.chunks(32).map(alloy::primitives::B256::from_slice).collect();
+    assert_eq!(words.len(), 86);
+    let pv = nachweis_bridge::noir::decode_public_inputs(&words).unwrap();
+    let input: InputFile =
+        serde_json::from_str(&std::fs::read_to_string(repo_root().join("prover-sp1/fixtures/realistic-input.json")).unwrap()).unwrap();
+    let subject: Address = input.bound_address_hex.parse().unwrap();
+    assert_eq!(pv.subject, subject);
+    let proof_hex = format!("0x{}", hex::encode(&proof));
+    let inputs_hex: Vec<String> = words.iter().map(|w| format!("{w}")).collect();
+
+    // --- anvil ---
+    let port = free_port();
+    let rpc = format!("http://127.0.0.1:{port}");
+    let child = Command::new(anvil)
+        .args(["--port", &port.to_string(), "--silent"])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("spawn anvil");
+    let _guard = AnvilGuard(child);
+    wait_rpc(&rpc).await;
+
+    // --- deploy registry, HonkVerifier (optimizer_runs 1 artifact, under EIP-170), NoirPidVerifier pinned to the fixture issuer ---
+    let policy_id = keccak256(b"nachweis.pid.over18.v1");
+    let mut chain = Chain::connect(&rpc, ANVIL_KEY0, Address::ZERO).await.unwrap();
+    let owner = chain.operator;
+    let reg_code = creation_code_from_artifact(&std::fs::read_to_string(artifact("AttestationRegistry")).unwrap()).unwrap();
+    // The generated verifier links one external library (ZKTranscriptLib); forge does this at deploy time.
+    let transcript_artifact = repo_root().join("contracts/out/PidSdJwtUltraHonkVerifier.sol/ZKTranscriptLib.json");
+    let transcript_code = creation_code_from_artifact(&std::fs::read_to_string(&transcript_artifact).unwrap()).unwrap();
+    let noir_code = creation_code_from_artifact(&std::fs::read_to_string(artifact("NoirPidVerifier")).unwrap()).unwrap();
+    let registry = chain.deploy(&reg_code, &owner.abi_encode()).await.unwrap();
+    let transcript = chain.deploy(&transcript_code, &[]).await.unwrap();
+    let honk_code = creation_code_linked(&std::fs::read_to_string(&honk_artifact).unwrap(), &[("ZKTranscriptLib", transcript)]).unwrap();
+    let honk = chain.deploy(&honk_code, &[]).await.unwrap();
+    let noir = chain.deploy(&noir_code, &(honk, pv.issuer_key_hash, policy_id).abi_encode_params()).await.unwrap();
+    chain.registry = registry;
+    chain.set_verifier(policy_id, noir).await.unwrap();
+
+    // --- bridge: local mode, no proof mode involved; the Noir path needs no prover artifacts ---
+    let cfg = Config {
+        bind: "127.0.0.1:0".parse().unwrap(),
+        rpc_url: Some(rpc.clone()),
+        operator_private_key: Some(ANVIL_KEY0.into()),
+        registry: Some(registry),
+        noir_verifier: Some(noir),
+        policy_id,
+        verifier_url: None,
+        proof_mode: ProofMode::Mock,
+        prover_artifacts: repo_root().join("prover-sp1/fixtures"),
+        prover_elf: None,
+        expected_vct: input.expected_vct.clone(),
+        expected_aud: input.expected_aud.clone(),
+        issuer_key_sec1: None,
+        require_address_proof: false,
+        cors_origins: None,
+        kb_jwt_window_secs: None,
+    };
+    let strict_cfg = Config { require_address_proof: true, ..cfg.clone() };
+    let state = Arc::new(AppState::new(cfg, Some(chain.clone())));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    tokio::spawn(async move { axum::serve(listener, router(state)).await.unwrap() });
+    let http = reqwest::Client::new();
+    let health: serde_json::Value = http.get(format!("{base}/health")).send().await.unwrap().json().await.unwrap();
+    assert_eq!(health["noir_verifier"].as_str().unwrap().to_lowercase(), format!("{noir:?}"));
+
+    // 1. A session with a fresh challenge: the proof's nonce does not match, 422 before any tx.
+    let other: serde_json::Value = http
+        .post(format!("{base}/sessions"))
+        .json(&serde_json::json!({ "bound_address": subject }))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let other_id = other["session_id"].as_str().unwrap();
+    let r = http
+        .post(format!("{base}/sessions/{other_id}/noir-proof"))
+        .json(&serde_json::json!({ "proof_hex": proof_hex, "public_inputs_hex": inputs_hex }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 422);
+    let err: serde_json::Value = r.json().await.unwrap();
+    assert!(err["error"].as_str().unwrap().contains("nonce"), "{err}");
+
+    // 2. The session that matches the vector: address + challenge give the fixture nonce.
+    let created: serde_json::Value = http
+        .post(format!("{base}/sessions"))
+        .json(&serde_json::json!({ "bound_address": subject, "challenge_hex": input.challenge_hex }))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let sid = created["session_id"].as_str().unwrap().to_string();
+    assert_eq!(created["nonce"].as_str().unwrap(), format!("{}", pv.nonce).trim_start_matches("0x"));
+
+    // 2a. Malformed inputs are 400, a flipped proof byte is a 422 from the verifier dry run, no tx.
+    let r = http
+        .post(format!("{base}/sessions/{sid}/noir-proof"))
+        .json(&serde_json::json!({ "proof_hex": proof_hex, "public_inputs_hex": inputs_hex[..85] }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 400);
+    let mut tampered = proof.clone();
+    tampered[100] ^= 1;
+    let r = http
+        .post(format!("{base}/sessions/{sid}/noir-proof"))
+        .json(&serde_json::json!({ "proof_hex": format!("0x{}", hex::encode(&tampered)), "public_inputs_hex": inputs_hex }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 422, "tampered proof must fail the dry run");
+    let err: serde_json::Value = r.json().await.unwrap();
+    assert!(err["error"].as_str().unwrap().contains("NoirPidVerifier.verify"), "{err}");
+    assert!(!chain.is_eligible(subject, policy_id, U256::from(3)).await.unwrap());
+
+    // 2b. The real proof: dry run passes, attestWithProof runs the HonkVerifier on chain.
+    let attested: serde_json::Value = http
+        .post(format!("{base}/sessions/{sid}/noir-proof"))
+        .json(&serde_json::json!({ "proof_hex": proof_hex, "public_inputs_hex": inputs_hex, "tier": 1 }))
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(attested["status"], "attested", "{attested}");
+    assert_eq!(attested["path"], "noir");
+    assert_eq!(attested["attested"]["bits"], "0x3");
+    assert_eq!(attested["attested"]["expiry"], pv.expiry);
+    assert_eq!(attested["call"]["honk_public_inputs"], 86);
+    assert!(chain.is_eligible(subject, policy_id, U256::from(3)).await.unwrap());
+    let d = chain.decision_of(subject, policy_id).await.unwrap();
+    assert_eq!(d.statusRef, status_ref(sid.parse().unwrap()));
+    assert_eq!(d.expiry, pv.expiry);
+    let st: serde_json::Value = http.get(format!("{base}/sessions/{sid}")).send().await.unwrap().json().await.unwrap();
+    assert_eq!(st["state"], "attested");
+    assert_eq!(st["proof_system"], "noir-ultrahonk");
+    assert_eq!(st["public_values"]["over18"], 1);
+    assert!(st.get("presentation").is_none());
+
+    // 3. Same proof again: the registry consumes the nonce once (NonceConsumed), the session is done anyway.
+    let r = http
+        .post(format!("{base}/sessions/{sid}/noir-proof"))
+        .json(&serde_json::json!({ "proof_hex": proof_hex, "public_inputs_hex": inputs_hex }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 409, "attested session must not accept another proof");
+
+    // 4. With the address proof required, the endpoint refuses until the bound address has signed.
+    let strict = Arc::new(AppState::new(strict_cfg, Some(chain.clone())));
+    let strict_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let strict_base = format!("http://{}", strict_listener.local_addr().unwrap());
+    tokio::spawn(async move { axum::serve(strict_listener, router(strict)).await.unwrap() });
+    let created: serde_json::Value = http
+        .post(format!("{strict_base}/sessions"))
+        .json(&serde_json::json!({ "bound_address": subject, "challenge_hex": input.challenge_hex }))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let strict_id = created["session_id"].as_str().unwrap();
+    let r = http
+        .post(format!("{strict_base}/sessions/{strict_id}/noir-proof"))
+        .json(&serde_json::json!({ "proof_hex": proof_hex, "public_inputs_hex": inputs_hex }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 409);
+    let err: serde_json::Value = r.json().await.unwrap();
+    assert!(err["error"].as_str().unwrap().contains("address proof required"), "{err}");
+}

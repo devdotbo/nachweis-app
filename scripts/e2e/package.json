@@ -1,0 +1,9 @@
+{
+  "name": "nachweis-e2e-wallet",
+  "private": true,
+  "type": "module",
+  "description": "Synthetic wallet for scripts/e2e-local.sh: answers a verifier-service session with a freshly minted SD-JWT PID presentation",
+  "dependencies": {
+    "jose": "^6.0.11"
+  }
+}

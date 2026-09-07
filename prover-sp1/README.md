@@ -7,7 +7,7 @@ SP1 6.1.0 guest and host for the Nachweis statement: an SD-JWT PID presentation 
 - `lib/`: shared verification, runs natively (bridge, host) and in the guest
 - `program/`: SP1 guest, reads `GuestInput`, calls `prove_statement`, commits the ABI-encoded public values
 - `script/`: host binary `nachweis-pid` (`--check-fixture`, `--synth`, `--execute`, `--prove`, `--verify`) and `vkey`
-- `fixtures/`: synthetic vector, `input.json`, proofs, logs, calldata
+- `fixtures/`: synthetic vector, `input.json`, proofs, logs, calldata (the SP1 vector); `realistic-input.json` and `realistic-over18.sdjwt`, the 23-claim vector the Noir circuit and its fixtures use (minted by `companion mint-fixture`, see `circuits/pid-sdjwt/REALISM.md`; the SP1 statement is unchanged, so the SP1 proof stays on the older, shorter vector)
 
 ## What the statement proves
 
