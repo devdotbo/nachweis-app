@@ -68,6 +68,7 @@ export function IssuerPending({ operator, sessions }: { operator?: Address; sess
                 <ClaimRow key={i} label={c.label} value={c.value} strength={c.strength} />
               ))}
             </div>
+            <p className="note">Name match and age verified from the presentation. Sanctions and other checks: simulated in this build.</p>
             {s.note ? <p className="note">{s.note}</p> : null}
             {s.reason ? <p className="note coral">rejected: {s.reason}</p> : null}
             <div className="row">

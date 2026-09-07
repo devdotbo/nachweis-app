@@ -85,6 +85,7 @@ export function StatusCard({ address, session }: { address?: Address; session?: 
         <dd>{decision.revoked ? 'true' : 'false'}</dd>
       </dl>
       {!hasDecision(decision) ? <p className="muted">No decision on chain for this address yet (decisionOf returns zeros).</p> : null}
+      <p className="muted">Checks beyond identity evidence and age are simulated in this build.</p>
     </section>
   )
 }

@@ -1,4 +1,5 @@
-import { MOCK, VERIFIER_MODE } from '../config'
+import { BRIDGE_CONFIGURED, MOCK, VERIFIER_MODE } from '../config'
+import { chain } from '../lib/WalletProvider'
 import type { Role } from '../lib/role'
 import { shortAddress } from '../lib/format'
 import type { Wallet } from '../lib/wallet'
@@ -9,8 +10,8 @@ export function Header({ role, setRole, wallet }: { role: Role; setRole: (r: Rol
       <div className="wordmark">
         Nachweis<span>.</span>
       </div>
-      <span className="tag">Sepolia</span>
-      {MOCK ? <span className="tag mock">mock mode</span> : VERIFIER_MODE === 'relay' ? <span className="tag">blind relay</span> : null}
+      <span className="tag">{MOCK ? 'mock chain' : chain.name}</span>
+      {MOCK ? <span className="tag mock">mock mode</span> : BRIDGE_CONFIGURED ? <span className="tag">bridge</span> : VERIFIER_MODE === 'relay' ? <span className="tag">blind relay</span> : null}
       <div className="spacer" />
       <div className="roles" role="group" aria-label="Role">
         <button type="button" aria-pressed={role === 'investor'} onClick={() => setRole('investor')}>

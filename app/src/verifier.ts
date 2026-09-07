@@ -12,12 +12,20 @@
  *   GET  /relay/status/:id -> {status: pending|responded|picked_up}
  *   GET  /relay/response/:id (X-Pickup-Token) -> {jwe, nonce, received_at}
  *
+ * Mode "bridge" (VITE_BRIDGE_URL set, the real-mode default): the session is
+ * created at the bridge, POST /sessions {bound_address}. The bridge derives the
+ * nonce from the address, creates the OpenID4VP request at the verifier itself
+ * (its verifier mode) or waits for a posted presentation (its local mode), and
+ * GET /sessions/:id reports the outcome. The app never talks to the verifier.
+ * "service" and "relay" are only used when VITE_BRIDGE_URL is unset.
+ *
  * Mode "mock" (VITE_MOCK=1): in-memory sessions with fake delays.
  */
 import { bytesToHex, hexToBytes, type Address, type Hex } from 'viem'
-import { MOCK, VERIFIER_MODE, VERIFIER_URL } from './config'
+import { createBridgeSession, fetchBridgeSession } from './bridge'
+import { BRIDGE_CONFIGURED, MOCK, VERIFIER_MODE, VERIFIER_URL } from './config'
 
-export type VerifierMode = 'service' | 'relay' | 'mock'
+export type VerifierMode = 'bridge' | 'service' | 'relay' | 'mock'
 
 export interface PresentationRequest {
   sessionId: string
@@ -25,7 +33,7 @@ export interface PresentationRequest {
   openid4vpUri: string
   requestUri?: string
   mode: VerifierMode
-  /** Relay mode: nonce the relay derived, and the one computed locally for display. */
+  /** Relay and bridge mode: nonce the server derived (relay: also the one computed locally, for display). */
   nonce?: string
   localNonce?: string
   pickupUrl?: string
@@ -226,6 +234,45 @@ const relayClient: VerifierClient = {
 }
 
 // ---------------------------------------------------------------------------
+// bridge mode: POST /sessions at the bridge, outcome from GET /sessions/:id
+// ---------------------------------------------------------------------------
+
+const bridgeClient: VerifierClient = {
+  mode: 'bridge',
+  async createRequest(boundAddress) {
+    const c = await createBridgeSession(boundAddress)
+    return {
+      sessionId: c.sessionId,
+      // Local bridge mode has no wallet request: the presentation is posted to the bridge by a script.
+      openid4vpUri: c.openid4vpUri ?? '',
+      requestUri: c.requestUri,
+      nonce: c.nonce,
+      mode: 'bridge',
+    }
+  },
+  async status(request) {
+    const s = await fetchBridgeSession(request.sessionId)
+    if (s.state === 'failed') return { state: 'rejected', reason: s.error ?? s.detail ?? 'bridge reported failed' }
+    const pv = s.public_values
+    if (s.state === 'created' || s.state === 'presented' || !pv) return { state: 'pending' }
+    const claims: ClaimLine[] = [
+      { label: 'bound claim: age_over_18', value: pv.over18 === 1 ? 'true' : 'false', strength: 'bound' },
+      { label: 'bound claim: subject', value: pv.subject, strength: 'bound' },
+      { label: 'bound claim: expiry', value: new Date(pv.expiry * 1000).toISOString(), strength: 'bound' },
+      { label: 'issuer path: issuer key hash', value: pv.issuer_key_hash, strength: 'issuer_path' },
+      { label: 'issuer path: vct hash', value: pv.vct_hash, strength: 'issuer_path' },
+      { label: 'nonce', value: pv.nonce, strength: 'bound' },
+    ]
+    return {
+      state: 'presented',
+      claims,
+      receivedAt: s.updated_at,
+      note: 'Public values of the proof statement, from the bridge. The presentation itself stays at the bridge; no name reaches this app.',
+    }
+  },
+}
+
+// ---------------------------------------------------------------------------
 // mock mode
 // ---------------------------------------------------------------------------
 
@@ -267,4 +314,4 @@ const mockClient: VerifierClient = {
   },
 }
 
-export const verifier: VerifierClient = MOCK ? mockClient : VERIFIER_MODE === 'relay' ? relayClient : serviceClient
+export const verifier: VerifierClient = MOCK ? mockClient : BRIDGE_CONFIGURED ? bridgeClient : VERIFIER_MODE === 'relay' ? relayClient : serviceClient

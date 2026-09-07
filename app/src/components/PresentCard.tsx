@@ -88,19 +88,31 @@ export function PresentCard({ wallet, session }: { wallet: Wallet; session?: Ses
         </div>
       ) : null}
       {session?.signatureError ? <p className="err">{session.signatureError}</p> : null}
-      {session && uri ? (
+      {session ? (
         <div className="qr">
-          {qr ? <img src={qr} alt="QR code for the openid4vp request" /> : <div className="empty">rendering QR</div>}
+          {uri ? qr ? <img src={qr} alt="QR code for the openid4vp request" /> : <div className="empty">rendering QR</div> : null}
           <div>
-            <p className="muted">openid4vp link (tap on the phone that holds the wallet)</p>
-            <a className="link" href={uri} style={{ display: 'block', textDecoration: 'none' }}>
-              {uri}
-            </a>
+            {uri ? (
+              <>
+                <p className="muted">openid4vp link (tap on the phone that holds the wallet)</p>
+                <a className="link" href={uri} style={{ display: 'block', textDecoration: 'none' }}>
+                  {uri}
+                </a>
+              </>
+            ) : (
+              <p className="muted">Bridge in local mode: no wallet request. The presentation is posted to the bridge (POST /sessions/{session.request.sessionId}/presentation) by a script.</p>
+            )}
             <dl className="kv" style={{ marginTop: 10 }}>
               <dt>session</dt>
               <dd>{session.request.sessionId}</dd>
               <dt>bound address</dt>
               <dd>{session.boundAddress}</dd>
+              {session.request.mode === 'bridge' && session.request.nonce ? (
+                <>
+                  <dt>nonce (bridge)</dt>
+                  <dd>{session.request.nonce}</dd>
+                </>
+              ) : null}
               {session.request.mode === 'relay' ? (
                 <>
                   <dt>nonce (relay)</dt>
