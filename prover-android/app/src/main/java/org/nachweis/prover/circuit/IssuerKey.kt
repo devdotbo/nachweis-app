@@ -18,6 +18,6 @@ object IssuerKey {
         val pub = cert.publicKey as? ECPublicKey ?: throw IllegalArgumentException("x5c leaf is not an EC key")
         val x = pub.w.affineX.toByteArray().let { if (it.size > 32) it.copyOfRange(it.size - 32, it.size) else ByteArray(32 - it.size) + it }
         val y = pub.w.affineY.toByteArray().let { if (it.size > 32) it.copyOfRange(it.size - 32, it.size) else ByteArray(32 - it.size) + it }
-        return ProverInputs.toHex(byteArrayOf(4) + x + y)
+        return Codec.toHex(byteArrayOf(4) + x + y)
     }
 }

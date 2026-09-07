@@ -13,9 +13,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
-import org.nachweis.prover.circuit.CircuitBounds
-import org.nachweis.prover.circuit.IssuerKey
-import org.nachweis.prover.circuit.ProverInputs
+import org.nachweis.prover.circuit.Codec
 import org.nachweis.prover.circuit.PublicInputs
 import org.nachweis.prover.crypto.EcKeys
 import org.nachweis.prover.crypto.Jwe
@@ -56,9 +54,7 @@ class FlowViewModel(app: Application) : AndroidViewModel(app) {
     var verifierUrl by mutableStateOf("http://10.0.2.2:8080")
     var bridgeUrl by mutableStateOf("http://10.0.2.2:8787")
     var boundAddress by mutableStateOf("0xf99edde971f4e9c88715a79ca78963284a2955dc")
-    var issuerKeyOverrideHex by mutableStateOf("")
-    var expectedAud by mutableStateOf(ProverInputs.DEFAULT_AUD)
-    private val bounds: CircuitBounds by lazy { CircuitBounds.fromArtifact(getApplication<Application>().assets.open("pid_sdjwt.json")) }
+
     var challengeHex by mutableStateOf(""); private set
     private var keyPair: KeyPair? = null
     var relaySession by mutableStateOf<RelayClient.Session?>(null); private set
@@ -73,7 +69,8 @@ class FlowViewModel(app: Application) : AndroidViewModel(app) {
 
     // Prove
     var lowMemory by mutableStateOf(false)
-    var derived by mutableStateOf<uniffi.mopro.DerivedInputs?>(null); private set
+    data class Derived(val toml: String, val issuerKeyHashHex: String, val over18: Boolean, val expiry: Long, val nonceHex: String, val subjectHex: String)
+    var derived by mutableStateOf<Derived?>(null); private set
     var proof by mutableStateOf<ProofSummary?>(null); private set
     var proverVersion by mutableStateOf(""); private set
 
@@ -83,14 +80,9 @@ class FlowViewModel(app: Application) : AndroidViewModel(app) {
 
     init {
         viewModelScope.launch(Dispatchers.IO) {
-            // Touching the bindings loads libprover_mobile_core.so; a dlopen problem shows here, not mid-flow.
-            runCatching { prover.derive("", "", "", "") }
-                .onFailure { e ->
-                    val msg = e.message ?: e.toString()
-                    withContext(Dispatchers.Main) {
-                        proverVersion = if (e is uniffi.mopro.CoreException) "prover-mobile-core loaded (Noir beta.21, bb 5.0.0-nightly.20260324)" else "core not loaded: $msg"
-                    }
-                }
+            // Touching the bindings loads the core .so; a dlopen problem shows here, not mid-flow.
+            runCatching { prover.version() }.onSuccess { v -> withContext(Dispatchers.Main) { proverVersion = v } }
+                .onFailure { e -> withContext(Dispatchers.Main) { proverVersion = "core not loaded: ${e.message}" } }
         }
     }
 
@@ -145,10 +137,10 @@ class FlowViewModel(app: Application) : AndroidViewModel(app) {
         val kp = EcKeys.generate()
         keyPair = kp
         val challenge = EcKeys.randomBytes(32)
-        val ch = ProverInputs.toHex(challenge)
-        val jwk = EcKeys.publicJwk(kp, "prover-" + ProverInputs.toHex(EcKeys.randomBytes(4)))
+        val ch = Codec.toHex(challenge)
+        val jwk = EcKeys.publicJwk(kp, "prover-" + Codec.toHex(EcKeys.randomBytes(4)))
         val s = relay.createRequest(verifierUrl, jwk, boundAddress.trim(), ch)
-        val expectedNonce = ProverInputs.toHex(ProverInputs.sha256(ProverInputs.hex(boundAddress) + challenge))
+        val expectedNonce = Codec.toHex(Codec.sha256(Codec.hex(boundAddress) + challenge))
         if (s.nonce != expectedNonce) throw IllegalStateException("relay nonce ${s.nonce} != sha256(address||challenge) $expectedNonce")
         withContext(Dispatchers.Main) {
             challengeHex = ch; relaySession = s; relayStatus = "pending"; step = Step.WAITING
@@ -187,7 +179,7 @@ class FlowViewModel(app: Application) : AndroidViewModel(app) {
         withContext(Dispatchers.Main) {
             presentation = pres
             presentationSource = "wallet via relay (${dec.header.optString("enc")})"
-            claims = ProverInputs.disclosedClaims(pres)
+            claims = Codec.disclosedClaims(pres)
             step = Step.PICKUP
             logLine("presentation received, ${pres.length} bytes; JWE ${p.jwe.length} bytes")
         }
@@ -203,11 +195,9 @@ class FlowViewModel(app: Application) : AndroidViewModel(app) {
             pollJob?.cancel()
             boundAddress = v.getString("bound_address_hex")
             challengeHex = v.getString("challenge_hex").removePrefix("0x")
-            issuerKeyOverrideHex = v.getString("issuer_key_sec1_hex")
-            expectedAud = v.optString("expected_aud", ProverInputs.DEFAULT_AUD)
             presentation = v.getString("presentation")
-            presentationSource = "bundled test vector (synthetic PID, prover-sp1/fixtures/input.json)"
-            claims = ProverInputs.disclosedClaims(v.getString("presentation"))
+            presentationSource = "bundled test vector (realistic PID, prover-sp1/fixtures/realistic-input.json)"
+            claims = Codec.disclosedClaims(v.getString("presentation"))
             relaySession = null
             step = Step.PICKUP
             logLine("test presentation loaded, ${v.getString("presentation").length} bytes")
@@ -218,22 +208,23 @@ class FlowViewModel(app: Application) : AndroidViewModel(app) {
 
     private suspend fun toProveBlocking() {
         val pres = presentation ?: throw IllegalStateException("no presentation")
-        val issuerKey = issuerKeyOverrideHex.trim().ifEmpty { IssuerKey.fromPresentationX5c(pres) }
-        val b = bounds
-        // Kotlin port (bounds from the artifact ABI, aud from the field) and the Rust port in
-        // prover-mobile-core must agree line by line; the Rust witness is what gets proved.
-        val kt = ProverInputs.derive(pres, issuerKey, boundAddress.trim(), challengeHex, b, expectedAud.trim())
-        val d = prover.derive(pres, issuerKey, boundAddress.trim(), challengeHex)
-        val ktLines = kt.toml.lines().filter { it.isNotBlank() && !it.startsWith("#") }
-        val rsLines = d.proverToml.lines().filter { it.isNotBlank() && !it.startsWith("#") }
-        if (ktLines != rsLines) {
-            val i = ktLines.indices.firstOrNull { it >= rsLines.size || ktLines[it] != rsLines[it] } ?: -1
-            throw IllegalStateException("Kotlin and Rust input derivation differ at line $i (${ktLines.getOrNull(i)?.substringBefore(" = ")})")
-        }
-        if (d.nonceHex != kt.expected.nonceHex) throw IllegalStateException("nonce differs between Kotlin and Rust derivation")
+        // prover-mobile-core derives the inputs (port of gen-prover.ts, issuer key from the x5c leaf),
+        // then the witness is solved once without proving to read the expected public outputs.
+        val toml = prover.derive(pres, boundAddress.trim(), challengeHex)
+        val out = prover.execute(toml)
+        if (out.size != 66) throw IllegalStateException("circuit returned ${out.size} values, expected 66")
+        val issuerKeyHash = Codec.toHex(ByteArray(32) { out[it].last() })
+        val over18 = out[32].last().toInt() == 1
+        val expiry = java.math.BigInteger(1, out[33]).toLong()
+        val nonce = Codec.toHex(ByteArray(32) { out[34 + it].last() })
+        val subjectHex = Codec.toHex(Codec.hex(boundAddress))
+        val expectedNonce = Codec.toHex(Codec.sha256(Codec.hex(boundAddress) + Codec.hex(challengeHex)))
+        if (nonce != expectedNonce) throw IllegalStateException("circuit nonce $nonce != sha256(address||challenge) $expectedNonce")
+        if (!over18) throw IllegalStateException("circuit output over18 is false")
+        val d = Derived(toml, issuerKeyHash, over18, expiry, nonce, subjectHex)
         withContext(Dispatchers.Main) {
             derived = d; step = Step.PROVE
-            logLine("inputs derived (bounds header ${b.headerB64Max}, payload ${b.payloadMax}, tail ${b.tailMax}, kb ${b.kbPayloadMax}; Kotlin and Rust ports agree): witness ${d.witness.size} values, nonce ${d.nonceHex.take(16)}..., expiry ${d.expiry}")
+            logLine("inputs derived (${toml.length} chars), witness solves: issuer_key_hash ${issuerKeyHash.take(16)}..., expiry $expiry, nonce ${nonce.take(16)}...")
         }
     }
 
@@ -245,16 +236,16 @@ class FlowViewModel(app: Application) : AndroidViewModel(app) {
         val points = prover.loadSrs()
         withContext(Dispatchers.Main) { logLine("SRS ready: $points points; proving (lowMemory=$lowMemory)") }
         val t0 = System.nanoTime()
-        val r = prover.prove(d.witness, lowMemory)
+        val r = prover.prove(d.toml, lowMemory)
         val wall = (System.nanoTime() - t0) / 1_000_000
         val decoded = PublicInputs.decode(r.publicInputs)
         if (decoded.nonceHex != d.nonceHex) throw IllegalStateException("public nonce differs from expected")
         if (decoded.subjectHex != d.subjectHex) throw IllegalStateException("public subject differs from expected")
-        if (r.publicInputs.map { ProverInputs.toHex(it) } != d.publicInputsHex) throw IllegalStateException("public inputs differ from the derived expectation")
+        if (decoded.issuerKeyHashHex != d.issuerKeyHashHex || decoded.expiry != d.expiry) throw IllegalStateException("public inputs differ from the executed witness")
         val verified = runCatching { prover.verify(r.proof, r.publicInputs) }.getOrNull()
         val summary = ProofSummary(
-            proofHex = ProverInputs.toHex(r.proof),
-            publicInputsHex = r.publicInputs.map { ProverInputs.toHex(it) },
+            proofHex = Codec.toHex(r.proof),
+            publicInputsHex = r.publicInputs.map { Codec.toHex(it) },
             decoded = decoded,
             witnessMs = r.executeMs.toLong(),
             proveMs = r.proveMs.toLong(),
@@ -269,8 +260,8 @@ class FlowViewModel(app: Application) : AndroidViewModel(app) {
             java.io.File(dir, "proof").writeBytes(r.proof)
             java.io.File(dir, "public_inputs").writeBytes(r.publicInputs.fold(ByteArray(0)) { acc, b -> acc + b })
             java.io.File(dir, "proof.json").writeText(
-                JSONObject().put("proof_hex", "0x" + ProverInputs.toHex(r.proof))
-                    .put("public_inputs_hex", org.json.JSONArray(r.publicInputs.map { "0x" + ProverInputs.toHex(it) })).toString()
+                JSONObject().put("proof_hex", "0x" + Codec.toHex(r.proof))
+                    .put("public_inputs_hex", org.json.JSONArray(r.publicInputs.map { "0x" + Codec.toHex(it) })).toString()
             )
         }
         withContext(Dispatchers.Main) {

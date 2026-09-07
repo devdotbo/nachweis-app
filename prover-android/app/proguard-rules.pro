@@ -1,2 +1,2 @@
--keep class uniffi.mopro.** { *; }
+-keep class org.nachweis.prover.core.** { *; }
 -keep class com.sun.jna.** { *; }

@@ -22,11 +22,11 @@ data class PublicInputs(
             fun byteAt(i: Int): Byte = fields[i].last()
             fun bytesRange(from: Int, count: Int) = ByteArray(count) { byteAt(from + it) }
             return PublicInputs(
-                subjectHex = ProverInputs.toHex(bytesRange(0, 20)),
-                issuerKeyHashHex = ProverInputs.toHex(bytesRange(20, 32)),
+                subjectHex = Codec.toHex(bytesRange(0, 20)),
+                issuerKeyHashHex = Codec.toHex(bytesRange(20, 32)),
                 over18 = byteAt(52).toInt() == 1,
                 expiry = BigInteger(1, fields[53]).toLong(),
-                nonceHex = ProverInputs.toHex(bytesRange(54, 32)),
+                nonceHex = Codec.toHex(bytesRange(54, 32)),
             )
         }
     }

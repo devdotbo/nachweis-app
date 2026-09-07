@@ -64,8 +64,6 @@ fun SessionScreen(vm: FlowViewModel) {
     OutlinedTextField(vm.verifierUrl, { vm.verifierUrl = it }, label = { Text("Verifier (blind relay) URL") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
     OutlinedTextField(vm.bridgeUrl, { vm.bridgeUrl = it }, label = { Text("Bridge URL (submission)") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
     OutlinedTextField(vm.boundAddress, { vm.boundAddress = it }, label = { Text("Bound Ethereum address") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
-    OutlinedTextField(vm.expectedAud, { vm.expectedAud = it }, label = { Text("KB-JWT aud pinned by the circuit") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
-    OutlinedTextField(vm.issuerKeyOverrideHex, { vm.issuerKeyOverrideHex = it }, label = { Text("Issuer key SEC1 hex (optional, default: x5c leaf)") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
     Spacer(Modifier.height(8.dp))
     Button(onClick = { vm.requestPresentation() }, enabled = !vm.busy) { Text("Request presentation") }
     Text("Generates a fresh P-256 key and challenge, posts /relay/request. The verifier never sees the plaintext.", style = MaterialTheme.typography.bodySmall)
@@ -104,7 +102,7 @@ fun PickupScreen(vm: FlowViewModel) {
 fun ProveScreen(vm: FlowViewModel) {
     val d = vm.derived
     if (d != null) {
-        Text("Inputs derived (${d.witness.size} witness values, ${d.proverToml.length} chars of Prover.toml)")
+        Text("Inputs derived (${d.toml.length} chars of Prover.toml), witness solves")
         Text("expected issuer_key_hash ${d.issuerKeyHashHex}", style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace)
         Text("expected nonce ${d.nonceHex}", style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace)
         Text("expiry ${d.expiry}", style = MaterialTheme.typography.bodySmall)
