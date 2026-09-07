@@ -101,7 +101,9 @@ export async function verifyPresentation(input: StatementInput): Promise<Verifie
   if (ageObj) {
     const ageSd: string[] = Array.isArray(ageObj._sd) ? ageObj._sd : [];
     const hit = decoded.find((d) => d.name === "18" && ageSd.includes(d.digest));
-    over18 = hit?.value === true;
+    // Shapes A, B: the "18" leaf is its own disclosure anchored in the object's _sd.
+    // Shape C: the object arrived as one disclosure with plain values (REALISM.md, section 3).
+    over18 = hit ? hit.value === true : ageObj["18"] === true;
   }
 
   // 5. Holder key.

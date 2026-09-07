@@ -95,6 +95,16 @@ export const utcTime = (d: Date): Buffer =>
   tlv(0x17, Buffer.from(d.toISOString().replace(/[-:T]/g, "").slice(2, 14) + "Z", "ascii"));
 export const bitString = (b: Buffer): Buffer => tlv(0x03, Buffer.concat([Buffer.from([0]), b]));
 export const explicit0 = (b: Buffer): Buffer => tlv(0xa0, b);
+export const explicit3 = (b: Buffer): Buffer => tlv(0xa3, b);
+export const octetString = (b: Buffer): Buffer => tlv(0x04, b);
+export const boolTrue = (): Buffer => tlv(0x01, Buffer.from([0xff]));
+export const printable = (s: string): Buffer => tlv(0x13, Buffer.from(s, "ascii"));
+export const ia5 = (s: string): Buffer => tlv(0x16, Buffer.from(s, "ascii"));
+/// GeneralName uniformResourceIdentifier [6]
+export const generalNameUri = (s: string): Buffer => tlv(0x86, Buffer.from(s, "ascii"));
+/// X.509 v3 Extension { extnID, [critical], extnValue OCTET STRING }
+export const extension = (oidDotted: string, critical: boolean, value: Buffer): Buffer =>
+  seq(oid(oidDotted), ...(critical ? [boolTrue()] : []), octetString(value));
 
 /// ECDSA signature as DER SEQUENCE { r INTEGER, s INTEGER } from the raw r||s form.
 export function ecdsaSigToDer(raw: Buffer): Buffer {
