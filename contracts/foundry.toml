@@ -8,6 +8,8 @@ solc_version = "0.8.28"
 evm_version = "cancun"
 optimizer = true
 optimizer_runs = 200
+# read-only access to the prover fixtures (calldata-groth16.json) for the SP1 verifier tests
+fs_permissions = [{ access = "read", path = "../prover-sp1/fixtures" }]
 remappings = [
     "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/",
     "forge-std/=lib/forge-std/src/",
