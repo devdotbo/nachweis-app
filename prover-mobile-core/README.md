@@ -84,7 +84,7 @@ NDK 29; the app needs NDK 29's `libc++_shared.so` next to the cdylib):
 
 iOS (`rustup target add aarch64-apple-ios aarch64-apple-ios-sim`; Xcode):
 
-    cargo build --release --target aarch64-apple-ios          # device: target/aarch64-apple-ios/release/libnachweis_prover.a
+    cargo build --release --target aarch64-apple-ios          # device: target/aarch64-apple-ios/release/libnachweis_prover.a (checked 2026-09-07: builds, 193 MB static lib incl. Barretenberg)
     cargo build --release --target aarch64-apple-ios-sim      # simulator
     cargo run --release --bin uniffi-bindgen -- generate \
         --library target/release/libnachweis_prover.dylib --language swift \
