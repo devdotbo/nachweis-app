@@ -154,7 +154,6 @@ fn main(
     exp_offset: u32,
     // Offsets into the raw KB-JWT payload
     kb_aud_offset: u32,
-    kb_exp_offset: u32,
     kb_nonce_offset: u32,
     kb_sd_hash_offset: u32,
     // Challenge from the verifier (nonce preimage = subject || challenge)
@@ -263,9 +262,12 @@ fn main(
         EXP_FRAGMENT,
         "issuer exp not found            ",
     );
-    let issuer_exp = read_timestamp(payload_storage, payload_len, exp_offset + 6);
+    // The committed expiry is the issuer credential's exp. The KB-JWT exp is not read here:
+    // KB-JWT freshness is a property of the presentation and is checked off chain by the bridge
+    // against its clock (see prover-sp1/lib check_kb_freshness).
+    let expiry: u64 = read_timestamp(payload_storage, payload_len, exp_offset + 6);
 
-    // ---- 3. KB-JWT: signature under holder key, aud, exp, nonce, sd_hash --------
+    // ---- 3. KB-JWT: signature under holder key, aud, nonce, sd_hash -------------
     let encoded_kb_payload = BASE64_URL_ENCODER::encode_var(kb_payload);
     let mut kb_signing_input: BoundedVec<u8, KB_SIGNING_INPUT_MAX_LEN> =
         BoundedVec::from(KB_HEADER_B64);
@@ -290,20 +292,6 @@ fn main(
         AUD_FRAGMENT,
         "KB-JWT aud mismatch             ",
     );
-    assert_fragment_at(
-        kb_storage,
-        kb_len,
-        kb_exp_offset,
-        EXP_FRAGMENT,
-        "KB-JWT exp not found            ",
-    );
-    let kb_exp = read_timestamp(kb_storage, kb_len, kb_exp_offset + 6);
-    let expiry: u64 = if issuer_exp < kb_exp {
-        issuer_exp
-    } else {
-        kb_exp
-    };
-
     // nonce == lowercase hex(sha256(subject || challenge))
     let mut nonce_preimage: [u8; 52] = [0; 52];
     for i in 0..20 {

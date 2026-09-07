@@ -7,7 +7,7 @@ or older, bound to an Ethereum address via the KB-JWT nonce. It is derived from
 `pid-sdjwt/SOURCE.md`); the changes are described in `pid-sdjwt/ADAPTATION.md`.
 The statement mirrors `prover-sp1/lib` (see `prover-sp1/NOTES.md`).
 
-## Toolchain (measured on this Mac, M3 Max 16 cores, 128 GB, 2026-09-07)
+## Toolchain (measured on this Mac, M3 Max 16 cores, 128 GB, 2026-09-07; adapted column re-measured after the issuer-exp change)
 
 - nargo 1.0.0-beta.21 (noirc 89a0f0fa), via `noirup -v 1.0.0-beta.21`
 - bb 5.0.0-nightly.20260324, via `bbup -nv 1.0.0-beta.21`
@@ -40,24 +40,24 @@ below. `out/` and `target/` are gitignored.
 
 | | baseline d10 (swiyu vector) | adapted pid-sdjwt (minted PID vector) |
 | --- | --- | --- |
-| `nargo compile` | 6.0 s, 894 MB RSS | 9.8 s, 942 MB RSS |
-| ACIR opcodes | 92,811 | 136,027 |
-| UltraHonk circuit_size | 453,007 (2^19) | 895,109 (2^20) |
-| `nargo execute` | 0.5 s, 173 MB | 0.6 s, 187 MB |
-| `bb write_vk` (evm) | 1.5 s, 802 MB | 2.4 s, 1.46 GB |
-| `bb prove` (evm, 16 threads) | 2.1 s wall, 13.6 s user, 1.08 GB | 5.7 s wall, 27.2 s user, 1.94 GB |
-| `bb prove` (default target, 16 threads) | 2.0 s wall, 13.8 s user, 1.08 GB | 3.5 s wall, 25.7 s user, 1.94 GB |
-| `bb prove` (evm, HARDWARE_CONCURRENCY=1) | 9.9 s | 18.5 s |
+| `nargo compile` | 6.0 s, 894 MB RSS | 12.6 s, 942 MB RSS |
+| ACIR opcodes | 92,811 | 135,831 (136,027 with the KB exp minimum) |
+| UltraHonk circuit_size | 453,007 (2^19) | 894,846 (2^20; 895,109 before) |
+| `nargo execute` | 0.5 s, 173 MB | 0.6 s, 189 MB |
+| `bb write_vk` (evm) | 1.5 s, 802 MB | 1.7 s, 1.44 GB |
+| `bb prove` (evm, 16 threads) | 2.1 s wall, 13.6 s user, 1.08 GB | 3.5 s wall, 25.7 s user, 1.92 GB (5.7 s wall on the earlier run) |
+| `bb prove` (default target, 16 threads) | 2.0 s wall, 13.8 s user, 1.08 GB | 3.5 s wall, 25.7 s user, 1.94 GB (min-exp circuit, not re-measured) |
+| `bb prove` (evm, HARDWARE_CONCURRENCY=1) | 9.9 s | 18.5 s (min-exp circuit, not re-measured) |
 | `bb verify` | ok | ok |
 | proof / public inputs | 9,920 B / 97 inputs | 10,304 B / 86 inputs |
 
 Public inputs of the adapted circuit (one field element per byte): subject
-(20), issuer_key_hash (32), over18 (1), expiry (1, u64), nonce (32). For the
-minted vector: issuer_key_hash
-0x841e741b14eacdfdeca2e96fd95af5b987b5b872f88f8e359df29f7635556656, over18 1,
-expiry 1780435560, nonce
-0xe6de79975a3b30ad89d7af4e44fcdba843df4b70d4b3307e687e5498bbe0a25d, subject
-0xcf02ad5376095e285fc88ae8c1fa240791370c17 (same values as the SP1 fixture).
+(20), issuer_key_hash (32), over18 (1), expiry (1, u64, the issuer credential
+exp), nonce (32). For the minted vector: issuer_key_hash
+0x78cf23963b47d3e393c79ea091c4ed80ebbae4ff78992058dd92fd34e1635183, over18 1,
+expiry 1819756800, nonce
+0x306863157ddb59f4e5a56f41aa8591e68b574c8c3475c43d9bd469220be90762, subject
+0xf99edde971f4e9c88715a79ca78963284a2955dc (same values as the SP1 fixture).
 
 The doubling comes from the second large SHA-256 (sd_hash over the 3,115 byte
 presentation next to the 2,842 byte signing input), the header as input
@@ -107,8 +107,10 @@ regenerate them together with the verifier whenever the circuit changes.
 - x5c chain of the issuer header to a trust anchor. The contract must pin
   issuerKeyHash (sha256 of the SEC1 key). Only the first 40 base64url chars of
   the header (alg ES256, typ dc+sd-jwt) are pinned.
-- Status list / revocation, iat, nbf, KB-JWT iat, freshness of the challenge
-  (the contract compares expiry with block.timestamp and manages challenges).
+- Status list / revocation, iat, nbf, KB-JWT exp and iat, freshness of the
+  challenge (the contract compares the issuer expiry with block.timestamp and
+  manages challenges; the bridge checks KB-JWT exp and iat against its clock
+  before proving, see `prover-sp1/lib` `check_kb_freshness`).
 - The other presented disclosures (given_name, family_name) are only bound via
   sd_hash, not verified against `_sd`.
 - Top-levelness of the matched JSON fragments (see ADAPTATION.md).
