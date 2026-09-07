@@ -12,7 +12,7 @@ import {Subscription} from "../src/Subscription.sol";
 ///   DEPLOYER_PRIVATE_KEY   required; deployer becomes registry owner and token issuer
 ///   OPERATOR_ADDRESS       optional; issuer key that attests/revokes (default: deployer)
 ///   POLICY_ID              optional bytes32 (default: keccak256("nachweis.demo.fund.v1"))
-///   REQUIRED_BITS          optional uint (default: 0b111, adult | EU resident | not sanctioned)
+///   REQUIRED_BITS          optional uint (default: FundToken.DEFAULT_REQUIRED_BITS = 0x3, identity evidence | over 18)
 ///   DEMO_AMOUNT            optional uint (default: 100e18)
 ///
 /// Usage:
@@ -23,7 +23,7 @@ contract Deploy is Script {
         address deployer = vm.addr(deployerKey);
         address operator = vm.envOr("OPERATOR_ADDRESS", deployer);
         bytes32 policyId = vm.envOr("POLICY_ID", keccak256("nachweis.demo.fund.v1"));
-        uint256 requiredBits = vm.envOr("REQUIRED_BITS", uint256(0x7));
+        uint256 requiredBits = vm.envOr("REQUIRED_BITS", FundToken.DEFAULT_REQUIRED_BITS);
         uint256 demoAmount = vm.envOr("DEMO_AMOUNT", uint256(100e18));
 
         vm.startBroadcast(deployerKey);

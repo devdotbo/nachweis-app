@@ -18,7 +18,14 @@ contract FundToken is ERC20 {
 
     IEligibility public immutable registry;
     bytes32 public immutable policyId;
+    /// @notice Predicate bits a holder must have under policyId. The demo policy requires
+    ///         DEFAULT_REQUIRED_BITS; deployments may pass another mask.
     uint256 public immutable REQUIRED_BITS;
+
+    /// @notice Bit 0 = identity evidence, bit 1 = over 18: the bits the proof path can assert.
+    ///         Single source of truth for the demo policy; the deploy scripts default to it.
+    ///         Bits 2 (EU resident) and 3 (not sanctioned) are reserved and not required anywhere.
+    uint256 public constant DEFAULT_REQUIRED_BITS = 0x3;
     address public immutable issuer;
 
     /// @notice The Subscription contract allowed to mint. Set once by the issuer.
