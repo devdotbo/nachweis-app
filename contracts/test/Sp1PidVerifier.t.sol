@@ -11,8 +11,8 @@ import {Sp1Fixture} from "./Sp1Fixture.sol";
 
 contract Sp1PidVerifierTest is Test {
     bytes32 constant POLICY = keccak256("nachweis.pid.over18.v1");
-    bytes32 constant VKEY = 0x00b092add2a7d3fffa027c1178c7b0d77155f3c9e078925928fcfce4b39a4cc9;
-    bytes32 constant ISSUER_KEY_HASH = 0x841e741b14eacdfdeca2e96fd95af5b987b5b872f88f8e359df29f7635556656;
+    bytes32 constant VKEY = 0x00cc4d3b31d47abf4e069acd7e90fb0efec8aef32da11c78a2eaf01c5552f71f;
+    bytes32 constant ISSUER_KEY_HASH = 0x78cf23963b47d3e393c79ea091c4ed80ebbae4ff78992058dd92fd34e1635183;
     bytes32 constant VCT_HASH = 0x27b2d76921e41420732d759e6a3f345b9132e37fae97b1930f39ec58cf9a567d; // sha256("urn:eudi:pid:de:1")
     bytes constant SP1_PROOF = hex"4388a21c00"; // selector + dummy body, the mock gateway ignores it
     uint256 constant BITS_BOTH = 0x3;
@@ -111,7 +111,7 @@ contract Sp1PidVerifierTest is Test {
         Sp1Fixture.Data memory f = Sp1Fixture.load();
         assertEq(f.vkey, VKEY);
         assertEq(f.publicValues.length, verifier.PUBLIC_VALUES_LENGTH());
-        vm.warp(f.expiry - 1);
+        assertGt(f.expiry, block.timestamp, "fixture expiry (issuer exp) must lie ahead of the test clock");
 
         gateway.accept(VKEY, f.publicValues, true);
         bytes memory proof = verifier.encodeProof(f.publicValues, f.proof);

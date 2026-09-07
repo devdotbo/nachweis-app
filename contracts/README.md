@@ -112,8 +112,8 @@ Pinned values for the sandbox fixture (`/prover-sp1/fixtures/calldata-groth16.js
 | name | value |
 |---|---|
 | gateway (Sepolia SP1VerifierGateway) | `0x397A5f7f3dBd538f23DE225B51f532c34448dA9B` |
-| programVKey | `0x00b092add2a7d3fffa027c1178c7b0d77155f3c9e078925928fcfce4b39a4cc9` |
-| issuerKeyHash = sha256(issuer P-256 key, SEC1 uncompressed) | `0x841e741b14eacdfdeca2e96fd95af5b987b5b872f88f8e359df29f7635556656` (synthetic sandbox issuer) |
+| programVKey | `0x00cc4d3b31d47abf4e069acd7e90fb0efec8aef32da11c78a2eaf01c5552f71f` |
+| issuerKeyHash = sha256(issuer P-256 key, SEC1 uncompressed) | `0x78cf23963b47d3e393c79ea091c4ed80ebbae4ff78992058dd92fd34e1635183` (synthetic sandbox issuer) |
 | vctHash = sha256("urn:eudi:pid:de:1") | `0x27b2d76921e41420732d759e6a3f345b9132e37fae97b1930f39ec58cf9a567d` |
 | policyId (default in the deploy script) | `keccak256("nachweis.pid.over18.v1")` |
 
@@ -170,7 +170,7 @@ The subject's wallet does not sign anything here; the binding comes from the KB-
 
 ### Tests
 
-`forge test` runs the unit tests with `MockSp1Gateway` (accepts registered `(vkey, publicValues)` pairs) and decodes the real fixture through the registry with `vm.warp` before its expiry. `test/Sp1PidVerifier.fork.t.sol` forks Sepolia and calls the real gateway with the fixture (valid proof passes, tampered public values and tampered proof revert, full registry path with `vm.warp` because the fixture's expiry, 2026-06-02, is in the past). It runs only when `SEPOLIA_RPC_URL` is set and is skipped otherwise. Read-only, no transaction is sent.
+`forge test` runs the unit tests with `MockSp1Gateway` (accepts registered `(vkey, publicValues)` pairs) and decodes the real fixture through the registry. `test/Sp1PidVerifier.fork.t.sol` forks Sepolia and calls the real gateway with the fixture (valid proof passes, tampered public values and tampered proof revert, full registry path at the real fork head: the fixture's expiry is the issuer credential exp, 2027-09-01). It runs only when `SEPOLIA_RPC_URL` is set and is skipped otherwise. Read-only, no transaction is sent.
 
 ## NoirPidVerifier (Noir UltraHonk, EUDI PID)
 
@@ -182,8 +182,8 @@ Pinned values for the fixture (`test/fixtures/noir`, same PID vector as the SP1 
 
 | name | value |
 |---|---|
-| HonkVerifier `VK_HASH` | `0x088cdfce8cb5f69fd4da9d6be6b0917024077ad54422fbf334821690bcc21e47` (constant in the generated file, equals `bb write_vk` `vk_hash`) |
-| issuerKeyHash = sha256(issuer P-256 key, SEC1 uncompressed) | `0x841e741b14eacdfdeca2e96fd95af5b987b5b872f88f8e359df29f7635556656` (synthetic sandbox issuer) |
+| HonkVerifier `VK_HASH` | `0x096a8d359df7ea9127936b2702dbec9f2c6cddf467d682d5ff01ec9d1380ee14` (constant in the generated file, equals `bb write_vk` `vk_hash`) |
+| issuerKeyHash = sha256(issuer P-256 key, SEC1 uncompressed) | `0x78cf23963b47d3e393c79ea091c4ed80ebbae4ff78992058dd92fd34e1635183` (synthetic sandbox issuer) |
 | policyId (default in the deploy script) | `keccak256("nachweis.pid.over18.v1")` |
 
 The circuit pins `vct` (`urn:eudi:pid:de:1`) as a constant, so there is no `vctHash` to pin here. The issuer key hash is the trust anchor, as for the SP1 adapter; the x5c chain is not checked anywhere.
@@ -209,7 +209,7 @@ The circuit exposes one byte per field element except `expiry`:
 | 0..19 | `subject` (20 bytes, big endian) | `address`, must equal `publicInputs[0]` |
 | 20..51 | `issuer_key_hash` (32 bytes) | `bytes32`, must equal the pinned `ISSUER_KEY_HASH` |
 | 52 | `over18` (u8) | 1 or 0 |
-| 53 | `expiry` (u64 unix seconds, min of issuer `exp` and KB-JWT `exp`) | must equal `publicInputs[3]` and be `> block.timestamp` |
+| 53 | `expiry` (u64 unix seconds, the issuer credential `exp`; KB-JWT freshness is checked off chain by the bridge) | must equal `publicInputs[3]` and be `> block.timestamp` |
 | 54..85 | `nonce` (32 bytes) = sha256(subject20 ‖ challenge32) | `bytes32`, returned by `nonceOf`, consumed by the registry |
 
 `decodeProof` requires exactly 86 elements, every byte element `< 256` (`FieldNotByte(index, value)`) and `expiry < 2^64` (`FieldNotU64`). A valid proof never trips these (the circuit constrains the types); they stop a malformed submission before the 2.85 M gas honk call.
@@ -248,7 +248,7 @@ forge script script/DeployNoirVerifier.s.sol:DeployNoirVerifier --rpc-url sepoli
 
 ### Tests
 
-`test/NoirPidVerifier.t.sol` deploys the real `HonkVerifier` and runs the real proof from `test/fixtures/noir` (copied from the bb output, provenance and hashes in `SOURCE.md`; `vm.warp` before the fixture expiry 2026-06-02). Covered: happy path through the registry, flipped `over18` and rebound subject rejected by the honk verifier (`SumcheckFailed`), tampered proof bytes, wrong pinned issuer key hash, subject/policy/bits/expiry mismatch, expired, nonce replay, malformed field elements (byte `>= 256`, expiry `>= 2^64`, wrong element count), and the EIP-170 size of the deployed verifier. No fork test: nothing is called off chain.
+`test/NoirPidVerifier.t.sol` deploys the real `HonkVerifier` and runs the real proof from `test/fixtures/noir` (copied from the bb output, provenance and hashes in `SOURCE.md`; the fixture expiry is the issuer exp, 2027-09-01, so no `vm.warp` is needed). Covered: happy path through the registry, flipped `over18` and rebound subject rejected by the honk verifier (`SumcheckFailed`), tampered proof bytes, wrong pinned issuer key hash, subject/policy/bits/expiry mismatch, expired, nonce replay, malformed field elements (byte `>= 256`, expiry `>= 2^64`, wrong element count), and the EIP-170 size of the deployed verifier. No fork test: nothing is called off chain.
 
 ## Events
 

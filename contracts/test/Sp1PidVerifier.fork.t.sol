@@ -12,9 +12,8 @@ import {Sp1Fixture} from "./Sp1Fixture.sol";
 ///         prover-sp1/fixtures/calldata-groth16.json. Read-only eth_calls, no transaction is sent.
 ///         Runs only when SEPOLIA_RPC_URL is set, otherwise every test is skipped.
 ///
-///         The fixture's expiry (2026-06-02) lies before the fork head, so the registry path only
-///         passes with vm.warp to just before expiry; the gateway check itself does not depend on
-///         block.timestamp and is exercised at the real head in test_fork_gatewayVerifiesFixture.
+///         The fixture's expiry is the issuer credential exp (2027-09-01), so the full registry path
+///         runs at the real fork head without vm.warp.
 contract Sp1PidVerifierForkTest is Test {
     ISP1Verifier constant GATEWAY = ISP1Verifier(0x397A5f7f3dBd538f23DE225B51f532c34448dA9B);
     bytes32 constant POLICY = keccak256("nachweis.pid.over18.v1");
@@ -53,15 +52,14 @@ contract Sp1PidVerifierForkTest is Test {
         GATEWAY.verifyProof(f.vkey, f.publicValues, tampered);
     }
 
-    function test_fork_registryPathBeforeExpiry() public onlyFork {
+    function test_fork_registryPath() public onlyFork {
         address owner = makeAddr("owner");
         AttestationRegistry registry = new AttestationRegistry(owner);
         Sp1PidVerifier verifier = new Sp1PidVerifier(GATEWAY, f.vkey, f.issuerKeyHash, f.vctHash, POLICY);
         vm.prank(owner);
         registry.setVerifier(POLICY, verifier);
 
-        assertLt(f.expiry, block.timestamp, "fixture expiry expected in the past at fork head");
-        vm.warp(f.expiry - 1);
+        assertGt(f.expiry, block.timestamp, "fixture expiry (issuer exp) expected ahead of the fork head");
 
         uint256 bits = verifier.BIT_IDENTITY() | verifier.BIT_OVER_18();
         Decision memory d =

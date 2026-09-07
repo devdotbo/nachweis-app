@@ -34,10 +34,10 @@ library NoirFixture {
             d.publicInputs[i] = word;
         }
         d.vkHash = bytes32(vm.readFileBinary(string.concat(dir, "vk_hash.bin")));
-        d.subject = 0xcF02AD5376095e285FC88AE8c1Fa240791370c17;
-        d.issuerKeyHash = 0x841e741b14eacdfdeca2e96fd95af5b987b5b872f88f8e359df29f7635556656;
+        d.subject = 0xF99EDdE971F4e9c88715a79CA78963284A2955dC;
+        d.issuerKeyHash = 0x78cf23963b47d3e393c79ea091c4ed80ebbae4ff78992058dd92fd34e1635183;
         d.over18 = 1;
-        d.expiry = 1780435560;
-        d.nonce = 0xe6de79975a3b30ad89d7af4e44fcdba843df4b70d4b3307e687e5498bbe0a25d;
+        d.expiry = 1819756800; // issuer credential exp, 2027-09-01T00:00:00Z
+        d.nonce = 0x306863157ddb59f4e5a56f41aa8591e68b574c8c3475c43d9bd469220be90762;
     }
 }
