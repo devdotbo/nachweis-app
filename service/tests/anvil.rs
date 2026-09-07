@@ -147,6 +147,8 @@ async fn mock_pipeline_attests_and_revokes_on_anvil() {
         // The stored fixture's KB-JWT expired five minutes after minting (exp = iat + 300, as the
         // sandbox wallet does); the freshness check is exercised separately below.
         kb_jwt_window_secs: None,
+        handoff_verifier_url: None,
+        handoff_bridge_url: None,
     };
     let fresh_cfg = Config { kb_jwt_window_secs: Some(600), ..cfg.clone() };
     let strict_cfg = Config { require_address_proof: true, ..cfg.clone() };
@@ -198,6 +200,18 @@ async fn mock_pipeline_attests_and_revokes_on_anvil() {
     assert_eq!(s["address_verified"], true);
     assert_eq!(s["state"], "created");
     assert_eq!(s["detail"], "waiting for the presentation");
+    // Two-device handoff: available while created, carries the same challenge and nonce, the
+    // bridge URL from the request Host, and the compact nachweis:// URI.
+    let h: serde_json::Value = http.get(format!("{strict_base}/sessions/{strict_id}/handoff")).send().await.unwrap().error_for_status().unwrap().json().await.unwrap();
+    assert_eq!(h["session_id"], created["session_id"]);
+    assert_eq!(h["challenge_hex"], created["challenge_hex"]);
+    assert_eq!(h["nonce"], created["nonce"]);
+    assert_eq!(h["bound_address"].as_str().unwrap().to_lowercase(), format!("{:#x}", holder.address()));
+    assert_eq!(h["bridge_url"], strict_base);
+    assert_eq!(h["address_verified"], true);
+    assert!(h["uri"].as_str().unwrap().starts_with(&format!("nachweis://handoff?v=1&s={strict_id}&a=")));
+    let unknown = http.get(format!("{strict_base}/sessions/{}/handoff", uuid::Uuid::new_v4())).send().await.unwrap();
+    assert_eq!(unknown.status(), 404);
     assert_eq!(http.get(format!("{strict_base}/sessions/{}", uuid::Uuid::new_v4())).send().await.unwrap().status(), 404);
 
     // 1. session with the fixture's address and challenge: nonce must match the fixture KB-JWT.
@@ -435,6 +449,8 @@ async fn noir_proof_attests_through_noir_pid_verifier_on_anvil() {
         require_address_proof: false,
         cors_origins: None,
         kb_jwt_window_secs: None,
+        handoff_verifier_url: None,
+        handoff_bridge_url: None,
     };
     let strict_cfg = Config { require_address_proof: true, ..cfg.clone() };
     let state = Arc::new(AppState::new(cfg, Some(chain.clone())));

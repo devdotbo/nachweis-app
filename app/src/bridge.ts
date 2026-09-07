@@ -7,6 +7,8 @@
  *        (when VITE_BRIDGE_URL is set; the bridge creates the presentation request at the verifier itself)
  *   POST /sessions/:id/address-proof {signature}   EIP-191 signature of "nachweis:session:<id>"
  *   GET  /sessions/:id -> {state: created|presented|verified|proving|proved|attested|failed, tx_hash?, detail?}
+ *   GET  /sessions/:id/handoff -> {session_id, bound_address, challenge_hex, nonce, verifier_url, bridge_url, expires_at}
+ *        (two-device flow: what the phone prover needs to join this session; only while created or presented)
  *
  * Mock mode walks the state machine on a timer and writes the decision into the mock registry.
  */
@@ -15,6 +17,7 @@ import { BRIDGE_URL, MOCK } from './config'
 import { demoDecision } from './lib/decision'
 import { MOCK_OPERATOR, mockAttest } from './lib/mockChain'
 import { getSession } from './lib/sessions'
+import { handoffFromRaw, handoffNonce, type Handoff, type HandoffRaw } from './lib/handoff'
 
 export const BRIDGE_STATES = ['created', 'presented', 'verified', 'proving', 'proved', 'attested', 'failed'] as const
 export type BridgeState = (typeof BRIDGE_STATES)[number]
@@ -28,6 +31,8 @@ export interface BridgeSession {
 export interface BridgeClient {
   submitAddressProof(sessionId: string, signature: Hex): Promise<void>
   getSession(sessionId: string): Promise<BridgeSession>
+  /** Two-device flow: the handoff the phone prover scans or pastes. */
+  getHandoff(sessionId: string): Promise<Handoff>
 }
 
 /** Public values the bridge decodes from the prover output once the presentation is verified. */
@@ -56,6 +61,9 @@ export interface BridgeSessionRaw {
 export interface BridgeCreated {
   sessionId: string
   nonce: string
+  /** 64 hex chars, no 0x: the challenge behind the nonce, needed by a phone prover that joins this session. */
+  challengeHex?: string
+  boundAddress?: string
   openid4vpUri?: string
   requestUri?: string
   mode: 'verifier' | 'local'
@@ -75,6 +83,8 @@ export async function createBridgeSession(boundAddress: Address): Promise<Bridge
   return {
     sessionId: id,
     nonce: String(body.nonce ?? ''),
+    challengeHex: typeof body.challenge_hex === 'string' && body.challenge_hex !== '' ? body.challenge_hex.replace(/^0x/, '').toLowerCase() : undefined,
+    boundAddress: typeof body.bound_address === 'string' ? body.bound_address : undefined,
     openid4vpUri: typeof body.openid4vp_uri === 'string' && body.openid4vp_uri !== '' ? body.openid4vp_uri : undefined,
     requestUri: typeof body.request_uri === 'string' && body.request_uri !== '' ? body.request_uri : undefined,
     mode: body.mode === 'local' ? 'local' : 'verifier',
@@ -90,6 +100,13 @@ export async function fetchBridgeSession(sessionId: string): Promise<BridgeSessi
   const raw = String(body.state ?? body.status ?? 'created')
   const state = (BRIDGE_STATES as readonly string[]).includes(raw) ? (raw as BridgeState) : 'created'
   return { ...(body as Omit<BridgeSessionRaw, 'state'>), state }
+}
+
+/** `GET /sessions/:id/handoff`; 409 once the session moved past presented, 404 for unknown ids. */
+export async function fetchHandoff(sessionId: string): Promise<Handoff> {
+  const res = await fetch(`${BRIDGE_URL}/sessions/${encodeURIComponent(sessionId)}/handoff`, { headers: { accept: 'application/json' } })
+  if (!res.ok) throw new Error(`bridge ${res.status}: ${(await res.text().catch(() => '')) || 'no handoff'}`)
+  return handoffFromRaw((await res.json()) as HandoffRaw)
 }
 
 export function sessionMessage(sessionId: string): string {
@@ -117,6 +134,7 @@ const httpClient: BridgeClient = {
     const detail = body.detail ?? body.error ?? undefined
     return { state: body.state, txHash: tx && /^0x[0-9a-fA-F]{64}$/.test(tx) ? (tx as Hex) : undefined, detail }
   },
+  getHandoff: fetchHandoff,
 }
 
 // ---------------------------------------------------------------------------
@@ -167,6 +185,20 @@ const mockClient: BridgeClient = {
       e.txHash = await e.attesting
     }
     return { state: 'attested', txHash: e.txHash, detail: 'attestWithProof confirmed' }
+  },
+  async getHandoff(sessionId) {
+    const s = getSession(sessionId)
+    if (!s) throw new Error('unknown session')
+    const challengeHex = s.request.challengeHex ?? '00'.repeat(32)
+    return {
+      sessionId,
+      boundAddress: s.boundAddress,
+      challengeHex,
+      nonce: await handoffNonce(s.boundAddress, challengeHex),
+      verifierUrl: 'http://10.0.2.2:8090',
+      bridgeUrl: 'http://10.0.2.2:8787',
+      expiresAt: Math.floor(s.createdAt / 1000) + 600,
+    }
   },
 }
 

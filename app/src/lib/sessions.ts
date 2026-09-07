@@ -5,6 +5,7 @@
 import { useSyncExternalStore } from 'react'
 import type { Address } from 'viem'
 import type { BridgeSession } from '../bridge'
+import type { Handoff } from './handoff'
 import type { ClaimLine, PresentationRequest } from '../verifier'
 
 export type SessionState = 'pending' | 'presented' | 'rejected' | 'attested' | 'revoked'
@@ -25,6 +26,9 @@ export interface Session {
   /** Last state the bridge reported. */
   bridge?: BridgeSession
   bridgeError?: string
+  /** Two-device flow: what the phone prover scans or pastes, fetched once the wallet has signed. */
+  handoff?: Handoff
+  handoffError?: string
 }
 
 let sessions: Session[] = []

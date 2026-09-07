@@ -61,12 +61,26 @@ fun FlowScreen(vm: FlowViewModel) {
 
 @Composable
 fun SessionScreen(vm: FlowViewModel) {
+    Text("Two-device flow: paste the handoff from the investor's browser (\"Prove on your phone\" card: the QR's JSON or the nachweis://handoff URI).", style = MaterialTheme.typography.bodySmall)
+    OutlinedTextField(vm.handoffText, { vm.handoffText = it }, label = { Text("Paste handoff (JSON or nachweis://handoff?...)") }, modifier = Modifier.fillMaxWidth(), minLines = 2, maxLines = 4)
+    Row {
+        Button(onClick = { vm.applyHandoff() }, enabled = !vm.busy && vm.handoffText.isNotBlank()) { Text("Apply handoff") }
+        Spacer(Modifier.size(8.dp))
+        LocalClipboardManager.current.let { cb -> OutlinedButton(onClick = { cb.getText()?.let { vm.handoffText = it.text } }, enabled = !vm.busy) { Text("From clipboard") } }
+    }
+    vm.handoff?.let { h ->
+        Text("Joined bridge session ${h.sessionId}", style = MaterialTheme.typography.titleSmall)
+        Text("bound ${h.boundAddress}", style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace)
+        Text("nonce ${h.nonce}", style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace)
+        Text("address proof ${if (vm.bridgeState?.addressVerified == true) "given by the browser wallet" else "missing (bridge will answer 409 unless REQUIRE_ADDRESS_PROOF=false)"}", style = MaterialTheme.typography.bodySmall)
+    }
+    HorizontalDivider(Modifier.padding(vertical = 8.dp))
     OutlinedTextField(vm.verifierUrl, { vm.verifierUrl = it }, label = { Text("Verifier (blind relay) URL") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
     OutlinedTextField(vm.bridgeUrl, { vm.bridgeUrl = it }, label = { Text("Bridge URL (submission)") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
     OutlinedTextField(vm.boundAddress, { vm.boundAddress = it }, label = { Text("Bound Ethereum address") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
     Spacer(Modifier.height(8.dp))
     Button(onClick = { vm.requestPresentation() }, enabled = !vm.busy) { Text("Request presentation") }
-    Text("Generates a fresh P-256 key and challenge, posts /relay/request. The verifier never sees the plaintext.", style = MaterialTheme.typography.bodySmall)
+    Text(if (vm.handoff != null) "Generates a fresh P-256 key, reuses the handoff's challenge (same nonce as the bridge session), posts /relay/request." else "Generates a fresh P-256 key and challenge, posts /relay/request. The verifier never sees the plaintext.", style = MaterialTheme.typography.bodySmall)
     Spacer(Modifier.height(8.dp))
     OutlinedButton(onClick = { vm.loadTestPresentation() }, enabled = !vm.busy) { Text("Load test presentation") }
     Text("Bundled synthetic PID vector; runs pickup, prove and submit without a wallet.", style = MaterialTheme.typography.bodySmall)

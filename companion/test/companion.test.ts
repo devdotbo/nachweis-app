@@ -4,6 +4,7 @@ import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { decryptJwe, encryptJwe, generateP256, sec1FromJwk } from "../src/crypto";
+import { handoffUri, parseHandoff } from "../src/handoff";
 import { publicKeyFromCertificate } from "../src/der";
 import { loadOrCreateIssuerKey, mintPresentation, selfSignedLeaf } from "../src/mint";
 import { decodePublicInputs, repoRoot, splitWords } from "../src/prove";
@@ -180,5 +181,43 @@ describe("public inputs and proof encoding", () => {
   test("policy id", () => {
     expect(policyIdOf(undefined)).toBe("0xd27260f1ca509ba75dea6cd27b2985a96e423550e16db3350d2945e215e3d05f");
     expect(policyIdOf(`0x${"ab".repeat(32)}`)).toBe(`0x${"ab".repeat(32)}`);
+  });
+});
+
+describe("two-device handoff", () => {
+  const sid = "aa7d4435-c509-46b1-83b1-7c0cb9ca55ca";
+  const addr = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8";
+  const ch = "7426bd0ea9dbe592f719371e370251246c99a1838fe3c2bf5646e90221f69df2";
+  const expectedNonce = hex(nonceOf(fromHex(addr), fromHex(ch)));
+
+  test("compact JSON from the web app", () => {
+    const h = parseHandoff(JSON.stringify({ v: 1, s: sid, a: addr, c: ch, r: "http://10.0.2.2:8090", b: "http://10.0.2.2:8788/" }));
+    expect(h.session_id).toBe(sid);
+    expect(h.bound_address).toBe(addr.toLowerCase());
+    expect(h.challenge_hex).toBe(ch);
+    expect(h.nonce).toBe(expectedNonce);
+    expect(h.verifier_url).toBe("http://10.0.2.2:8090");
+    expect(h.bridge_url).toBe("http://10.0.2.2:8788");
+  });
+
+  test("URI round trip, 0x-prefixed challenge, missing verifier", () => {
+    const h = parseHandoff(`nachweis://handoff?v=1&s=${sid}&a=${addr}&c=0x${ch}&b=${encodeURIComponent("http://127.0.0.1:8788")}`);
+    expect(h.verifier_url).toBeUndefined();
+    expect(h.bridge_url).toBe("http://127.0.0.1:8788");
+    expect(parseHandoff(handoffUri(h))).toEqual(h);
+  });
+
+  test("bridge handoff body, nonce cross-checked", () => {
+    const h = parseHandoff(JSON.stringify({ session_id: sid, bound_address: addr, challenge_hex: ch, nonce: expectedNonce, verifier_url: null, bridge_url: "http://127.0.0.1:8788", expires_at: 1 }));
+    expect(h.nonce).toBe(expectedNonce);
+    expect(() => parseHandoff(JSON.stringify({ session_id: sid, bound_address: addr, challenge_hex: ch, nonce: "00".repeat(32), bridge_url: "http://x" }))).toThrow(/nonce/);
+  });
+
+  test("rejects bad input", () => {
+    expect(() => parseHandoff("hello")).toThrow(/JSON object or a nachweis/);
+    expect(() => parseHandoff(JSON.stringify({ v: 2, s: sid, a: addr, c: ch, b: "http://x" }))).toThrow(/version/);
+    expect(() => parseHandoff(JSON.stringify({ v: 1, s: "not-a-uuid", a: addr, c: ch, b: "http://x" }))).toThrow(/UUID/);
+    expect(() => parseHandoff(JSON.stringify({ v: 1, s: sid, a: addr, c: ch.slice(2), b: "http://x" }))).toThrow(/32 bytes/);
+    expect(() => parseHandoff(JSON.stringify({ v: 1, s: sid, a: addr, c: ch, b: "ftp://x" }))).toThrow(/http/);
   });
 });

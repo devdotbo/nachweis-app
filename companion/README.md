@@ -17,8 +17,9 @@ about 4 to 6 s on an M3 Max and 1.9 GB of memory.
 ```
 cd companion && bun install
 bun run src/cli.ts help
-bun test                      # 17 tests: nonce vectors, statement pre-check on the SP1 fixture, minted
-                              # presentation vs gen-prover.ts, x5c leaf round trip, JWE round trip, public inputs
+bun test                      # 21 tests: nonce vectors, statement pre-check on the SP1 fixture, minted
+                              # presentation vs gen-prover.ts, x5c leaf round trip, JWE round trip, public inputs,
+                              # two-device handoff parser (JSON, URI, bridge body, rejections)
 ```
 
 ## Commands
@@ -31,6 +32,7 @@ bun test                      # 17 tests: nonce vectors, statement pre-check on 
 | `prove` | native pre-check with the rules of `prover-sp1/lib` (issuer ES256, vct, disclosures anchored in `_sd`, `age_equal_or_over.18`, KB-JWT under `cnf.jwk`, `aud`, `sd_hash`, nonce = sha256(address ‖ challenge)) plus KB-JWT freshness (`--kb-window 600`, 0 disables); issuer key from the `x5c` leaf (`--issuer-key-sec1` overrides); `Prover.toml` through `circuits/tools/gen-prover.ts` (spawned, unchanged); `nargo execute`; `bb prove -t evm`; `bb verify`; decodes the 86 public inputs and cross-checks them against the pre-check. Working files (input.json, Prover toml, witness) are 0600 and removed afterwards |
 | `submit` | bridge path: `POST /sessions {bound_address, challenge_hex}` (same nonce), EIP-191 address proof signed with `--wallet-key`, then `POST /sessions/:id/noir-proof {proof_hex, public_inputs_hex[86], tier}`. `--direct`: sends `attestWithProof` itself with `--sender-key` to `--registry` over `--rpc` and reads back `isEligible` |
 | `run` | all of the above in one go, with a timeline at the end. `--stub-wallet ISSUER_KEY_FILE` answers the request inline instead of a phone |
+| `handoff X` | two-device flow, the companion as the phone. `X` is what the investor's browser shows after the wallet signed the bridge session ("Prove on your phone" card): the compact JSON `{v:1,s,a,c,r,b}`, the `nachweis://handoff?…` URI, or the bridge's `GET /sessions/:id/handoff` body (`src/handoff.ts` parses all three and recomputes the nonce). Checks that the bridge session exists, still waits for a proof, is bound to that address and carries that nonce, then runs `request` with the handoff's address and challenge (same nonce), `wait` (or `--stub-wallet`), `pickup`, `prove`, and `submit` against THAT bridge session id: no new session, no address proof (the browser wallet gave it; without it the bridge answers 409). `--verifier`/`--bridge` fill URLs the handoff does not carry |
 | `status` | the session without secrets or claims; `--registry` adds `isEligible` |
 | `issuer-key FILE` | the test issuer: creates a P-256 key and a self-signed leaf plus a self-signed "CA" certificate (two-certificate `x5c`, about 580 DER bytes each, with the extensions of a sandbox issuer certificate; 0600), prints the SEC1 key and its sha256, which `NoirPidVerifier` pins |
 | `mint-test-presentation` | the phone stand-in, mirroring `verifier-service/tests/bridge_http.rs` (`mint_presentation`, `answer_as_wallet`): reads the signed request, mints an SD-JWT VC in the 23-claim German PID layout (`vct urn:eudi:pid:de:1`, two-certificate `x5c`, `exp` one year, `cnf.jwk` fresh holder key in ERICA's key order, `status.status_list`, 12 top-level digests, nested `age_equal_or_over`, `address`, `place_of_birth`; disclosures given_name, family_name, `age_equal_or_over.18`) plus a KB-JWT (header with `kid` as ERICA sends it; `nonce`, `aud` = the pinned `client_id`, `iat`, `exp = iat + 300`, `sd_hash`), encrypts to the advertised key, `POST /response/:id`. `--age-shape nested|disclosed|plain` picks how the age object arrives (`circuits/pid-sdjwt/REALISM.md`, section 3), `--minimal` the older three-digest layout |
@@ -121,6 +123,13 @@ The same session file can be submitted without the bridge:
 `bun run src/cli.ts submit --direct --session … --registry 0x5FbD… --sender-key $K0` sends
 `attestWithProof(subject, Decision, abi.encode(bytes proof, bytes32[] inputs), [subject, policyId, 3, expiry])`
 itself (any funded key may send; the registry checks the proof, not the sender).
+
+## Two devices: browser wallet plus phone prover
+
+`scripts/two-device-local.sh` in the repo root runs the whole thing on this machine with this CLI as
+the phone (`docs/two-device.md` has the recorded timeline): the "browser" part is curl plus
+`cast wallet sign` (session, EIP-191 address proof, `GET /sessions/:id/handoff`), the "phone" part is
+`companion handoff "$(curl -s $BRIDGE/sessions/$SID/handoff)" --stub-wallet issuer.json`.
 
 ## With the iPhone
 

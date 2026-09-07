@@ -69,6 +69,17 @@ verifier `http://10.0.2.2:8080`, bridge `http://10.0.2.2:8787`).
 
 ## Flow in the app
 
+0. Two-device handoff (the investor's browser holds the wallet, this phone proves): paste the
+   handoff the web app shows after the wallet signed the bridge session ("Prove on your phone"
+   card: the QR's compact JSON `{v:1,s,a,c,r,b}` or the `nachweis://handoff?…` URI) into "Paste
+   handoff" and tap "Apply handoff" (`net/Handoff.kt`, unit test `HandoffTest`). The app checks
+   the bridge session (`GET /sessions/:id`: exists, still `created`/`presented`, same nonce) and
+   fills session id, bound address, challenge, verifier and bridge URLs. "Request presentation"
+   then reuses that challenge, so the relay nonce equals the bridge session's nonce, and Submit
+   posts `noir-proof` to that session id; the address proof is the browser wallet's, the phone
+   never needs an Ethereum key. Scripted: `adb shell am start -n org.nachweis.prover/.MainActivity
+   --es handoff '<uri or json>'`, or a `nachweis://handoff?…` link (intent filter). No camera
+   scan (would need CameraX on top of zxing; paste and link only).
 1. Session: verifier (relay) URL, bridge URL, bound address. "Request
    presentation" generates a P-256 key (in memory) and
    a 32-byte challenge, calls `POST /relay/request`, checks that the returned
@@ -95,8 +106,9 @@ verifier `http://10.0.2.2:8080`, bridge `http://10.0.2.2:8787`).
    answers `{status: attested, tx_hash}`), then polls `GET /sessions/:id`
    and shows `state` and `detail`. With `REQUIRE_ADDRESS_PROOF=true` the
    bridge answers 409 until an EIP-191 address proof was posted for the
-   session; the phone holds no Ethereum key, so for the phone path run the
-   bridge with `REQUIRE_ADDRESS_PROOF=false` or post the address proof from
+   session; the phone holds no Ethereum key, so for the phone path use the
+   two-device handoff (step 0: the browser wallet signed the session), run the
+   bridge with `REQUIRE_ADDRESS_PROOF=false`, or post the address proof from
    the holder's wallet (`companion submit --wallet-key`) for the same session
    id, which the app shows. "Copy proof JSON" puts the same body on the
    clipboard for manual submission (`companion/README.md` has the laptop
@@ -169,8 +181,8 @@ Pixel 10 results: not yet measured (device arrives later); add a row here.
 
 ## What the app does not do
 
-- No camera QR scanning of a verifier URL (URLs are typed or pasted); the QR
-  the app shows is for the wallet phone to scan.
+- No camera QR scanning (URLs and the handoff are pasted or arrive as an
+  intent); the QR the app shows is for the wallet phone to scan.
 - No Android Keystore key: ECDH key agreement in the Keystore needs API 31,
   and the key lives for one session; it stays in process memory.
 - No `redirect_uri` handling for the same-device return; the app polls

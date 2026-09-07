@@ -18,6 +18,7 @@ import org.nachweis.prover.circuit.PublicInputs
 import org.nachweis.prover.crypto.EcKeys
 import org.nachweis.prover.crypto.Jwe
 import org.nachweis.prover.net.BridgeClient
+import org.nachweis.prover.net.Handoff
 import org.nachweis.prover.net.RelayClient
 import org.nachweis.prover.prover.ProverService
 import java.security.KeyPair
@@ -56,6 +57,9 @@ class FlowViewModel(app: Application) : AndroidViewModel(app) {
     var boundAddress by mutableStateOf("0xf99edde971f4e9c88715a79ca78963284a2955dc")
 
     var challengeHex by mutableStateOf(""); private set
+    /** Two-device flow: the handoff pasted from the investor's browser (bridge session bound to their wallet). */
+    var handoffText by mutableStateOf("")
+    var handoff by mutableStateOf<Handoff?>(null); private set
     private var keyPair: KeyPair? = null
     var relaySession by mutableStateOf<RelayClient.Session?>(null); private set
     var relayStatus by mutableStateOf("pending"); private set
@@ -129,14 +133,37 @@ class FlowViewModel(app: Application) : AndroidViewModel(app) {
         pollJob?.cancel()
         step = Step.SESSION; error = null; relaySession = null; relayStatus = "pending"
         presentation = null; derived = null; proof = null; bridgeSessionId = null; bridgeState = null
-        claims = emptyList(); challengeHex = ""; keyPair = null
+        claims = emptyList(); challengeHex = ""; keyPair = null; handoff = null; handoffText = ""
+    }
+
+    /** Two-device flow: take session id, bound address, challenge and URLs from the pasted handoff
+     *  (compact JSON or nachweis://handoff URI, see Handoff.kt). The relay request then uses the SAME
+     *  challenge, so the KB-JWT nonce equals the bridge session's nonce, and Submit posts to that session. */
+    fun applyHandoff() = run {
+        val h = Handoff.parse(handoffText)
+        val url = h.bridgeUrl ?: bridgeUrl.trim()
+        // The bridge session must exist, still wait for a proof, and carry the same nonce.
+        val s = bridge.getSession(url, h.sessionId)
+        if (s.nonce != null && s.nonce != h.nonce) throw IllegalStateException("bridge session nonce ${s.nonce} != handoff nonce ${h.nonce}")
+        if (s.state != "created" && s.state != "presented") throw IllegalStateException("bridge session is ${s.state}; the handoff is only valid while it waits for a proof")
+        withContext(Dispatchers.Main) {
+            handoff = h
+            bridgeUrl = url
+            h.verifierUrl?.let { verifierUrl = it }
+            boundAddress = h.boundAddress
+            challengeHex = h.challengeHex
+            bridgeSessionId = h.sessionId
+            bridgeState = s
+            logLine("handoff: bridge session ${h.sessionId} bound to ${h.boundAddress}, address proof ${if (s.addressVerified == true) "given" else "missing"}, nonce ${h.nonce.take(16)}...")
+        }
     }
 
     /** Session: fresh P-256 key, fresh 32-byte challenge, POST /relay/request. */
     fun requestPresentation() = run {
         val kp = EcKeys.generate()
         keyPair = kp
-        val challenge = EcKeys.randomBytes(32)
+        // With a handoff the challenge is the bridge session's; otherwise fresh.
+        val challenge = handoff?.let { Codec.hex(it.challengeHex) } ?: EcKeys.randomBytes(32)
         val ch = Codec.toHex(challenge)
         val jwk = EcKeys.publicJwk(kp, "prover-" + Codec.toHex(EcKeys.randomBytes(4)))
         val s = relay.createRequest(verifierUrl, jwk, boundAddress.trim(), ch)
@@ -193,6 +220,10 @@ class FlowViewModel(app: Application) : AndroidViewModel(app) {
         val v = JSONObject(text)
         withContext(Dispatchers.Main) {
             pollJob?.cancel()
+            val h = handoff
+            if (h != null && (h.boundAddress != v.getString("bound_address_hex").lowercase() || h.challengeHex != v.getString("challenge_hex").removePrefix("0x").lowercase())) {
+                logLine("warning: the test vector binds ${v.getString("bound_address_hex")} with its own challenge; the handoff session ${h.sessionId} will reject this proof (nonce mismatch)")
+            }
             boundAddress = v.getString("bound_address_hex")
             challengeHex = v.getString("challenge_hex").removePrefix("0x")
             presentation = v.getString("presentation")

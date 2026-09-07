@@ -36,6 +36,8 @@ export interface PresentationRequest {
   /** Relay and bridge mode: nonce the server derived (relay: also the one computed locally, for display). */
   nonce?: string
   localNonce?: string
+  /** Bridge mode: the 32-byte challenge behind the nonce (64 hex chars, no 0x), for the two-device handoff. */
+  challengeHex?: string
   pickupUrl?: string
   pickupToken?: string
 }
@@ -247,6 +249,7 @@ const bridgeClient: VerifierClient = {
       openid4vpUri: c.openid4vpUri ?? '',
       requestUri: c.requestUri,
       nonce: c.nonce,
+      challengeHex: c.challengeHex,
       mode: 'bridge',
     }
   },
@@ -303,6 +306,7 @@ const mockClient: VerifierClient = {
     return {
       sessionId: id,
       openid4vpUri: `openid4vp://?client_id=nachweis-demo&request_uri=${encodeURIComponent(`${VERIFIER_URL}/zk/request/${id}`)}`,
+      challengeHex: bytesToHex(crypto.getRandomValues(new Uint8Array(32))).slice(2),
       mode: 'mock',
     }
   },
