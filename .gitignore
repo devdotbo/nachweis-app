@@ -15,3 +15,6 @@ node_modules/
 !.env.example
 
 .DS_Store
+prover-sp1/target/
+prover-sp1/**/*.bin
+prover-sp1/**/*.log
