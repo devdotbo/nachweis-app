@@ -1,0 +1,2 @@
+-keep class org.nachweis.prover.core.** { *; }
+-keep class com.sun.jna.** { *; }
