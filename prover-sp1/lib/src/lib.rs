@@ -3,9 +3,14 @@
 //! The same code runs natively on the host (parser cross-check against the
 //! recorded ERICA fixture) and inside the SP1 guest (the proved statement).
 //! It mirrors what verifier-core's `verify::verify_pid_presentation_at` checks,
-//! minus wall-clock freshness (the chain enforces `expiry` from the public
-//! values instead) and minus the x5c-to-anchor chain (the issuer key is a
-//! private input whose SHA-256 is committed; the contract pins that hash).
+//! minus wall-clock freshness and minus the x5c-to-anchor chain (the issuer key
+//! is a private input whose SHA-256 is committed; the contract pins that hash).
+//!
+//! Expiry split: the committed `expiry` is the issuer credential's `exp` only,
+//! so the on-chain decision lives as long as the credential. KB-JWT freshness
+//! (`exp`, `iat`) is a property of the presentation, not of the credential, and
+//! is checked by the host against its wall clock with [`check_kb_freshness`];
+//! the guest has no clock and commits nothing about it.
 extern crate alloc;
 
 use alloc::string::String;
@@ -28,7 +33,7 @@ sol! {
         bytes32 vctHash;         // sha256(vct string)
         uint8   over18;          // 1 if age_equal_or_over.18 disclosed and true, else 0
         address subject;         // the Ethereum address the nonce commits to
-        uint64  expiry;          // min(issuer exp, KB-JWT exp); 0 if neither present
+        uint64  expiry;          // issuer credential exp; 0 if absent (KB-JWT exp is host-checked, not committed)
         bytes32 nonce;           // sha256(subject(20) || challenge); KB-JWT nonce = lowercase hex(nonce), no 0x
     }
 }
@@ -50,8 +55,34 @@ pub struct GuestInput {
 #[derive(Debug, Clone)]
 pub struct Verified {
     pub over18: bool,
+    /// Issuer credential `exp` (the committed expiry); 0 if absent.
     pub expiry: u64,
+    /// KB-JWT `exp`, parsed but not committed; the host checks it with `check_kb_freshness`.
+    pub kb_exp: Option<u64>,
+    /// KB-JWT `iat`, parsed but not committed.
+    pub kb_iat: Option<u64>,
     pub kb_nonce: String,
+}
+
+/// Host-side KB-JWT freshness check (the guest has no clock). Accepts a KB-JWT whose `exp` lies
+/// in `(now, now + window]` and whose `iat` lies in `[now - window, now + window]`; both claims
+/// are required. `window` is in seconds (the bridge default is 600). Never called in the guest.
+pub fn check_kb_freshness(v: &Verified, now: u64, window: u64) -> Result<(), String> {
+    let exp = v.kb_exp.ok_or_else(|| String::from("KB-JWT has no exp"))?;
+    let iat = v.kb_iat.ok_or_else(|| String::from("KB-JWT has no iat"))?;
+    if exp <= now {
+        return Err(alloc::format!("KB-JWT expired: exp {exp} <= now {now}"));
+    }
+    if exp > now.saturating_add(window) {
+        return Err(alloc::format!("KB-JWT exp {exp} is more than {window} s ahead of now {now}"));
+    }
+    if iat.saturating_add(window) < now {
+        return Err(alloc::format!("KB-JWT iat {iat} is more than {window} s before now {now}"));
+    }
+    if iat > now.saturating_add(window) {
+        return Err(alloc::format!("KB-JWT iat {iat} is more than {window} s ahead of now {now}"));
+    }
+    Ok(())
 }
 
 fn b64d(s: &str) -> Vec<u8> {
@@ -210,13 +241,13 @@ pub fn verify_presentation(
     assert_eq!(kb["sd_hash"].as_str(), Some(sd_hash.as_str()), "sd_hash mismatch");
     let kb_nonce = String::from(kb["nonce"].as_str().expect("KB-JWT nonce"));
 
-    // 7. Expiry: min of present exp values.
-    let mut expiry: u64 = 0;
-    for e in [claims["exp"].as_u64(), kb["exp"].as_u64()].into_iter().flatten() {
-        expiry = if expiry == 0 { e } else { expiry.min(e) };
-    }
+    // 7. Expiry: the issuer credential's exp (0 if absent). The KB-JWT exp/iat are only
+    //    parsed here; the host checks them against its clock (check_kb_freshness).
+    let expiry = claims["exp"].as_u64().unwrap_or(0);
+    let kb_exp = kb["exp"].as_u64();
+    let kb_iat = kb["iat"].as_u64();
 
-    Verified { over18, expiry, kb_nonce }
+    Verified { over18, expiry, kb_exp, kb_iat, kb_nonce }
 }
 
 /// Nonce commitment: sha256(address(20 bytes) || challenge bytes). The KB-JWT nonce string is
@@ -244,6 +275,12 @@ fn hex_lower(b: &[u8]) -> String {
 
 /// The full guest statement: verify, bind the nonce to the address, build public values.
 pub fn prove_statement(input: &GuestInput) -> PublicValuesStruct {
+    prove_statement_with_facts(input).0
+}
+
+/// Same as `prove_statement`, additionally returning the verified facts (KB-JWT exp/iat) the host
+/// needs for `check_kb_freshness`.
+pub fn prove_statement_with_facts(input: &GuestInput) -> (PublicValuesStruct, Verified) {
     let v = verify_presentation(
         &input.presentation,
         &input.issuer_key_sec1,
@@ -252,12 +289,13 @@ pub fn prove_statement(input: &GuestInput) -> PublicValuesStruct {
     );
     let nonce = nonce_commitment(&input.bound_address, &input.challenge);
     assert_eq!(v.kb_nonce, hex_lower(&nonce), "KB-JWT nonce is not bound to the address");
-    PublicValuesStruct {
+    let pv = PublicValuesStruct {
         issuerKeyHash: <[u8; 32]>::from(Sha256::digest(&input.issuer_key_sec1)).into(),
         vctHash: <[u8; 32]>::from(Sha256::digest(input.expected_vct.as_bytes())).into(),
         over18: v.over18 as u8,
         subject: alloy_sol_types::private::Address::from(input.bound_address),
         expiry: v.expiry,
         nonce: nonce.into(),
-    }
+    };
+    (pv, v)
 }

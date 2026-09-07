@@ -2,15 +2,22 @@
 //!
 //! Commands:
 //!   --check-fixture <sdjwt>   run the shared verification natively on a recorded fixture
-//!   --synth --out <dir>       mint a synthetic SD-JWT PID with nested age_equal_or_over.18
+//!   --synth --out <dir> [--issuer-exp <unix>]  mint a synthetic SD-JWT PID with nested age_equal_or_over.18
 //!   --execute --input <json>  execute the guest, report cycles
 //!   --prove --system compressed|groth16|plonk --input <json>  prove, verify, save
 //!   --verify <proof.bin>      verify a saved proof with the SP1 verifier
+//!
+//! --execute and --prove first run the statement natively and check KB-JWT freshness against
+//! the wall clock (--kb-window, default 600 s), as the bridge does; --allow-stale-kb skips that
+//! check for stored fixtures whose KB-JWT has long expired. The guest itself has no clock.
 use alloy_sol_types::SolType;
 use base64::engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD};
 use base64::Engine;
 use clap::{Parser, ValueEnum};
-use nachweis_pid_lib::{nonce_string, verify_presentation, GuestInput, PublicValuesStruct};
+use nachweis_pid_lib::{
+    check_kb_freshness, nonce_string, prove_statement_with_facts, verify_presentation, GuestInput,
+    PublicValuesStruct,
+};
 use p256::ecdsa::signature::Signer;
 use p256::ecdsa::{Signature, SigningKey};
 use serde::{Deserialize, Serialize};
@@ -53,6 +60,19 @@ struct Args {
     /// so the synthetic issuer JWT has a realistic size. The x5c is not verified by the guest.
     #[arg(long)]
     header_from: Option<PathBuf>,
+    /// --synth: issuer credential exp (unix seconds). Default 2027-09-01T00:00:00Z.
+    #[arg(long, default_value_t = 1_819_756_800)]
+    issuer_exp: u64,
+    /// --execute/--prove: KB-JWT freshness window in seconds (exp within, iat not older than).
+    #[arg(long, default_value_t = 600)]
+    kb_window: u64,
+    /// --execute/--prove: skip the KB-JWT freshness pre-check (stored fixtures).
+    #[arg(long)]
+    allow_stale_kb: bool,
+}
+
+fn now_unix() -> u64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs()
 }
 
 /// On-disk input for the guest (hex for byte fields).
@@ -130,7 +150,7 @@ fn disclosure(salt: &str, name: &str, value: serde_json::Value) -> (String, Stri
     (d, digest)
 }
 
-fn synth(out: &PathBuf, header_from: Option<&PathBuf>) {
+fn synth(out: &PathBuf, header_from: Option<&PathBuf>, issuer_exp: u64) {
     use rand::RngCore;
     let mut rng = rand::thread_rng();
     let issuer = SigningKey::random(&mut rng);
@@ -167,13 +187,17 @@ fn synth(out: &PathBuf, header_from: Option<&PathBuf>) {
         }
         age_digests.push(dg);
     }
-    let iat = 1780435200u64;
+    // Issuer credential issued now, expiring at --issuer-exp (about a year ahead by default) so
+    // the on-chain decision is live at real time; the KB-JWT mirrors the sandbox wallet
+    // (exp = iat + 300), so the fixture's KB-JWT is stale five minutes after minting.
+    let iat = now_unix();
+    assert!(issuer_exp > iat, "--issuer-exp must lie in the future");
     let payload = serde_json::json!({
         "iss": "https://synthetic-issuer.example/pid-de",
         "vct": "urn:eudi:pid:de:1",
         "iat": iat,
         "nbf": iat,
-        "exp": iat + 365 * 86400,
+        "exp": issuer_exp,
         "_sd_alg": "sha-256",
         "cnf": {"jwk": {"kty": "EC", "crv": "P-256",
             "x": b64u(holder_pt.x().unwrap()), "y": b64u(holder_pt.y().unwrap())}},
@@ -184,7 +208,7 @@ fn synth(out: &PathBuf, header_from: Option<&PathBuf>) {
     let sd_part = format!("{issuer_jwt}~{d_given}~{d_family}~{d_18}~");
     let sd_hash = b64u(&Sha256::digest(sd_part.as_bytes()));
     let kb_payload = serde_json::json!({
-        "iat": iat + 60, "exp": iat + 360,
+        "iat": iat, "exp": iat + 300,
         "aud": "https://self-issued.me/v2",
         "nonce": nonce, "sd_hash": sd_hash,
     });
@@ -208,7 +232,7 @@ fn synth(out: &PathBuf, header_from: Option<&PathBuf>) {
     println!("wrote {}/input.json (issuer JWT {} chars, presentation {} chars)",
         out.display(), input.presentation.split('~').next().unwrap().len(), input.presentation.len());
     let v = verify_presentation(&input.presentation, &issuer_pub, &input.expected_vct, &input.expected_aud);
-    println!("native self-check: over18={} expiry={} nonce_ok={}", v.over18, v.expiry, v.kb_nonce == nonce);
+    println!("native self-check: over18={} expiry={} kb_exp={:?} nonce_ok={}", v.over18, v.expiry, v.kb_exp, v.kb_nonce == nonce);
 }
 
 fn decode_pv(bytes: &[u8]) -> DecodedPv {
@@ -232,12 +256,12 @@ fn main() {
         let s = s.trim();
         let key = leaf_key_from_x5c(s.split('~').next().unwrap());
         let v = verify_presentation(s, &key, "urn:eudi:pid:de:1", "https://self-issued.me/v2");
-        println!("fixture {} verified natively: over18={} expiry={} kb_nonce={}",
-            p.display(), v.over18, v.expiry, v.kb_nonce);
+        println!("fixture {} verified natively: over18={} expiry={} kb_exp={:?} kb_iat={:?} kb_nonce={}",
+            p.display(), v.over18, v.expiry, v.kb_exp, v.kb_iat, v.kb_nonce);
         return;
     }
     if args.synth {
-        synth(&args.out.clone().unwrap_or_else(|| PathBuf::from("fixtures")), args.header_from.as_ref());
+        synth(&args.out.clone().unwrap_or_else(|| PathBuf::from("fixtures")), args.header_from.as_ref(), args.issuer_exp);
         return;
     }
     if let Some(p) = &args.verify {
@@ -253,6 +277,13 @@ fn main() {
     let input_path = args.input.clone().expect("--input required");
     let file: InputFile = serde_json::from_str(&std::fs::read_to_string(&input_path).unwrap()).unwrap();
     let guest = file.to_guest();
+    // Host pre-check: the statement natively (fast fail) and KB-JWT freshness against the clock.
+    let (_pv, facts) = prove_statement_with_facts(&guest);
+    match check_kb_freshness(&facts, now_unix(), args.kb_window) {
+        Ok(()) => {}
+        Err(e) if args.allow_stale_kb => eprintln!("warning: {e} (--allow-stale-kb)"),
+        Err(e) => panic!("KB-JWT freshness pre-check failed: {e}; use --allow-stale-kb for stored fixtures"),
+    }
     let mut stdin = SP1Stdin::new();
     stdin.write(&guest);
     let client = ProverClient::from_env();
