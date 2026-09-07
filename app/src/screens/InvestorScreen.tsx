@@ -13,7 +13,7 @@ export function InvestorScreen({ wallet }: { wallet: Wallet }) {
   return (
     <div className="grid">
       <ConnectCard wallet={wallet} title="Connect wallet" lead="The address you connect is the subject of the eligibility decision. Nothing else about you goes on chain." />
-      <PresentCard address={address} session={session} />
+      <PresentCard wallet={wallet} session={session} />
       <StatusCard address={address} session={session} />
       <DoorsCard address={address} />
       <ChainPanel address={address} />

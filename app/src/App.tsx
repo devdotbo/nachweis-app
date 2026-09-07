@@ -5,6 +5,7 @@ import { updateSession, useSessions } from './lib/sessions'
 import { useWallet } from './lib/wallet'
 import { InvestorScreen } from './screens/InvestorScreen'
 import { IssuerScreen } from './screens/IssuerScreen'
+import { bridge, isTerminal } from './bridge'
 import { verifier } from './verifier'
 
 const VERIFIER_POLL_MS = 2000
@@ -12,9 +13,12 @@ const VERIFIER_POLL_MS = 2000
 /** Polls the verifier for every pending session, whichever role is on screen. */
 function useSessionPolling() {
   const sessions = useSessions()
-  const pendingIds = sessions.filter((s) => s.state === 'pending').map((s) => s.request.sessionId).join(',')
+  const activeIds = sessions
+    .filter((s) => s.state === 'pending' || (s.state !== 'rejected' && !(s.bridge && isTerminal(s.bridge.state))))
+    .map((s) => s.request.sessionId)
+    .join(',')
   useEffect(() => {
-    if (!pendingIds) return
+    if (!activeIds) return
     let alive = true
     const tick = async () => {
       for (const s of sessions.filter((x) => x.state === 'pending')) {
@@ -27,6 +31,17 @@ function useSessionPolling() {
           if (alive) updateSession(s.request.sessionId, { error: e instanceof Error ? e.message : String(e) })
         }
       }
+      for (const s of sessions.filter((x) => x.state !== 'rejected' && !(x.bridge && isTerminal(x.bridge.state)))) {
+        try {
+          const b = await bridge.getSession(s.request.sessionId)
+          if (!alive) return
+          const patch: Parameters<typeof updateSession>[1] = { bridge: b, bridgeError: undefined }
+          if (b.state === 'attested') patch.state = 'attested'
+          updateSession(s.request.sessionId, patch)
+        } catch (e) {
+          if (alive) updateSession(s.request.sessionId, { bridgeError: e instanceof Error ? e.message : String(e) })
+        }
+      }
     }
     void tick()
     const t = setInterval(tick, VERIFIER_POLL_MS)
@@ -34,9 +49,9 @@ function useSessionPolling() {
       alive = false
       clearInterval(t)
     }
-    // sessions is read fresh inside tick via the closure of this effect run; pendingIds changes re-arm it.
+    // sessions is read fresh inside tick via the closure of this effect run; activeIds changes re-arm it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pendingIds])
+  }, [activeIds])
 }
 
 export function App() {

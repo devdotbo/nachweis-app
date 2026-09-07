@@ -1,15 +1,11 @@
 import { useState } from 'react'
-import { keccak256, stringToBytes, type Address, type Hex } from 'viem'
-import { DECISION_TTL_SECONDS, POLICY_ID, REQUIRED_BITS, TIER_A } from '../config'
+import type { Address } from 'viem'
+import { POLICY_ID, REQUIRED_BITS } from '../config'
 import { useRegistryTx } from '../lib/chain'
 import { shortAddress } from '../lib/format'
+import { demoDecision, statusRefFor } from '../lib/decision'
 import { updateSession, type Session } from '../lib/sessions'
-import type { Decision } from '../lib/types'
 import { TxLine } from './TxLine'
-
-export function statusRefFor(sessionId: string): Hex {
-  return keccak256(stringToBytes(sessionId))
-}
 
 export function IssuerPending({ operator, sessions }: { operator?: Address; sessions: Session[] }) {
   const { tx, attest, revoke } = useRegistryTx(operator)
@@ -18,16 +14,8 @@ export function IssuerPending({ operator, sessions }: { operator?: Address; sess
 
   const approve = async (s: Session) => {
     setBusy(s.request.sessionId)
-    const decision: Decision = {
-      policyId: POLICY_ID,
-      bits: REQUIRED_BITS,
-      tier: TIER_A,
-      expiry: BigInt(Math.floor(Date.now() / 1000) + DECISION_TTL_SECONDS),
-      statusRef: statusRefFor(s.request.sessionId),
-      revoked: false,
-    }
     try {
-      await attest(s.boundAddress, decision)
+      await attest(s.boundAddress, demoDecision(s.request.sessionId))
       updateSession(s.request.sessionId, { state: 'attested' })
     } catch {
       /* shown by TxLine */
@@ -54,8 +42,8 @@ export function IssuerPending({ operator, sessions }: { operator?: Address; sess
         <span className="n">3</span>Presentations
       </h2>
       <p className="lead">
-        Sessions created in this browser, verified by the verifier-service. Held in memory only. Approve writes an EligibilityDecision (policy, bits 0x{REQUIRED_BITS.toString(16)}, tier A, 30 days,
-        statusRef = keccak256(session id)) for the bound address.
+        Sessions created in this browser, verified by the verifier-service. Held in memory only. The bridge normally attests with attestWithProof; Approve is the operator path
+        (attestByOperator: policy, bits 0x{REQUIRED_BITS.toString(16)}, tier A, 30 days, statusRef = keccak256(session id)) for the bound address.
       </p>
       {sessions.length === 0 ? <div className="empty">No presentations yet. Switch to Investor and create a request.</div> : null}
       <div className="list">
@@ -87,6 +75,7 @@ export function IssuerPending({ operator, sessions }: { operator?: Address; sess
                 type="button"
                 className="btn btn-mint"
                 disabled={locked || busy !== undefined || (s.state !== 'presented' && s.state !== 'revoked')}
+                title="attestByOperator, the operator path"
                 onClick={() => void approve(s)}
               >
                 {busy === s.request.sessionId && tx.status === 'pending' && tx.label === 'attestByOperator' ? 'Attesting' : s.state === 'revoked' ? 'Re-attest' : 'Approve'}
