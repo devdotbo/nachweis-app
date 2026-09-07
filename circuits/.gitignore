@@ -3,3 +3,4 @@ out/
 Prover_neg_*.toml
 pid-sdjwt/Prover.*.toml
 !pid-sdjwt/Prover.baseline-swiyu.toml
+pid-sdjwt/Prover_shape-*.toml
