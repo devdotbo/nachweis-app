@@ -36,7 +36,7 @@ Fixed offsets in the shipped vector: 745 (dob digest), 1471 (x), 1521 (y).
 | Holder binding | device signs raw 32 byte nonce | KB-JWT `{"alg":"ES256","typ":"kb+jwt"}` over `{"aud","exp","iat","nonce","sd_hash"}` |
 | Nonce | raw 32 bytes | lowercase hex of sha256(address20 || challenge32), 64 chars |
 | sd_hash | absent | base64url(sha256(issuerJwt ~d1~...~dN~)) in the KB-JWT |
-| Expiry | not exposed | `exp` in issuer JWT and KB-JWT, min exposed |
+| Expiry | not exposed | issuer JWT `exp` exposed; the KB-JWT `exp` (iat + 300 in sandbox wallets) is checked off chain by the bridge |
 | Signature s | happened to be low-s | high-s in the vector; ECDSA blackbox rejects high-s |
 
 ## Minimal adaptation chosen
@@ -60,7 +60,11 @@ Changed (src/main.nr, src/constants.nr):
 4. `"cnf":{"jwk":{` must appear at `cnf_offset`; `x_offset` and `y_offset` must
    lie within 128 bytes after it. Coordinates are read and decoded as in d10.
 5. `"exp":<10 digits>` terminated by `,` or `}` is parsed from the issuer
-   payload and the KB-JWT payload; the circuit returns the minimum.
+   payload and returned as `expiry`. The KB-JWT `exp` is not read: it belongs
+   to the presentation, not the credential (sandbox wallets set it to
+   iat + 300, which would expire the on-chain decision five minutes after the
+   presentation), and the bridge checks it against its clock before proving
+   (`prover-sp1/lib` `check_kb_freshness`, same rule as the SP1 host).
 6. KB-JWT: constant header `eyJhbGciOiJFUzI1NiIsInR5cCI6ImtiK2p3dCJ9`, raw KB
    payload is a private input (max 320), re-encoded, hashed, verified under
    the cnf key. `"aud":"https://self-issued.me/v2"` is a constant fragment.
@@ -100,4 +104,4 @@ payload with 20+ top level digests and a status claim may need PAYLOAD_MAX_LEN
 - Not checked in-circuit: x5c chain to a trust anchor (the verifier contract
   pins issuerKeyHash instead), status list, iat/nbf, freshness window (the
   contract compares expiry with block.timestamp), the other presented
-  disclosures, KB-JWT iat.
+  disclosures, KB-JWT exp and iat (bridge, off chain).

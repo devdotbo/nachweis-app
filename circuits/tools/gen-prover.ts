@@ -107,7 +107,6 @@ const kbJson = kbPayloadRaw.toString("utf8");
 if (b64url(kbPayloadRaw) !== kbPayloadB64) throw new Error("KB payload base64url round trip differs");
 const kbAudOffset = uniqueIndex(kbJson, `"aud":"${input.expected_aud}"`);
 if (input.expected_aud !== "https://self-issued.me/v2") throw new Error("circuit pins aud https://self-issued.me/v2");
-const kbExpOffset = uniqueIndex(kbJson, '"exp":');
 const kbNonceOffset = uniqueIndex(kbJson, '"nonce":"');
 const kbSdHashOffset = uniqueIndex(kbJson, '"sd_hash":"');
 
@@ -193,14 +192,13 @@ toml += `x_offset = ${xOffset}\n`;
 toml += `y_offset = ${yOffset}\n`;
 toml += `exp_offset = ${expOffset}\n`;
 toml += `kb_aud_offset = ${kbAudOffset}\n`;
-toml += `kb_exp_offset = ${kbExpOffset}\n`;
 toml += `kb_nonce_offset = ${kbNonceOffset}\n`;
 toml += `kb_sd_hash_offset = ${kbSdHashOffset}\n`;
 toml += `challenge = ${bytes(challenge)}\n`;
 toml += `subject = ${bytes(subject)}\n`;
 writeFileSync(outPath, toml);
 
-const expiry = Math.min(payloadObj.exp, kbObj.exp);
+const expiry = payloadObj.exp; // committed expiry is the issuer exp; KB-JWT exp is checked off chain
 console.log(`wrote ${outPath}${tamper ? ` (tampered: ${tamper})` : ""}`);
 console.log(`header_b64 ${headerB64.length}/${HEADER_B64_MAX}, payload ${payloadRaw.length}/${PAYLOAD_MAX_LEN}, tail ${tail.length}/${TAIL_MAX}, kb_payload ${kbPayloadRaw.length}/${KB_PAYLOAD_MAX}`);
 console.log(`expected public outputs: issuer_key_hash=0x${sha256(sec1).toString("hex")} over18=1 expiry=${expiry} nonce=0x${nonce} subject=0x${subject.toString("hex")}`);
