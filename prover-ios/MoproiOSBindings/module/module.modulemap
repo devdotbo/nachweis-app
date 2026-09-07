@@ -1,0 +1,4 @@
+module prover_mobile_coreFFI {
+    header "prover_mobile_coreFFI.h"
+    export *
+}

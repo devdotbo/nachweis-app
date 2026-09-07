@@ -1,0 +1,78 @@
+# xcodegen spec: `xcodegen generate` writes NachweisProver.xcodeproj (gitignored).
+name: NachweisProver
+options:
+  bundleIdPrefix: io.nachweis
+  deploymentTarget:
+    iOS: "17.0"
+  xcodeVersion: "26.6"
+  createIntermediateGroups: true
+settings:
+  base:
+    DEVELOPMENT_TEAM: JTVRXAL73A
+    CODE_SIGN_STYLE: Automatic
+    SWIFT_VERSION: "5.10"
+    SWIFT_STRICT_CONCURRENCY: minimal
+    ENABLE_USER_SCRIPT_SANDBOXING: NO
+targets:
+  NachweisProver:
+    type: application
+    platform: iOS
+    sources:
+      - path: NachweisProver
+        excludes: ["Resources/bn254_g1.dat"]
+      - path: NachweisProver/Resources/bn254_g1.dat
+        buildPhase: resources
+        optional: true
+      - path: MoproiOSBindings/mopro.swift
+        optional: true
+    dependencies:
+      - framework: MoproiOSBindings/MoproBindings.xcframework
+        embed: false
+    info:
+      path: NachweisProver/Info.plist
+      properties:
+        CFBundleDisplayName: Nachweis Prover
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        LSRequiresIPhoneOS: true
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+          NSAllowsArbitraryLoads: true
+        LSApplicationQueriesSchemes: [openid4vp, haip, eudi-openid4vp]
+        CFBundleURLTypes:
+          - CFBundleURLName: io.nachweis.prover
+            CFBundleURLSchemes: [nachweis]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.nachweis.prover
+        TARGETED_DEVICE_FAMILY: "1"
+        OTHER_LDFLAGS: ["-lc++"]
+        # Xcode 26 does not register module maps from static xcframeworks; mopro writes a shim.
+        SWIFT_INCLUDE_PATHS: "$(SRCROOT)/MoproiOSBindings/module"
+        HEADER_SEARCH_PATHS: "$(SRCROOT)/MoproiOSBindings/module"
+  NachweisProverTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: NachweisProverTests
+    dependencies:
+      - target: NachweisProver
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.nachweis.prover.tests
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/NachweisProver.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/NachweisProver"
+schemes:
+  NachweisProver:
+    build:
+      targets:
+        NachweisProver: all
+        NachweisProverTests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets: [NachweisProverTests]
+    profile:
+      config: Release
+    archive:
+      config: Release
