@@ -25,8 +25,8 @@ export function ConnectCard({ wallet, title, lead }: { wallet: Wallet; title: st
       {wallet.wrongChain ? (
         <div className="row">
           <span className="status closed">wrong network</span>
-          <button type="button" className="btn btn-yellow" onClick={wallet.switchToSepolia}>
-            Switch to Sepolia
+          <button type="button" className="btn btn-yellow" onClick={wallet.switchToChain}>
+            Switch to {wallet.chainName}
           </button>
         </div>
       ) : null}

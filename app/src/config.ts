@@ -13,8 +13,10 @@ export const MOCK = env.VITE_MOCK === '1' || env.VITE_MOCK === 'true'
 
 export const VERIFIER_URL: string = (env.VITE_VERIFIER_URL ?? 'http://localhost:3000').replace(/\/+$/, '')
 export const VERIFIER_MODE: 'service' | 'relay' = env.VITE_VERIFIER_MODE === 'relay' ? 'relay' : 'service'
+/** True when VITE_BRIDGE_URL is set: the investor flow then creates its session at the bridge (POST /sessions), which creates the presentation request at the verifier itself. Unset: the app calls the verifier directly and the bridge endpoints are tried at VITE_VERIFIER_URL. */
+export const BRIDGE_CONFIGURED: boolean = Boolean(env.VITE_BRIDGE_URL && env.VITE_BRIDGE_URL !== '')
 /** The bridge verifies the wallet's session signature, runs the prover and sends attestWithProof with the operator key. Defaults to the verifier URL. */
-export const BRIDGE_URL: string = (env.VITE_BRIDGE_URL && env.VITE_BRIDGE_URL !== '' ? env.VITE_BRIDGE_URL : VERIFIER_URL).replace(/\/+$/, '')
+export const BRIDGE_URL: string = (BRIDGE_CONFIGURED ? env.VITE_BRIDGE_URL! : VERIFIER_URL).replace(/\/+$/, '')
 
 export const REGISTRY = addressOr(env.VITE_REGISTRY, ZERO_ADDRESS)
 export const FUND_TOKEN = addressOr(env.VITE_FUND_TOKEN, ZERO_ADDRESS)
@@ -27,6 +29,8 @@ export const DEFAULT_POLICY_ID: Hex = keccak256(stringToBytes('nachweis.pid.over
 export const POLICY_ID: Hex = env.VITE_POLICY_ID && /^0x[0-9a-fA-F]{64}$/.test(env.VITE_POLICY_ID) ? (env.VITE_POLICY_ID as Hex) : DEFAULT_POLICY_ID
 export const REQUIRED_BITS: bigint = BigInt(env.VITE_REQUIRED_BITS ?? '3')
 export const RPC_URL: string | undefined = env.VITE_RPC_URL && env.VITE_RPC_URL !== '' ? env.VITE_RPC_URL : undefined
+/** Chain the wallet must be on. Default Sepolia (11155111); 31337 for a plain anvil. */
+export const CHAIN_ID: number = env.VITE_CHAIN_ID && /^\d+$/.test(env.VITE_CHAIN_ID) ? Number(env.VITE_CHAIN_ID) : 11155111
 
 /** Display labels for predicate bits. Decision bits: 1 = identity evidence (bit 0), 2 = over 18 (bit 1). */
 export const BIT_LABELS: readonly string[] = ['identity evidence', 'over 18']
