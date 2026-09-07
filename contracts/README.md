@@ -205,7 +205,7 @@ paths = "src/noir/PidSdJwtUltraHonkVerifier.sol"
 optimizer_runs = 1
 ```
 
-One `forge build` compiles that file in its own solc job at runs 1 and everything else at runs 200; the artifact `out/PidSdJwtUltraHonkVerifier.sol/HonkVerifier.json` is the runs-1 build, so `new HonkVerifier()` in tests and in the deploy script deploys the 24,246 byte code (asserted by `test_honkVerifierFitsEip170` and by the script). `forge build --sizes` reports the margin (330 bytes). After changing `foundry.toml` run `forge clean` once, a stale `out/` can otherwise still hold the runs-200 artifact.
+One `forge build` compiles that file in its own solc job at runs 1 and everything else at runs 200; the artifact `out/PidSdJwtUltraHonkVerifier.sol/HonkVerifier.json` is the runs-1 build, so `new HonkVerifier()` in tests and in the deploy script deploys the 24,246 byte code (asserted by `test_honkVerifierFitsEip170` and by the script). `forge build --sizes` reports the margin (330 bytes). After changing `foundry.toml` run `forge clean` once, a stale `out/` can otherwise still hold the runs-200 artifact. Side effect: contracts that import the generated file (the Noir test and the deploy script) are compiled in the runs-1 job as well, so the `NoirPidVerifier` they deploy is the runs-1 variant (`out/NoirPidVerifier.sol/NoirPidVerifier.honk.json`, 3,376 bytes) instead of the canonical runs-200 artifact (3,448 bytes); both are functionally identical.
 
 Deploy (dry run, nothing is sent; `HONK_VERIFIER` reuses an existing deployment):
 
