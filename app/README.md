@@ -15,20 +15,21 @@ bun run typecheck         # tsc --noEmit
 bun run build             # typecheck + vite build into dist/
 ```
 
-Mock mode (`VITE_MOCK=1`) runs the whole flow in memory with fake delays: mock wallets, a mock verifier that "presents" the sample identity after four seconds, and a mock registry. No network calls. Use it to record the video even if a chain step is red.
+Mock mode (`VITE_MOCK=1`) runs the whole flow in memory with fake delays: mock wallets, a mock verifier that "presents" the sample identity after four seconds, a mock bridge that walks verified, proving (three seconds, "generating proof, 430k cycles"), proved, attested, and a mock registry. No network calls. Use it to record the video even if a chain step is red.
 
 ## Environment
 
 | variable | meaning |
 |---|---|
 | `VITE_VERIFIER_URL` | verifier-service base URL |
-| `VITE_VERIFIER_MODE` | `service` (current `/zk/` endpoints) or `relay` (planned blind-relay endpoints) |
+| `VITE_VERIFIER_MODE` | `service` (current `/zk/` endpoints) or `relay` (blind-relay endpoints) |
+| `VITE_BRIDGE_URL` | bridge base URL (session signature, prover, attestWithProof); defaults to `VITE_VERIFIER_URL` |
 | `VITE_REGISTRY` | AttestationRegistry address on Sepolia |
 | `VITE_FUND_TOKEN` | FundToken address |
 | `VITE_SUBSCRIPTION` | Subscription address |
 | `VITE_POOL` | optional Uniswap pool; the Swap door stays disabled until set |
-| `VITE_POLICY_ID` | bytes32 policy id the issuer attests under |
-| `VITE_REQUIRED_BITS` | bits the issuer sets on approval and the doors require (default 3: bit 0 identity evidence, bit 1 over 18) |
+| `VITE_POLICY_ID` | bytes32 policy id; default keccak256("nachweis.pid.over18.v1") |
+| `VITE_REQUIRED_BITS` | bits the decision carries and the doors require (default 3: 1 = identity evidence, 2 = over 18) |
 | `VITE_RPC_URL` | optional Sepolia RPC, defaults to viem's public endpoint |
 | `VITE_MOCK` | `1` for mock mode |
 
@@ -36,15 +37,19 @@ Mock mode (`VITE_MOCK=1`) runs the whole flow in memory with fake delays: mock w
 
 One app, two roles switched in the header.
 
-Investor: (1) connect wallet (injected connector), (2) Present your ID: creates a presentation request at the verifier-service, shows the QR code and the openid4vp link, polls the outcome, (3) Eligibility: not permitted / presented, awaiting issuer / permitted, with the on-chain Decision from `decisionOf` and the bits as labelled flags, (4) two doors: Subscribe calls `Subscription.subscribe()`, Swap is disabled until `VITE_POOL` is set; both show open or closed from `isEligible`, (5) What the chain sees: the raw Decision and the line "no name, no document".
+Investor: (1) connect wallet (injected connector), (2) Present your ID: creates a presentation request at the verifier-service, then the wallet signs the session (EIP-191 personal message `nachweis:session:<id>`, sent to the bridge as `POST /sessions/:id/address-proof {signature}`), shows the QR code and the openid4vp link, polls the outcome, (3) Eligibility: not permitted / presented, awaiting issuer / permitted, the bridge state machine from `GET /sessions/:id` (created, presented, verified, proving, proved, attested, failed) with the attest tx hash, and the on-chain Decision from `decisionOf` with the bits as labelled flags, (4) two doors: Subscribe calls `Subscription.subscribe()`, Swap is disabled until `VITE_POOL` is set; both show open or closed from `isEligible`, (5) What the chain sees: the raw Decision and the line "no name, no document".
 
-Issuer: (1) connect operator wallet, (2) presentations created in this browser session with the claims summary the verifier-service exposes (memory only, gone on reload), Approve calls `attestByOperator(subject, Decision)` with the policy id and bits from env, tier A, expiry now plus 30 days, statusRef = keccak256(session id); Revoke calls `revoke(subject, policyId)`, (3) revoke by address for subjects without a session, (4) event log of Attested and Revoked (last 50,000 blocks, refreshed every 8 seconds).
+Issuer: (1) connect operator wallet, (2) revoke by address for subjects without a session, (3) presentations created in this browser session with the claims summary the verifier-service exposes (memory only, gone on reload); the bridge normally attests with `attestWithProof`, Approve is the operator path `attestByOperator(subject, Decision)` with the policy id and bits from env, tier A, expiry now plus 30 days, statusRef = keccak256(session id); Revoke calls `revoke(subject, policyId)`, (4) event log of Attested and Revoked (last 50,000 blocks, refreshed every 8 seconds).
 
 ## Verifier client (`src/verifier.ts`)
 
 `service` mode uses the endpoints the verifier-service exposes today: `GET /zk/` creates an mso_mdoc_zk request (`session`, `authorization_request`), `GET /zk/result/:id` returns `verified` with a `disclosure_statement` or `rejected`, 404 while pending.
 
-`relay` mode implements the planned blind-relay endpoints (`POST /relay/request`, `GET /relay/status/:id`, `GET /relay/response/:id` with `X-Pickup-Token`). The browser generates an ephemeral P-256 ECDH key with WebCrypto, keeps the private key in memory only, and shows the nonce `sha256(bound_address_bytes || challenge_bytes)` next to the relay's. Decrypting the JWE (ECDH-ES, A128GCM) is a stub: the response is shown as an opaque encrypted blob.
+`relay` mode implements the blind-relay endpoints (verifier branch nachweis-relay): `POST /relay/request {client_jwk, bound_address, challenge}`, `GET /relay/status/:id`, `GET /relay/response/:id` with `X-Pickup-Token` (handed out once, 410 afterwards; the app keeps the pickup in memory). The browser generates an ephemeral P-256 ECDH key with WebCrypto (`alg` ECDH-ES, `use` enc), keeps the private key in memory only, and shows the nonce `sha256(bound_address_bytes || challenge_bytes)` next to the relay's. Decrypting the JWE (ECDH-ES, A128GCM) is a stub: the response is shown as an opaque encrypted blob.
+
+## Bridge client (`src/bridge.ts`)
+
+The proof binds the subject address through the nonce, so the chain needs no wallet signature. The wallet signature is off chain: `POST /sessions/:id/address-proof {signature}`; the bridge verifies it before attesting. `GET /sessions/:id` returns the state (`state`, `tx_hash`, `detail`); the app polls it every two seconds until attested or failed. The attest transaction is sent by the bridge with the operator key, never by the investor.
 
 ## Wallet
 
