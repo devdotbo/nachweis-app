@@ -108,7 +108,7 @@ const serviceClient: VerifierClient = {
 }
 
 // ---------------------------------------------------------------------------
-// relay mode: planned blind-relay endpoints
+// relay mode: blind-relay endpoints (verifier branch nachweis-relay)
 // ---------------------------------------------------------------------------
 
 interface RelayCreated {
@@ -116,28 +116,38 @@ interface RelayCreated {
   request_uri: string
   openid4vp_uri: string
   nonce: string
+  bound_address: string
   pickup_url: string
   pickup_token: string
+  status_url?: string
+  response_code?: string
 }
 interface RelayStatus {
+  session_id: string
   status: 'pending' | 'responded' | 'picked_up'
+  pickup_once?: boolean
 }
 interface RelayResponse {
+  session_id: string
   jwe: string
   nonce: string
+  bound_address: string
   received_at: string
 }
 
 /** Private keys live here only, never serialised, gone on reload. */
 const relayKeys = new Map<string, CryptoKey>()
+/** The relay hands out a response once (410 afterwards), so the pickup is kept in memory. */
+const relayResponses = new Map<string, RelayResponse>()
 
 async function generateClientKey(): Promise<{ privateKey: CryptoKey; publicJwk: JsonWebKey }> {
   const pair = await crypto.subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveBits'])
-  const publicJwk = await crypto.subtle.exportKey('jwk', pair.publicKey)
+  const exported = await crypto.subtle.exportKey('jwk', pair.publicKey)
+  const publicJwk: JsonWebKey = { kty: 'EC', crv: 'P-256', x: exported.x, y: exported.y, alg: 'ECDH-ES', use: 'enc' }
   return { privateKey: pair.privateKey, publicJwk }
 }
 
-/** nonce = sha256(bound_address_bytes || challenge_bytes), hex without 0x. */
+/** nonce = sha256(bound_address_bytes || challenge_bytes), lowercase hex, 64 chars. */
 export async function relayNonce(boundAddress: Address, challenge: Hex): Promise<string> {
   const a = hexToBytes(boundAddress)
   const c = hexToBytes(challenge)
@@ -163,8 +173,7 @@ const relayClient: VerifierClient = {
   mode: 'relay',
   async createRequest(boundAddress) {
     const { privateKey, publicJwk } = await generateClientKey()
-    const challengeBytes = crypto.getRandomValues(new Uint8Array(32))
-    const challenge = bytesToHex(challengeBytes)
+    const challenge = bytesToHex(crypto.getRandomValues(new Uint8Array(32)))
     const localNonce = await relayNonce(boundAddress, challenge)
     const r = await getJson<RelayCreated>(`${VERIFIER_URL}/relay/request`, {
       method: 'POST',
@@ -185,21 +194,31 @@ const relayClient: VerifierClient = {
     }
   },
   async status(request) {
-    const s = await getJson<RelayStatus>(`${VERIFIER_URL}/relay/status/${encodeURIComponent(request.sessionId)}`)
-    if (!s.ok) throw new Error(`relay ${s.status}: ${s.text}`)
-    if (s.body.status === 'pending') return { state: 'pending' }
-    const r = await getJson<RelayResponse>(request.pickupUrl ?? `${VERIFIER_URL}/relay/response/${encodeURIComponent(request.sessionId)}`, {
-      headers: request.pickupToken ? { 'X-Pickup-Token': request.pickupToken } : {},
-    })
-    if (!r.ok) throw new Error(`relay pickup ${r.status}: ${r.text}`)
+    const cached = relayResponses.get(request.sessionId)
+    if (!cached) {
+      const s = await getJson<RelayStatus>(`${VERIFIER_URL}/relay/status/${encodeURIComponent(request.sessionId)}`)
+      if (!s.ok) throw new Error(`relay ${s.status}: ${s.text}`)
+      if (s.body.status === 'pending') return { state: 'pending' }
+      const r = await getJson<RelayResponse>(request.pickupUrl ?? `${VERIFIER_URL}/relay/response/${encodeURIComponent(request.sessionId)}`, {
+        headers: request.pickupToken ? { 'X-Pickup-Token': request.pickupToken } : {},
+      })
+      if (!r.ok) {
+        if (r.status === 404) return { state: 'pending' }
+        if (r.status === 410) return { state: 'presented', claims: [], note: 'The relay already handed this response out once (410). Nothing is cached in this browser.' }
+        throw new Error(`relay pickup ${r.status}: ${r.text}`)
+      }
+      relayResponses.set(request.sessionId, r.body)
+    }
+    const body = relayResponses.get(request.sessionId)!
     const key = relayKeys.get(request.sessionId)
-    const claims = key ? await decryptRelayResponse(key, r.body.jwe) : null
+    const claims = key ? await decryptRelayResponse(key, body.jwe) : null
     return {
       state: 'presented',
-      receivedAt: r.body.received_at,
+      receivedAt: body.received_at,
       claims: claims ?? [
-        { label: 'response', value: `JWE (${r.body.jwe.length} chars), decryption not implemented yet`, strength: 'encrypted' },
-        { label: 'nonce', value: r.body.nonce, strength: 'asserted' },
+        { label: 'response', value: `JWE (${body.jwe.length} chars), decryption not implemented yet`, strength: 'encrypted' },
+        { label: 'nonce', value: body.nonce, strength: 'asserted' },
+        { label: 'bound address', value: body.bound_address, strength: 'asserted' },
       ],
       note: claims ? undefined : 'Relay mode: the response is encrypted to a key that only this browser holds. Decryption is a TODO.',
     }
