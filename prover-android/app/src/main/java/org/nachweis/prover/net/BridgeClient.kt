@@ -13,7 +13,15 @@ import org.json.JSONObject
  * `detail`, `tx_hash`) to show the result.
  */
 class BridgeClient(private val http: OkHttpClient = RelayClient.defaultClient()) {
-    data class SessionState(val state: String, val detail: String, val txHash: String?, val error: String?)
+    data class SessionState(
+        val state: String,
+        val detail: String,
+        val txHash: String?,
+        val error: String?,
+        val nonce: String? = null,
+        val boundAddress: String? = null,
+        val addressVerified: Boolean? = null,
+    )
 
     /** Creates a bridge session with the same address and challenge the relay request used. */
     fun createSession(baseUrl: String, boundAddress: String, challengeHex: String): String {
@@ -39,6 +47,9 @@ class BridgeClient(private val http: OkHttpClient = RelayClient.defaultClient())
                 detail = json.optString("detail"),
                 txHash = json.optString("tx_hash").takeIf { it.isNotBlank() && it != "null" },
                 error = json.optString("error").takeIf { it.isNotBlank() && it != "null" },
+                nonce = json.optString("nonce").takeIf { it.isNotBlank() && it != "null" }?.lowercase()?.removePrefix("0x"),
+                boundAddress = json.optString("bound_address").takeIf { it.isNotBlank() && it != "null" }?.lowercase(),
+                addressVerified = if (json.has("address_verified") && !json.isNull("address_verified")) json.getBoolean("address_verified") else null,
             )
         }
     }

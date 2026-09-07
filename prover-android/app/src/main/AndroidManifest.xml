@@ -18,6 +18,13 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- Two-device handoff link from the investor's browser: nachweis://handoff?v=1&s=...&a=...&c=...&r=...&b=... -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="nachweis" android:host="handoff" />
+            </intent-filter>
         </activity>
     </application>
 </manifest>
