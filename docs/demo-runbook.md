@@ -11,20 +11,13 @@ Nothing in this file touches a live network. Every `--broadcast` below goes to a
 
 ## Known blockers (read first)
 
-TODO-1 (contracts, blocks every `forge` command on main): `forge build` fails on a clean checkout.
+TODO-1 (contracts, resolved on main): `forge build` failed on a clean checkout because solc 0.8.28 does not allow reading a non-library contract's constant through the contract type (`FundToken.DEFAULT_REQUIRED_BITS` in the three scripts). Commit `1162f2f` replaced the expression with the literal `uint256(0x3)`. `forge clean && forge build && forge test` on main now gives 87 passed, 0 failed, 10 fork tests skipped (re-verified 2026-09-07 on branch `wp9c-consistency`). The "scratch copy" mentions below refer to the run made before that fix; the commands are the same on main.
 
-```
-Error (9582): Member "DEFAULT_REQUIRED_BITS" not found or not visible after argument-dependent lookup in type(contract FundToken).
-  --> script/PermissionedPoolScriptBase.s.sol:49:50:
-```
+TODO-2 (fixture expiry, resolved by WP9b): the prover fixture's `expiry` is now the issuer credential `exp`, 1819756800 (2027-09-01), so a plain `anvil` with the wall-clock timestamp works: no `--timestamp` flag and no time window. `Sp1PidVerifier`, `NoirPidVerifier` and `isEligible` compare the expiry with `block.timestamp`, which stays below it until 2027-09-01. WP9b also re-minted the vector: subject `0xF99EDdE971F4e9c88715a79CA78963284A2955dC`, challenge `7426bd0ea9dbe592f719371e370251246c99a1838fe3c2bf5646e90221f69df2`, nonce `0x306863157ddb59f4e5a56f41aa8591e68b574c8c3475c43d9bd469220be90762` (`prover-sp1/fixtures/input.json`, `calldata-groth16.json`); section 5 uses these values.
 
-solc 0.8.28 does not allow reading a non-library contract's constant through the contract type (`FundToken.DEFAULT_REQUIRED_BITS`); it reports one occurrence per run, and the same expression is in `contracts/script/Deploy.s.sol:26`, `contracts/script/CreatePermissionedPool.s.sol:41` and `contracts/script/PermissionedPoolScriptBase.s.sol:49`. Introduced by commit `78a855a` (WP9). The "87 passed" `forge test` runs recorded elsewhere came from a stale `cache/` and `out/`; `forge clean` exposes the error and `forge test` then fails to compile as well. Fix for the contracts owner: replace the three expressions with `uint256(0x3)` or a shared file-level constant. Everything below that says "verified in the scratch copy" was run in a copy of `contracts/` with exactly that three-line patch applied (`sed '…s/FundToken.DEFAULT_REQUIRED_BITS/uint256(0x3)/'`), nothing else changed; with the patch, `forge clean && forge build && forge test` gives 87 passed, 0 failed, 10 fork tests skipped.
+TODO-3 (app chain id, resolved): the app takes the chain from `VITE_CHAIN_ID` (default 11155111) and the RPC from `VITE_RPC_URL`. For a plain anvil set `VITE_CHAIN_ID=31337` and `VITE_RPC_URL=http://127.0.0.1:8545`; no `--chain-id` flag on anvil. The wallet needs a network with the same chain id and RPC.
 
-TODO-2 (fixture expiry, until WP9b lands): the prover fixture's `expiry` is 1780435560 (2026-06-02). `Sp1PidVerifier`, `NoirPidVerifier` and `isEligible` compare it with `block.timestamp`, so a plain anvil must start with `--timestamp 1780435000` and the attest must happen within about 9 minutes of starting anvil (anvil's clock advances with wall time). After that window `attestWithProof` reverts with `Expired()` and `isEligible` returns false. WP9b (branch `wp9b-expiry`) re-mints the vector with a future issuer expiry; once merged, drop the `--timestamp` flag and the time limit.
-
-TODO-3 (app chain id): `app/src/lib/WalletProvider.tsx` pins wagmi to Sepolia (chain id 11155111). Against a plain anvil (chain id 31337) the wallet connector refuses the chain. For a local real-mode run start anvil with `--chain-id 11155111`, or use the Sepolia fork (which keeps 11155111), and point the wallet's Sepolia RPC at `http://127.0.0.1:8545`.
-
-TODO-4 (app real mode needs the bridge's verifier mode): in `service` mode the app creates the session at the verifier (`GET /zk/`) and then calls the bridge's `POST /sessions/:id/address-proof` and `GET /sessions/:id` with the verifier's session id (`app/src/bridge.ts`, `app/src/verifier.ts`). The bridge only knows session ids it created itself (`POST /sessions`), and it reuses the verifier's id only in verifier mode (`VERIFIER_URL` set), which needs the two endpoints from the unpushed `klartext-verifier` branch `nachweis-relay` (`service/README.md`, "How the presentation reaches the bridge"). Until those exist, the browser flow stops after the QR code with a 404 from the bridge. The runnable paths today are the scripted bridge flow (section 5) and the app in mock mode (section 8).
+TODO-4 (app real mode and the bridge, partly resolved): with `VITE_BRIDGE_URL` set the app creates its session at the bridge (`POST /sessions {bound_address}`), signs `nachweis:session:<id>` for that id and polls `GET /sessions/:id`; it no longer talks to the verifier itself (`app/src/verifier.ts`, bridge mode). What remains: the QR path needs the bridge's verifier mode (`VERIFIER_URL` set), which needs the two endpoints from the unpushed `klartext-verifier` branch `nachweis-relay` (`service/README.md`, "How the presentation reaches the bridge"). With the bridge in local mode the browser flow works end to end when the presentation is posted by a script (section 5, beat 2): the app shows the session id and the bridge states instead of a QR code.
 
 TODO-5 (ports on this Mac): unrelated local processes hold 8765, 8787 and 8791. The bridge's default `BIND` is `127.0.0.1:8787`; set `BIND=127.0.0.1:8790` (used below) or any free port and pass the same to `VITE_BRIDGE_URL`.
 
@@ -56,10 +49,10 @@ export W=/Users/bioharz/git/ethglobal/nachweis-app          # repo root
 
 | step | command | expected | status |
 |---|---|---|---|
-| 2.1 | `cd $W/contracts && forge clean && forge build` | `Compiler run successful!` | not run on main: TODO-1 (error above). Verified in the scratch copy with the patch. |
-| 2.2 | `cd $W/contracts && forge test` | `87 tests passed, 0 failed, 10 skipped` (the 10 are fork tests, skipped without `SEPOLIA_RPC_URL`) | same as 2.1: fails to compile on main; 87 passed in the scratch copy |
+| 2.1 | `cd $W/contracts && forge clean && forge build` | `Compiler run successful!` | verified 2026-09-07 on `wp9c-consistency` (main plus the POLICY_ID default change); TODO-1 is fixed on main |
+| 2.2 | `cd $W/contracts && forge test` | `87 tests passed, 0 failed, 10 skipped` (the 10 are fork tests, skipped without `SEPOLIA_RPC_URL`) | verified 2026-09-07 on `wp9c-consistency`: 87 passed, 0 failed, 10 skipped |
 | 2.3 | `cd $W/service && cargo build --release` | `Finished release profile` | verified locally 2026-09-07 (7.7 s incremental; the first build compiles sp1-sdk and takes minutes) |
-| 2.4 | `cd $W/service && cargo test` | 3 unit tests plus `mock_pipeline_attests_and_revokes_on_anvil ... ok` | verified locally 2026-09-07 with `contracts/out` populated from the scratch build. Note: when `contracts/out` is missing the test runs `forge build`, which fails on main (TODO-1), and the test then passes with a `SKIP` message instead of running; check for `SKIP` with `cargo test --test anvil -- --nocapture` |
+| 2.4 | `cd $W/service && cargo test` | 3 unit tests plus `mock_pipeline_attests_and_revokes_on_anvil ... ok` | verified locally 2026-09-07 with `contracts/out` populated from the scratch build. Note: when `contracts/out` is missing the test runs `forge build` first; if that fails the test passes with a `SKIP` message instead of running; check for `SKIP` with `cargo test --test anvil -- --nocapture` |
 | 2.5 | `cd $W/app && bun install && bun run build` | `416 packages installed`, then `tsc` clean and `vite build` into `dist/` (one chunk-size warning) | verified locally 2026-09-07 |
 | 2.6 | `cd $W/prover-sp1/script && cargo build --release` | builds the guest through `build.rs`; produces `$W/prover-sp1/target/elf-compilation/riscv64im-succinct-zkvm-elf/release/nachweis-pid-program` | verified locally 2026-09-07 (1 m 28 s) |
 | 2.7 | `cd $W/circuits/pid-sdjwt && nargo test && nargo compile` | `4 tests passed`; `target/pid_sdjwt.json` | verified locally 2026-09-07 |
@@ -71,12 +64,12 @@ The Noir proof itself (`bb prove`, `bb write_solidity_verifier`) is documented i
 Terminal A:
 
 ```
-anvil --port 8545 --timestamp 1780435000
+anvil --port 8545
 ```
 
-Expected: the ten funded accounts, `Listening on 127.0.0.1:8545`. `cast chain-id --rpc-url http://127.0.0.1:8545` prints `31337`; `cast block latest --rpc-url http://127.0.0.1:8545 -f timestamp` prints `1780435000`. Verified locally 2026-09-07.
+Expected: the ten funded accounts, `Listening on 127.0.0.1:8545`. `cast chain-id --rpc-url http://127.0.0.1:8545` prints `31337`; the block timestamp is the wall clock, which is below the fixture expiry (2027-09-01, TODO-2).
 
-The `--timestamp` flag is TODO-2. Add `--chain-id 11155111` when the browser app is to connect (TODO-3).
+No `--timestamp` or `--chain-id` flags are needed any more (TODO-2, TODO-3). The browser app connects to chain id 31337 with `VITE_CHAIN_ID=31337`.
 
 Keys used everywhere below (anvil defaults, public, worthless):
 
@@ -86,11 +79,11 @@ export DEPLOYER_PRIVATE_KEY=0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae
 export POLICY_ID=0xd27260f1ca509ba75dea6cd27b2985a96e423550e16db3350d2945e215e3d05f            # keccak256("nachweis.pid.over18.v1")
 ```
 
-`POLICY_ID` must be passed explicitly: `Deploy.s.sol` and the pool scripts default to `keccak256("nachweis.demo.fund.v1")`, while the verifier deploy scripts, the bridge and the app default to `keccak256("nachweis.pid.over18.v1")`. With the default of `Deploy.s.sol` the bridge would attest under a policy the token does not read.
+`POLICY_ID` is exported for the `cast` calls below. Every deploy and pool script, the bridge and the app default to the same id, `keccak256("nachweis.pid.over18.v1")` = `0xd272…d05f`, so the export only makes the value explicit (earlier, `Deploy.s.sol` and the pool scripts defaulted to `keccak256("nachweis.demo.fund.v1")`, and the bridge would have attested under a policy the token does not read).
 
 ## 4. Deploy the contracts
 
-All from `$W/contracts` (scratch copy until TODO-1 is fixed).
+All from `$W/contracts`.
 
 4.1 Registry, FundToken, Subscription (verified in the scratch copy 2026-09-07):
 
@@ -175,12 +168,12 @@ INFO nachweis_bridge: listening bind=127.0.0.1:8790
 
 `curl -s http://127.0.0.1:8790/health` prints `{"chain":{"operator":"0xf39f…","registry":"0xb7f8…"},"mode":"local","ok":true,"policy_id":"0xd272…","proof_mode":"mock","require_address_proof":false}`.
 
-### The six beats, scripted (Terminal C, verified locally 2026-09-07 within the TODO-2 window)
+### The six beats, scripted (Terminal C; verified locally 2026-09-07 with the pre-WP9b fixture, values below updated to the WP9b fixture and re-verified by the e2e run, `docs/e2e-local.md`)
 
-The fixture presentation is bound to subject `0xcf02ad5376095e285fc88ae8c1fa240791370c17` with challenge `4a0c254ad03eb45efd6fa230c2cdafc2e14821316c976c22d0272066cc63c1e5`; both must be reused or the KB-JWT nonce check fails (422 `KB-JWT nonce mismatch`).
+The fixture presentation is bound to subject `0xF99EDdE971F4e9c88715a79CA78963284A2955dC` with challenge `7426bd0ea9dbe592f719371e370251246c99a1838fe3c2bf5646e90221f69df2` (`prover-sp1/fixtures/input.json`); both must be reused or the KB-JWT nonce check fails (422 `KB-JWT nonce mismatch`).
 
 ```
-export B=http://127.0.0.1:8790 SUBJ=0xcf02ad5376095e285fc88ae8c1fa240791370c17
+export B=http://127.0.0.1:8790 SUBJ=0xF99EDdE971F4e9c88715a79CA78963284A2955dC
 ```
 
 Beat 1, the investor is not permitted:
@@ -193,13 +186,13 @@ Beat 2, session and presentation (in the live demo the wallet answers the QR; he
 
 ```
 SID=$(curl -s -X POST $B/sessions -H 'content-type: application/json' \
-  -d "{\"bound_address\":\"$SUBJ\",\"challenge_hex\":\"4a0c254ad03eb45efd6fa230c2cdafc2e14821316c976c22d0272066cc63c1e5\"}" \
+  -d "{\"bound_address\":\"$SUBJ\",\"challenge_hex\":\"7426bd0ea9dbe592f719371e370251246c99a1838fe3c2bf5646e90221f69df2\"}" \
   | python3 -c "import sys,json;print(json.load(sys.stdin)['session_id'])")
 python3 -c "import json,sys;print(json.dumps({'sd_jwt_presentation':open(sys.argv[1]).read().strip()}))" $W/prover-sp1/fixtures/synthetic-over18.sdjwt > /tmp/pres.json
 curl -s -X POST $B/sessions/$SID/presentation -H 'content-type: application/json' --data @/tmp/pres.json
 ```
 
-Expected: `POST /sessions` returns `session_id`, `nonce` `e6de79975a3b30ad89d7af4e44fcdba843df4b70d4b3307e687e5498bbe0a25d` (the fixture's KB-JWT nonce), `address_proof_message` `nachweis:session:<id>`. The presentation call returns in well under a second with `"status":"proved"`, `"proof_system":"mock-groth16"`, `public_values` `{expiry: 1780435560, issuer_key_hash: 0x841e…, nonce: 0xe6de…, over18: 1, subject: 0xcf02…, vct_hash: 0x27b2…}`, `vkey` `0x00b092…`. `GET $B/sessions/$SID` shows `proved | proof ready (mock-groth16)`.
+Expected: `POST /sessions` returns `session_id`, `nonce` `306863157ddb59f4e5a56f41aa8591e68b574c8c3475c43d9bd469220be90762` (the fixture's KB-JWT nonce), `address_proof_message` `nachweis:session:<id>`. The presentation call returns in well under a second with `"status":"proved"`, `"proof_system":"mock-groth16"`, `public_values` `{expiry: 1819756800, issuer_key_hash: <as in prover-sp1/fixtures/calldata-groth16.json>, nonce: 0x3068…, over18: 1, subject: 0xf99e…, vct_hash: 0x27b2…}`, `vkey` `0x00b092…`. `GET $B/sessions/$SID` shows `proved | proof ready (mock-groth16)`.
 
 Beat 3, the attest transaction and what the chain sees:
 
@@ -210,7 +203,7 @@ cast call $REG "decisionOf(address,bytes32)((bytes32,uint256,uint8,uint64,bytes3
 cast logs --rpc-url $RPC --address $REG "Attested(address,bytes32,uint256,uint8,uint64,bytes32,address)"
 ```
 
-Expected: the attest response carries `"attested":{"attester":"0xf39f…","bits":"0x3","expiry":1780435560,"policy_id":"0xd272…","status_ref":"0x…","subject":"0xcf02…","tier":1}` (the decoded `Attested` event) plus the `call` with the `Decision` and the four `publicInputs`; the session reads `attested | attested in 0x<tx hash>`; `decisionOf` prints `(0xd272…, 3, 1, 1780435560, 0x<statusRef>, false)`; `cast logs` shows one `Attested` log whose data is `bits 3, tier 1, expiry 0x6a1f4a68, statusRef`. Nothing in the record or the event is a name. `isEligible(...)` now prints `true`.
+Expected: the attest response carries `"attested":{"attester":"0xf39f…","bits":"0x3","expiry":1819756800,"policy_id":"0xd272…","status_ref":"0x…","subject":"0xf99e…","tier":1}` (the decoded `Attested` event) plus the `call` with the `Decision` and the four `publicInputs`; the session reads `attested | attested in 0x<tx hash>`; `decisionOf` prints `(0xd272…, 3, 1, 1819756800, 0x<statusRef>, false)`; `cast logs` shows one `Attested` log whose data is `bits 3, tier 1, expiry 0x6c774900, statusRef`. Nothing in the record or the event is a name. `isEligible(...)` now prints `true`.
 
 Beat 4, door one (the subject has no key on anvil, so impersonate it):
 
@@ -249,9 +242,9 @@ export PROVER_ELF=$W/prover-sp1/target/elf-compilation/riscv64im-succinct-zkvm-e
 
 `execute` (verified locally 2026-09-07, `BIND=127.0.0.1:18791`): the presentation call returns after 11 s with `{'status': 'proved', 'proof_system': 'execute', 'cycles': 430143, 'proof_hex': None}`; the session reads `proved | proof ready (execute, 430k cycles)`; `POST …/attest` answers 409 `{"error":"no on-chain proof for proof mode execute"}`. Good for showing the guest run on camera without the five-minute wait.
 
-`groth16` (`BIND=127.0.0.1:18792`): the presentation call blocks while SP1 proves (core, compress, shrink, wrap, gnark), then returns `proof_system` `groth16`, `proof_hex` of 356 bytes and the `vkey`. Not completed 2026-09-07, see TODO-6. For the attest to succeed on a plain anvil the policy's verifier must be `Sp1PidVerifier` (4.2) and the mock gateway must accept the pair: `cast send $GW "accept(bytes32,bytes,bool)" <vkey> <public_values_hex> true --rpc-url $RPC --private-key $DEPLOYER_PRIVATE_KEY`, within the TODO-2 window. The proof itself is only verified by the real gateway on the Sepolia fork (section 7) or on Sepolia.
+`groth16` (`BIND=127.0.0.1:18792`): the presentation call blocks while SP1 proves (core, compress, shrink, wrap, gnark), then returns `proof_system` `groth16`, `proof_hex` of 356 bytes and the `vkey`. Not completed 2026-09-07, see TODO-6. For the attest to succeed on a plain anvil the policy's verifier must be `Sp1PidVerifier` (4.2) and the mock gateway must accept the pair: `cast send $GW "accept(bytes32,bytes,bool)" <vkey> <public_values_hex> true --rpc-url $RPC --private-key $DEPLOYER_PRIVATE_KEY`. The proof itself is only verified by the real gateway on the Sepolia fork (section 7) or on Sepolia.
 
-Shortcut with a real verification and no proving: on a Sepolia fork, `PROOF_MODE=mock` with the fixture's subject and challenge produces exactly the fixture's public values, and the fixture proof is a valid Groth16 proof for them, so `Sp1PidVerifier` plus the real gateway accept it (this is what `contracts/test/Sp1PidVerifier.fork.t.sol` asserts with `vm.warp`). On the fork the block timestamp is past the fixture expiry (TODO-2); whether `anvil --fork-url … --timestamp 1780435000` rewinds a fork is unverified.
+Shortcut with a real verification and no proving: on a Sepolia fork, `PROOF_MODE=mock` with the fixture's subject and challenge produces exactly the fixture's public values, and the fixture proof is a valid Groth16 proof for them, so `Sp1PidVerifier` plus the real gateway accept it (this is what `contracts/test/Sp1PidVerifier.fork.t.sol` asserts at the fork head, no `vm.warp`). The fixture expiry (2027-09-01) lies ahead of the fork head, so no timestamp tricks are needed (TODO-2).
 
 ## 7. Uniswap permissioned pool on a Sepolia fork
 
@@ -311,7 +304,7 @@ cd $W/app && VITE_MOCK=1 bun run dev
 
 Everything runs in memory: mock wallets, a mock verifier that "presents" the sample identity after four seconds, a mock bridge that walks verified, proving (three seconds, "generating proof, 430k cycles"), proved, attested, and a mock registry. This is the fallback for the video if a chain step is red; the captions must then say "mock".
 
-Real mode (not run: needs an injected wallet and, past the QR code, the bridge's verifier mode, TODO-4):
+Real mode (not run in this pass: needs an injected wallet; the QR path additionally needs the bridge's verifier mode, TODO-4; with the bridge in local mode the presentation is posted by the script of section 5, beat 2, using the session id the app shows):
 
 ```
 cd $W/app && cp .env.example .env
@@ -321,12 +314,12 @@ cd $W/app && cp .env.example .env
 # VITE_REGISTRY=$REG  VITE_FUND_TOKEN=$TOK  VITE_SUBSCRIPTION=$SUB
 # VITE_POOL=                                   leave empty until the pool exists; the Swap door stays disabled
 # VITE_POLICY_ID=0xd272…d05f  VITE_REQUIRED_BITS=3
-# VITE_RPC_URL=http://127.0.0.1:8545           anvil started with --chain-id 11155111 (TODO-3)
+# VITE_CHAIN_ID=31337  VITE_RPC_URL=http://127.0.0.1:8545     plain anvil (TODO-3 resolved)
 # VITE_MOCK=0
 bun run dev
 ```
 
-Wallet: MetaMask (or any injected wallet) with its Sepolia network's RPC URL edited to `http://127.0.0.1:8545`; import anvil account 1 for the investor and account 0 for the issuer (operator). The bridge runs with `REQUIRE_ADDRESS_PROOF=true` so the session signature is enforced.
+Wallet: MetaMask (or any injected wallet) with a custom network, chain id 31337, RPC URL `http://127.0.0.1:8545`; import anvil account 1 for the investor and account 0 for the issuer (operator). The bridge runs with `REQUIRE_ADDRESS_PROOF=true` so the session signature is enforced.
 
 The six beats as clicks, and what to watch:
 
@@ -374,7 +367,7 @@ What to record for the video (screen recording only, no speedups): the Etherscan
 | item | status |
 |---|---|
 | tool versions | verified |
-| `forge build`, `forge test` on main | failed, TODO-1 (exact error above); 87 passed in the scratch copy with the three-line patch |
+| `forge build`, `forge test` | verified on `wp9c-consistency` (TODO-1 fixed on main by `1162f2f`): 87 passed, 10 skipped |
 | `cargo build --release`, `cargo test` (service, incl. anvil e2e) | verified |
 | `bun install`, `bun run build` (app) | verified |
 | SP1 guest and host build | verified |
@@ -384,7 +377,7 @@ What to record for the video (screen recording only, no speedups): the Etherscan
 | bridge execute (11 s, 430,143 cycles, attest 409) | verified |
 | bridge groth16 | not completed: TODO-6 (artifact re-download) |
 | app mock mode serves | verified |
-| app real mode browser flow | not run: needs an injected wallet; blocked past the QR by TODO-4 |
+| app real mode browser flow | not run: needs an injected wallet; the QR path needs the bridge's verifier mode (TODO-4), the scripted-presentation path is covered by the e2e run |
 | Uniswap pool on a Sepolia fork | not run: needs a Sepolia RPC (network) |
 | Sepolia real run | not run: no keys, no network, builder's decision |
 
@@ -394,4 +387,4 @@ TODO-6 (bridge groth16 mode re-downloads the SP1 artifacts): with `PROOF_MODE=gr
 INFO sp1_prover::build: [sp1] groth16 circuit artifacts for version v6.1.0 are missing or incomplete at /Users/bioharz/.sp1/circuits/groth16/v6.1.0. downloading...
 ```
 
-although that directory holds the 7.8 GB the SP1 spike downloaded (`constraints.json`, `groth16_circuit.bin`, `groth16_pk.bin`, `groth16_vk.bin`, `groth16_witness.json`, `Groth16Verifier.sol`, `SP1VerifierGroth16.sol`; the spike's own host in `prover-sp1/NOTES.md` proved Groth16 with them). The bridge started writing `v6.1.0.incomplete.<random>` next to it. The run was stopped there (network download, 6.2 GB, about 44 minutes on the first spike run). What the sdk's completeness check expects is unverified; the service owner should compare the artifact check in the sp1-sdk 6.1.0 used by `service/Cargo.lock` with the one used by `prover-sp1/script`, or let the download finish once on the demo machine before recording. Until then the Groth16 route is demonstrated by the fixture proof through the real gateway on a Sepolia fork (section 6, shortcut) and by `prover-sp1/script` (`--prove --system groth16`, `prover-sp1/NOTES.md`).
+although that directory holds the 7.8 GB the SP1 spike downloaded (`constraints.json`, `groth16_circuit.bin`, `groth16_pk.bin`, `groth16_vk.bin`, `groth16_witness.json`, `Groth16Verifier.sol`, `SP1VerifierGroth16.sol`; the spike's own host in `prover-sp1/NOTES.md` proved Groth16 with them). The bridge started writing `v6.1.0.incomplete.<random>` next to it. The run was stopped there (network download, 6.2 GB, about 44 minutes on the first spike run). What the sdk's completeness check expects is unverified; the service owner should compare the artifact check in the sp1-sdk 6.1.0 used by `service/Cargo.lock` with the one used by `prover-sp1/script`, or let the download finish once on the demo machine before recording. Note for the fix: the bridge must be built with the `native-gnark` feature (the default feature in `service/Cargo.toml`, `sp1-sdk/native-gnark`; do not build with `--no-default-features`), which uses the in-process gnark prover and the local artifacts; whether that resolves the re-download is being verified by the e2e run (`docs/e2e-local.md`). Until then the Groth16 route is demonstrated by the fixture proof through the real gateway on a Sepolia fork (section 6, shortcut) and by `prover-sp1/script` (`--prove --system groth16`, `prover-sp1/NOTES.md`).
