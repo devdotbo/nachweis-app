@@ -26,7 +26,7 @@ import {PermissionedPoolOnboarding} from "../script/lib/PermissionedPoolOnboardi
 ///         attested investor, as a revoked investor and as a never-attested address. Nothing is broadcast.
 contract PermissionedPoolSwapSepoliaForkTest is Test {
     bytes32 constant POLICY = keccak256("nachweis.demo.fund.v1");
-    uint256 constant REQUIRED = 0x7;
+    uint256 constant REQUIRED = 0x3; // BIT_IDENTITY | BIT_OVER_18, the provable bits
     uint256 constant FUND_LIQUIDITY = 1000e18;
     uint256 constant STABLE_LIQUIDITY = 1000e6;
     uint128 constant SWAP_IN = 100e6;
