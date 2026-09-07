@@ -9,6 +9,14 @@ async fn main() -> Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
         .init();
+    // The statement library reports failures by panicking; the bridge catches those and turns them
+    // into error text, so the default hook's stderr dump is replaced by one log line.
+    std::panic::set_hook(Box::new(|info| {
+        let msg = info.payload().downcast_ref::<String>().cloned()
+            .or_else(|| info.payload().downcast_ref::<&str>().map(|s| s.to_string()))
+            .unwrap_or_default();
+        tracing::warn!(location = %info.location().map(|l| l.to_string()).unwrap_or_default(), "panic: {msg}");
+    }));
     let cfg = Config::from_env()?;
     let chain = match (&cfg.rpc_url, &cfg.operator_private_key, cfg.registry) {
         (Some(rpc), Some(key), Some(registry)) => {
