@@ -27,6 +27,7 @@ cargo test                     # unit tests + the anvil end-to-end test (skips i
 | `PROVER_ELF` | explicit guest ELF path; else `PROVER_ARTIFACTS/nachweis-pid-program`, else `../prover-sp1/target/elf-compilation/riscv64im-succinct-zkvm-elf/release/nachweis-pid-program` | unset |
 | `EXPECTED_VCT` | vct the statement expects | `urn:eudi:pid:de:1` |
 | `EXPECTED_AUD` | KB-JWT `aud` the statement expects (the verifier's `client_id`) | `https://self-issued.me/v2` |
+| `KB_JWT_WINDOW_SECS` | KB-JWT freshness window: `exp` must lie within this many seconds ahead of now and `iat` must not be older than this; checked after the native statement run, before proving. `0` disables the check (only for the stored fixture, whose KB-JWT expired five minutes after minting) | `600` |
 | `ISSUER_KEY_SEC1_HEX` | issuer P-256 key, SEC1 uncompressed; when unset the key is read from the `x5c` leaf certificate in the issuer JWT header (that is what a real ERICA credential needs; the synthetic fixture needs the override because its header copies the ERICA x5c) | unset |
 | `SP1_PROVER` | sp1-sdk prover selection: `cpu` (local), `mock`, `network` | sp1 default |
 | `RUST_LOG` | tracing filter | `info` |
@@ -115,7 +116,7 @@ list, freshness window) stay in front of the bridge, which then proves the state
   and vkey from `PROVER_ARTIFACTS/calldata-groth16.json`. Only a `MockProofVerifier` accepts this;
   the pipeline runs in well under a second. A warning is logged when the fixture's public values
   differ from the session's.
-- `execute`: runs the guest ELF, returns cycles and public values, no proof (430,143 cycles for
+- `execute`: runs the guest ELF, returns cycles and public values, no proof (434,181 cycles for
   the fixture; execute plus vkey setup takes seconds in a release build).
 - `compressed`: STARK proof, verified locally, not submittable on chain.
 - `groth16`: on-chain proof (`4-byte selector ‖ Groth16 proof`, 356 bytes); about 5 minutes on an
@@ -130,12 +131,14 @@ list, freshness window) stay in front of the bridge, which then proves the state
 
 ## Known mismatches between prover output and contracts
 
-1. `expiry = min(issuer exp, KB-JWT exp)`. Real ERICA KB-JWTs carry `exp = iat + 300`, so the
-   on-chain decision expires five minutes after the presentation, and `isEligible` turns false
-   right after the demo. The fixture's expiry (1780435560) is already in the past, which is why
-   the anvil test starts the chain at `--timestamp 1780435000`. Suggested prover change: commit the
-   issuer `exp` only and let the bridge (which already sees the presentation) enforce KB-JWT
-   freshness off chain, or commit both values separately.
+1. Resolved: both proofs commit the issuer credential `exp` only (it used to be
+   `min(issuer exp, KB-JWT exp)`, and real ERICA KB-JWTs carry `exp = iat + 300`, so the on-chain
+   decision expired five minutes after the presentation). KB-JWT freshness is enforced here, off
+   chain: after the native statement run the bridge checks `exp` and `iat` against its clock
+   (`KB_JWT_WINDOW_SECS`, default 600) and answers 422 `KB-JWT freshness: ...` before proving.
+   The fixture's expiry (1819756800, 2027-09-01) lies ahead of real time, so the anvil test runs
+   on a plain `anvil` and disables the window only for the stale fixture KB-JWT (and checks that
+   the default window rejects it).
 2. `policyId` is not in the public values; the adapter has to pin `issuerKeyHash`, `vctHash` and
    the vkey per policy and check `publicInputs[1]` against its own mapping.
 3. Resolved: the FundToken demo policy requires `REQUIRED_BITS = 0x3` (identity evidence, over 18),
@@ -178,7 +181,7 @@ ever handles public values and proof bytes.
 ```
 export PATH="$HOME/.sp1/bin:$HOME/.cargo/bin:$HOME/.foundry/bin:$PATH"
 cd service && cargo build --release
-# anvil in another terminal: anvil --timestamp 1780435000   (fixture) or plain anvil (fresh credential)
+# anvil in another terminal: plain anvil (the fixture's expiry, 2027-09-01, lies ahead of real time)
 export RPC_URL=http://127.0.0.1:8545
 export OPERATOR_PRIVATE_KEY=0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
 export REGISTRY=<deployed AttestationRegistry with setVerifier(POLICY_ID, verifier) and setOperator(POLICY_ID, operator, true)>
@@ -189,5 +192,6 @@ export PROOF_MODE=mock                      # or groth16 with SP1_PROVER=cpu and
 export PROVER_ARTIFACTS=$PWD/../prover-sp1/fixtures
 export PROVER_ELF=$PWD/../prover-sp1/target/elf-compilation/riscv64im-succinct-zkvm-elf/release/nachweis-pid-program
 export ISSUER_KEY_SEC1_HEX=$(python3 -c "import json;print(json.load(open('../prover-sp1/fixtures/input.json'))['issuer_key_sec1_hex'])")   # fixture only; unset for a real ERICA credential
+export KB_JWT_WINDOW_SECS=0                     # fixture only (its KB-JWT is stale); default 600 for a real presentation
 RUST_LOG=info ./target/release/nachweis-bridge
 ```

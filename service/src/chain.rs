@@ -321,14 +321,14 @@ mod tests {
 
     #[test]
     fn public_inputs_layout() {
-        let subject: Address = "0xcf02ad5376095e285fc88ae8c1fa240791370c17".parse().unwrap();
+        let subject: Address = "0xf99edde971f4e9c88715a79ca78963284a2955dc".parse().unwrap();
         let pid = B256::repeat_byte(7);
-        let inputs = public_inputs(subject, pid, decision_bits(true), 1780435560);
+        let inputs = public_inputs(subject, pid, decision_bits(true), 1819756800);
         assert_eq!(inputs.len(), 4);
         assert_eq!(&inputs[0][12..], subject.as_slice());
         assert_eq!(inputs[1], pid);
         assert_eq!(inputs[2], B256::from(U256::from(3)));
-        assert_eq!(inputs[3], B256::from(U256::from(1780435560u64)));
+        assert_eq!(inputs[3], B256::from(U256::from(1819756800u64)));
         assert_eq!(decision_bits(false), U256::from(1));
     }
 }

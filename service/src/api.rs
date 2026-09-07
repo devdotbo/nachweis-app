@@ -267,7 +267,7 @@ async fn run_pipeline(st: Shared, id: Uuid, presentation: String) -> Result<(), 
         (s.clone(), st.cfg.clone())
     })?;
 
-    // 1. Native run: fast fail with the statement's own error text.
+    // 1. Native run: fast fail with the statement's own error text, then KB-JWT freshness.
     let input = match statement::build_input(&cfg, &session, &presentation) {
         Ok(i) => i,
         Err(e) => {
@@ -277,7 +277,8 @@ async fn run_pipeline(st: Shared, id: Uuid, presentation: String) -> Result<(), 
     };
     let native = {
         let input = input.clone();
-        tokio::task::spawn_blocking(move || statement::run_native(&input)).await.map_err(internal)?
+        let window = cfg.kb_jwt_window_secs;
+        tokio::task::spawn_blocking(move || statement::run_native(&input, window)).await.map_err(internal)?
     };
     let (_pv, pv_bytes) = match native {
         Ok(x) => x,

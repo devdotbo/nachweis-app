@@ -16,8 +16,6 @@ use std::sync::Arc;
 use std::time::Duration;
 
 const ANVIL_KEY0: &str = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
-/// Genesis timestamp below the fixture's expiry (1780435560) so the decision is live.
-const ANVIL_TIMESTAMP: u64 = 1_780_435_000;
 
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..")
@@ -103,7 +101,7 @@ async fn mock_pipeline_attests_and_revokes_on_anvil() {
     let port = free_port();
     let rpc = format!("http://127.0.0.1:{port}");
     let child = Command::new(anvil)
-        .args(["--port", &port.to_string(), "--timestamp", &ANVIL_TIMESTAMP.to_string(), "--silent"])
+        .args(["--port", &port.to_string(), "--silent"])
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
@@ -145,7 +143,11 @@ async fn mock_pipeline_attests_and_revokes_on_anvil() {
         // The fixture address has no known key, so the pipeline instance runs without the address proof.
         require_address_proof: false,
         cors_origins: None,
+        // The stored fixture's KB-JWT expired five minutes after minting (exp = iat + 300, as the
+        // sandbox wallet does); the freshness check is exercised separately below.
+        kb_jwt_window_secs: None,
     };
+    let fresh_cfg = Config { kb_jwt_window_secs: Some(600), ..cfg.clone() };
     let strict_cfg = Config { require_address_proof: true, ..cfg.clone() };
     let state = Arc::new(AppState::new(cfg, Some(chain.clone())));
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -258,6 +260,32 @@ async fn mock_pipeline_attests_and_revokes_on_anvil() {
     let st: serde_json::Value = http.get(format!("{base}/sessions/{bad_id}")).send().await.unwrap().json().await.unwrap();
     assert_eq!(st["state"], "failed");
 
+    // With the default freshness window the stored fixture's KB-JWT (exp = iat + 300 at minting)
+    // is rejected before proving, on an instance that is otherwise identical.
+    let fresh = Arc::new(AppState::new(fresh_cfg, Some(chain.clone())));
+    let fresh_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let fresh_base = format!("http://{}", fresh_listener.local_addr().unwrap());
+    tokio::spawn(async move { axum::serve(fresh_listener, router(fresh)).await.unwrap() });
+    let stale_session: serde_json::Value = http
+        .post(format!("{fresh_base}/sessions"))
+        .json(&serde_json::json!({ "bound_address": subject, "challenge_hex": input.challenge_hex }))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let stale_id = stale_session["session_id"].as_str().unwrap();
+    let r = http
+        .post(format!("{fresh_base}/sessions/{stale_id}/presentation"))
+        .json(&serde_json::json!({ "sd_jwt_presentation": input.presentation }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 422, "stale KB-JWT must be rejected with the default window");
+    let err: serde_json::Value = r.json().await.unwrap();
+    assert!(err["error"].as_str().unwrap().contains("KB-JWT expired"), "{err}");
+
     // 3. attest with proof.
     assert!(!chain.is_eligible(subject, policy_id, U256::from(3)).await.unwrap());
     let attested: serde_json::Value = http
@@ -275,7 +303,7 @@ async fn mock_pipeline_attests_and_revokes_on_anvil() {
     assert!(attested["tx_hash"].as_str().unwrap().starts_with("0x"));
     assert_eq!(attested["attested"]["subject"].as_str().unwrap().to_lowercase(), format!("{subject:?}"));
     assert_eq!(attested["attested"]["bits"], "0x3");
-    assert_eq!(attested["attested"]["expiry"], 1780435560u64);
+    assert_eq!(attested["attested"]["expiry"], calldata["decoded"]["expiry"]);
     assert!(chain.is_eligible(subject, policy_id, U256::from(3)).await.unwrap());
     let d = chain.decision_of(subject, policy_id).await.unwrap();
     assert_eq!(d.statusRef, status_ref(sid.parse().unwrap()));
