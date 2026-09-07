@@ -118,7 +118,7 @@ mod tests {
         assert_eq!(pv.subject, "0xf99edde971f4e9c88715a79ca78963284a2955dc".parse::<Address>().unwrap());
         assert_eq!(
             pv.issuer_key_hash,
-            "0x78cf23963b47d3e393c79ea091c4ed80ebbae4ff78992058dd92fd34e1635183".parse::<B256>().unwrap()
+            "0xb52359580c14e2d79d34605740d86338adc6a0868a22ec648d1896187813fd26".parse::<B256>().unwrap()
         );
         assert_eq!(pv.over18, 1);
         assert_eq!(pv.expiry, 1819756800);

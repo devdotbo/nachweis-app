@@ -17,7 +17,8 @@ import {HonkVerifier} from "../src/noir/PidSdJwtUltraHonkVerifier.sol";
 /// Env vars (see /.env.example):
 ///   DEPLOYER_PRIVATE_KEY   required
 ///   HONK_VERIFIER          optional address of an already deployed HonkVerifier (default: deploy one)
-///   PID_ISSUER_KEY_HASH    optional bytes32 (default: sandbox issuer of the synthetic fixture)
+///   PID_ISSUER_KEY_HASH    optional bytes32 (default: the test issuer of the realistic Noir fixture; a real deployment
+///                          needs sha256 of the sandbox issuer's SEC1 key, see circuits/pid-sdjwt/REALISM.md)
 ///   POLICY_ID              optional bytes32 (default: keccak256("nachweis.pid.over18.v1"))
 ///   REGISTRY_ADDRESS       optional; when set, calls setVerifier(POLICY_ID, verifier)
 ///
@@ -25,7 +26,7 @@ import {HonkVerifier} from "../src/noir/PidSdJwtUltraHonkVerifier.sol";
 ///   forge script script/DeployNoirVerifier.s.sol:DeployNoirVerifier --rpc-url sepolia
 /// Broadcast requires an explicit --broadcast and is not part of this work package.
 contract DeployNoirVerifier is Script {
-    bytes32 constant FIXTURE_ISSUER_KEY_HASH = 0x78cf23963b47d3e393c79ea091c4ed80ebbae4ff78992058dd92fd34e1635183;
+    bytes32 constant FIXTURE_ISSUER_KEY_HASH = 0xb52359580c14e2d79d34605740d86338adc6a0868a22ec648d1896187813fd26;
     uint256 constant EIP170_LIMIT = 24_576;
 
     function run() external {

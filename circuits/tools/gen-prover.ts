@@ -4,7 +4,9 @@
 //   bun run circuits/tools/gen-prover.ts <input.json> [out.toml] [--tamper=issuer-sig|age-disclosure|nonce|kb-sig]
 //
 // No dependencies beyond bun. All offsets are byte offsets into the raw
-// (base64url-decoded) JSON of the issuer payload and the KB-JWT payload.
+// (base64url-decoded) JSON of the issuer payload, the KB-JWT header and payload,
+// and (shapes B, C) the raw age object disclosure. The age shapes are described
+// in circuits/pid-sdjwt/REALISM.md, section 3.
 import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -20,7 +22,7 @@ const circuitDir = join(dirname(new URL(import.meta.url).pathname), "..", "pid-s
 const inputPath = positional[0];
 const outPath = positional[1] ?? join(circuitDir, "Prover.toml");
 
-// Max lengths are read from constants.nr so tool and circuit cannot drift.
+// Max lengths and the pinned aud are read from constants.nr so tool and circuit cannot drift.
 const constantsSrc = readFileSync(join(circuitDir, "src", "constants.nr"), "utf8");
 const constant = (name: string): number => {
   const m = constantsSrc.match(new RegExp(`pub global ${name}: u32 = (\\d+);`));
@@ -30,9 +32,15 @@ const constant = (name: string): number => {
 const HEADER_B64_MAX = constant("HEADER_B64_MAX");
 const PAYLOAD_MAX_LEN = constant("PAYLOAD_MAX_LEN");
 const TAIL_MAX = constant("TAIL_MAX");
+const KB_HEADER_MAX = constant("KB_HEADER_MAX");
 const KB_PAYLOAD_MAX = constant("KB_PAYLOAD_MAX");
 const SALT_MAX_LEN = constant("SALT_MAX_LEN");
-const MAX_AGE_ENTRIES = constant("MAX_AGE_ENTRIES");
+const AGE_OBJ_DISC_MAX = constant("AGE_OBJ_DISC_MAX");
+const CNF_WINDOW = constant("CNF_WINDOW");
+const HEADER_PREFIX_RAW = 96; // first 128 base64url chars of the issuer header, decoded in-circuit
+const audMatch = constantsSrc.match(/AUD_FRAGMENT: \[u8; \d+\] =\s*"\\"aud\\":\\"([^"\\]+)\\""\.as_bytes\(\);/);
+if (!audMatch) throw new Error("AUD_FRAGMENT not found in constants.nr");
+export const PINNED_AUD = audMatch[1];
 
 const input = JSON.parse(readFileSync(inputPath, "utf8"));
 const sha256 = (b: Uint8Array | Buffer) => createHash("sha256").update(b).digest();
@@ -52,6 +60,7 @@ const payloadObj = JSON.parse(payloadJson);
 // Sanity: the circuit re-encodes the raw payload; the round trip must be exact.
 if (b64url(payloadRaw) !== payloadB64) throw new Error("payload base64url round trip differs");
 if (sigB64.length !== 86) throw new Error(`issuer signature base64url length ${sigB64.length}, expected 86`);
+if (headerB64.length < 128) throw new Error("issuer header shorter than 128 base64url chars");
 
 const uniqueIndex = (hay: string, needle: string, from = 0, label = needle): number => {
   const i = hay.indexOf(needle, from);
@@ -59,54 +68,128 @@ const uniqueIndex = (hay: string, needle: string, from = 0, label = needle): num
   if (hay.indexOf(needle, i + 1) >= 0) throw new Error(`${label} occurs more than once; circuit assumes one`);
   return i;
 };
+// Byte offset (UTF-8) of a JS string index; payload fragments are ASCII but claim values may not be.
+const byteOffset = (s: string, idx: number) => Buffer.byteLength(s.slice(0, idx), "utf8");
+const byteIndexOf = (hay: string, needle: string, from = 0) => {
+  const i = hay.indexOf(needle, from);
+  return i < 0 ? -1 : byteOffset(hay, i);
+};
+
+// --- issuer header: alg and typ inside the first 96 decoded bytes -------------------
+const headerHead = fromB64url(headerB64.slice(0, 128)).toString("latin1"); // 96 bytes
+const hdrAlgOffset = headerHead.indexOf('"alg":"ES256"');
+const hdrTypOffset = (() => {
+  const d = headerHead.indexOf('"typ":"dc+sd-jwt"');
+  const v = headerHead.indexOf('"typ":"vc+sd-jwt"');
+  return d >= 0 ? d : v;
+})();
+if (hdrAlgOffset < 0 || hdrAlgOffset + 13 > HEADER_PREFIX_RAW) throw new Error('issuer header: "alg":"ES256" not within the first 96 decoded bytes');
+if (hdrTypOffset < 0 || hdrTypOffset + 17 > HEADER_PREFIX_RAW) throw new Error('issuer header: "typ":"dc+sd-jwt" (or vc+sd-jwt) not within the first 96 decoded bytes');
 
 // --- issuer payload offsets ---------------------------------------------------
 const vctOffset = uniqueIndex(payloadJson, '"vct":"urn:eudi:pid:de:1"');
-const ageSdFragment = '"age_equal_or_over":{"_sd":[';
-const ageSdOffset = uniqueIndex(payloadJson, ageSdFragment);
 const cnfFragment = '"cnf":{"jwk":{';
 const cnfOffset = uniqueIndex(payloadJson, cnfFragment);
 const xOffset = payloadJson.indexOf('"x":"', cnfOffset);
 const yOffset = payloadJson.indexOf('"y":"', cnfOffset);
 if (xOffset < 0 || yOffset < 0) throw new Error("cnf.jwk x/y not found");
+if (xOffset >= cnfOffset + CNF_WINDOW || yOffset >= cnfOffset + CNF_WINDOW) throw new Error(`cnf.jwk x/y further than ${CNF_WINDOW} bytes after cnf`);
 const expOffset = uniqueIndex(payloadJson, '"exp":');
+if (!/^\d{10}[,}]/.test(payloadJson.slice(expOffset + 6))) throw new Error("issuer exp is not a 10 digit number");
 
-// --- age disclosure ------------------------------------------------------------
-const ageDisc = disclosures.find((d) => {
-  const arr = JSON.parse(fromB64url(d).toString("utf8"));
-  return Array.isArray(arr) && arr[1] === "18" && arr[2] === true;
+// --- age shape and witness -------------------------------------------------------
+const decodedDisc = disclosures.map((d) => {
+  const raw = fromB64url(d);
+  const arr = JSON.parse(raw.toString("utf8"));
+  if (!Array.isArray(arr) || arr.length !== 3) throw new Error("only object-property disclosures are supported");
+  if (raw.toString("utf8") !== JSON.stringify(arr) && !(arr[1] === "18")) {
+    // non-canonical serialisation is fine for the circuit (raw bytes are used), noted for the log only
+  }
+  return { b64: d, raw, arr, digest: b64url(sha256(Buffer.from(d, "ascii"))) };
 });
-if (!ageDisc) throw new Error('no presented disclosure ["salt","18",true]');
-const ageDiscArr = JSON.parse(fromB64url(ageDisc).toString("utf8"));
-let ageSalt: string = ageDiscArr[0];
-// The circuit rebuilds the disclosure as ["<salt>","18",true] byte for byte.
-if (fromB64url(ageDisc).toString("utf8") !== `["${ageSalt}","18",true]`) {
-  throw new Error("age disclosure is not in the canonical form the circuit rebuilds");
+const leafDisc = decodedDisc.find((d) => d.arr[1] === "18" && d.arr[2] === true);
+const objDisc = decodedDisc.find((d) => d.arr[1] === "age_equal_or_over" && d.arr[2] && typeof d.arr[2] === "object");
+const ageInPayload = payloadObj.age_equal_or_over && typeof payloadObj.age_equal_or_over === "object";
+
+let shape: "A" | "B" | "C";
+if (ageInPayload && Array.isArray(payloadObj.age_equal_or_over._sd)) shape = "A";
+else if (objDisc && Array.isArray(objDisc.arr[2]._sd)) shape = "B";
+else if (objDisc && objDisc.arr[2]["18"] === true) shape = "C";
+else throw new Error("no age_equal_or_over.18: neither nested _sd in the payload (A), nor a disclosed age object with _sd (B) or with plain values (C)");
+if ((shape === "A" || shape === "B") && !leafDisc) throw new Error('no presented disclosure ["salt","18",true]');
+
+let ageSalt = "";
+if (leafDisc) {
+  ageSalt = String(leafDisc.arr[0]);
+  // The circuit rebuilds the disclosure as ["<salt>","18",true] byte for byte.
+  if (leafDisc.raw.toString("utf8") !== `["${ageSalt}","18",true]`) throw new Error("age disclosure is not in the canonical form the circuit rebuilds");
+  if (Buffer.byteLength(ageSalt) > SALT_MAX_LEN) throw new Error("age salt exceeds SALT_MAX_LEN");
 }
-const ageDigest = b64url(sha256(Buffer.from(ageDisc, "ascii")));
-const ageArray: string[] = payloadObj.age_equal_or_over._sd;
-const ageDigestIndex = ageArray.indexOf(ageDigest);
-if (ageDigestIndex < 0) throw new Error("age disclosure digest not in age_equal_or_over._sd");
-if (ageDigestIndex >= MAX_AGE_ENTRIES) throw new Error("age digest index exceeds MAX_AGE_ENTRIES");
-// Check the fixed 46-byte stride layout the circuit assumes.
-const entriesBase = ageSdOffset + ageSdFragment.length;
-for (let j = 0; j <= ageDigestIndex; j++) {
-  const s = entriesBase + 46 * j;
-  if (payloadJson[s] !== '"' || payloadJson[s + 44] !== '"') throw new Error(`age _sd entry ${j} not 43 chars quoted`);
-  if (j < ageDigestIndex && payloadJson[s + 45] !== ",") throw new Error(`age _sd entry ${j} not followed by ,`);
-}
-if (payloadJson.slice(entriesBase + 46 * ageDigestIndex + 1, entriesBase + 46 * ageDigestIndex + 44) !== ageDigest) {
-  throw new Error("age digest stride check failed");
+
+// Finds `needle` inside the array/object that opens right after `anchorEnd`, before any ] or }
+// (the circuit checks the same: no closer between the container start and the target).
+const targetInside = (hayBytes: string, anchorEnd: number, needle: string, label: string): number => {
+  const t = hayBytes.indexOf(needle, anchorEnd);
+  if (t < 0) throw new Error(`${label}: target not found`);
+  const between = hayBytes.slice(anchorEnd, t);
+  if (/[\]}]/.test(between)) throw new Error(`${label}: container closes before the target`);
+  return t;
+};
+
+let ageObjDisclosed = 0;
+let ageLeafDisclosed = leafDisc ? 1 : 0;
+let ageObjRaw = Buffer.alloc(0);
+let sdOffset = 0;
+let ageObjDigestOffset = 0;
+let ageSdOffset = 0;
+let ageTargetOffset = 0;
+const leafDigestQuoted = leafDisc ? `"${leafDisc.digest}"` : "";
+if (shape === "A") {
+  const frag = '"age_equal_or_over":{"_sd":[';
+  ageSdOffset = uniqueIndex(payloadJson, frag);
+  ageTargetOffset = targetInside(payloadJson, ageSdOffset + frag.length, leafDigestQuoted, "age_equal_or_over._sd");
+} else {
+  ageObjDisclosed = 1;
+  ageObjRaw = objDisc!.raw;
+  if (ageObjRaw.length > AGE_OBJ_DISC_MAX) throw new Error(`age object disclosure ${ageObjRaw.length} bytes exceeds AGE_OBJ_DISC_MAX ${AGE_OBJ_DISC_MAX}`);
+  const discJson = ageObjRaw.toString("latin1"); // byte-exact view
+  // anchor the object disclosure digest in the payload's "_sd" array that contains it
+  const objDigestQuoted = `"${objDisc!.digest}"`;
+  ageObjDigestOffset = byteIndexOf(payloadJson, objDigestQuoted);
+  if (ageObjDigestOffset < 0) throw new Error("age object disclosure digest not in the issuer payload");
+  const sdIdx = payloadJson.lastIndexOf('"_sd":[', payloadJson.indexOf(objDigestQuoted));
+  if (sdIdx < 0) throw new Error('no "_sd":[ before the age object digest');
+  sdOffset = byteOffset(payloadJson, sdIdx);
+  targetInside(payloadJson, sdIdx + 7, objDigestQuoted, "top-level _sd");
+  if (shape === "B") {
+    const frag = '"age_equal_or_over",{"_sd":[';
+    ageSdOffset = uniqueIndex(discJson, frag);
+    ageTargetOffset = targetInside(discJson, ageSdOffset + frag.length, leafDigestQuoted, "disclosed age object _sd");
+  } else {
+    const frag = '"age_equal_or_over",{';
+    ageSdOffset = uniqueIndex(discJson, frag);
+    ageTargetOffset = targetInside(discJson, ageSdOffset + frag.length, '"18":true', "disclosed age object");
+    if (!/[,}]/.test(discJson[ageTargetOffset + 9] ?? "")) throw new Error('"18":true not terminated by , or }');
+  }
+  // ["<salt>", must precede the claim name
+  if (!discJson.startsWith('["') || discJson[ageSdOffset - 2] !== '"' || discJson[ageSdOffset - 1] !== "," || discJson.slice(2, ageSdOffset - 2).includes('"')) {
+    throw new Error('age object disclosure is not ["<salt>","age_equal_or_over",{...');
+  }
 }
 
 // --- KB-JWT --------------------------------------------------------------------
 const [kbHeaderB64, kbPayloadB64, kbSigB64] = kbJwt.split(".");
-if (kbHeaderB64 !== "eyJhbGciOiJFUzI1NiIsInR5cCI6ImtiK2p3dCJ9") throw new Error("KB-JWT header is not {alg:ES256,typ:kb+jwt}");
+const kbHeaderRaw = fromB64url(kbHeaderB64);
+const kbHeaderJson = kbHeaderRaw.toString("latin1");
+if (b64url(kbHeaderRaw) !== kbHeaderB64) throw new Error("KB header base64url round trip differs");
+const kbAlgOffset = kbHeaderJson.indexOf('"alg":"ES256"');
+const kbTypOffset = kbHeaderJson.indexOf('"typ":"kb+jwt"');
+if (kbAlgOffset < 0 || kbTypOffset < 0) throw new Error("KB-JWT header lacks alg ES256 or typ kb+jwt");
 const kbPayloadRaw = fromB64url(kbPayloadB64);
 const kbJson = kbPayloadRaw.toString("utf8");
 if (b64url(kbPayloadRaw) !== kbPayloadB64) throw new Error("KB payload base64url round trip differs");
-const kbAudOffset = uniqueIndex(kbJson, `"aud":"${input.expected_aud}"`);
-if (input.expected_aud !== "https://self-issued.me/v2") throw new Error("circuit pins aud https://self-issued.me/v2");
+if (input.expected_aud !== PINNED_AUD) throw new Error(`circuit pins aud ${PINNED_AUD}; input expects ${input.expected_aud}`);
+const kbAudOffset = uniqueIndex(kbJson, `"aud":"${PINNED_AUD}"`);
 const kbNonceOffset = uniqueIndex(kbJson, '"nonce":"');
 const kbSdHashOffset = uniqueIndex(kbJson, '"sd_hash":"');
 
@@ -148,8 +231,13 @@ switch (tamper) {
     issuerSigRaw[3] ^= 1;
     issuerSigB64 = b64url(issuerSigRaw);
     break;
-  case "age-disclosure": // wrong salt, digest no longer in age_equal_or_over._sd
-    ageSalt = (ageSalt[0] === "A" ? "B" : "A") + ageSalt.slice(1);
+  case "age-disclosure": // wrong salt: the digest is no longer in the age _sd (A, B); wrong object salt (C)
+    if (shape === "C") {
+      ageObjRaw = Buffer.from(ageObjRaw);
+      ageObjRaw[2] = ageObjRaw[2] === 0x41 ? 0x42 : 0x41;
+    } else {
+      ageSalt = (ageSalt[0] === "A" ? "B" : "A") + ageSalt.slice(1);
+    }
     break;
   case "nonce": // different challenge, nonce in the KB-JWT no longer matches
     challenge = Buffer.from(challenge);
@@ -174,18 +262,29 @@ const ascii = (s: string) => Buffer.from(s, "ascii");
 
 let toml = `# Generated by circuits/tools/gen-prover.ts from ${inputPath}\n`;
 toml += tamper ? `# TAMPERED (${tamper}): this witness must fail\n` : "";
+toml += `# age shape ${shape}\n`;
 toml += bounded("issuer_header_b64", ascii(headerB64), HEADER_B64_MAX);
+toml += `hdr_alg_offset = ${hdrAlgOffset}\n`;
+toml += `hdr_typ_offset = ${hdrTypOffset}\n`;
 toml += bounded("payload", payloadRaw, PAYLOAD_MAX_LEN);
 toml += `issuer_sig_b64 = ${bytes(ascii(issuerSigB64))}\n`;
 toml += `issuer_sig = ${bytes(lowS(issuerSigRaw))}\n`;
 toml += bounded("disclosures_tail", ascii(tail), TAIL_MAX);
+toml += bounded("kb_header", kbHeaderRaw, KB_HEADER_MAX);
+toml += `kb_alg_offset = ${kbAlgOffset}\n`;
+toml += `kb_typ_offset = ${kbTypOffset}\n`;
 toml += bounded("kb_payload", kbPayloadRaw, KB_PAYLOAD_MAX);
 toml += `kb_signature = ${bytes(lowS(kbSig))}\n`;
 toml += `issuer_pub_x = ${bytes(issuerX)}\n`;
 toml += `issuer_pub_y = ${bytes(issuerY)}\n`;
 toml += bounded("age_salt", ascii(ageSalt), SALT_MAX_LEN);
+toml += `age_obj_disclosed = ${ageObjDisclosed}\n`;
+toml += `age_leaf_disclosed = ${ageLeafDisclosed}\n`;
+toml += bounded("age_obj_disclosure", ageObjRaw, AGE_OBJ_DISC_MAX);
+toml += `sd_offset = ${sdOffset}\n`;
+toml += `age_obj_digest_offset = ${ageObjDigestOffset}\n`;
 toml += `age_sd_offset = ${ageSdOffset}\n`;
-toml += `age_digest_index = ${ageDigestIndex}\n`;
+toml += `age_target_offset = ${ageTargetOffset}\n`;
 toml += `vct_offset = ${vctOffset}\n`;
 toml += `cnf_offset = ${cnfOffset}\n`;
 toml += `x_offset = ${xOffset}\n`;
@@ -200,5 +299,7 @@ writeFileSync(outPath, toml);
 
 const expiry = payloadObj.exp; // committed expiry is the issuer exp; KB-JWT exp is checked off chain
 console.log(`wrote ${outPath}${tamper ? ` (tampered: ${tamper})` : ""}`);
-console.log(`header_b64 ${headerB64.length}/${HEADER_B64_MAX}, payload ${payloadRaw.length}/${PAYLOAD_MAX_LEN}, tail ${tail.length}/${TAIL_MAX}, kb_payload ${kbPayloadRaw.length}/${KB_PAYLOAD_MAX}`);
+console.log(
+  `age shape ${shape}; header_b64 ${headerB64.length}/${HEADER_B64_MAX}, payload ${payloadRaw.length}/${PAYLOAD_MAX_LEN}, tail ${tail.length}/${TAIL_MAX}, kb_header ${kbHeaderRaw.length}/${KB_HEADER_MAX}, kb_payload ${kbPayloadRaw.length}/${KB_PAYLOAD_MAX}, age_obj_disclosure ${ageObjRaw.length}/${AGE_OBJ_DISC_MAX}`,
+);
 console.log(`expected public outputs: issuer_key_hash=0x${sha256(sec1).toString("hex")} over18=1 expiry=${expiry} nonce=0x${nonce} subject=0x${subject.toString("hex")}`);

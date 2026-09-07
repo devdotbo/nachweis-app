@@ -355,7 +355,7 @@ async fn mock_pipeline_attests_and_revokes_on_anvil() {
 
 
 /// The client-side path: a Noir UltraHonk proof made elsewhere (here: the committed bb fixture of
-/// the minted PID vector, contracts/test/fixtures/noir) is posted to `POST /sessions/:id/noir-proof`;
+/// the realistic PID vector, contracts/test/fixtures/noir) is posted to `POST /sessions/:id/noir-proof`;
 /// the bridge binds it to the session, dry-runs NoirPidVerifier.verify, sends attestWithProof
 /// through the real HonkVerifier and reaches `attested`. No presentation ever reaches the bridge.
 #[tokio::test(flavor = "multi_thread")]
@@ -382,7 +382,7 @@ async fn noir_proof_attests_through_noir_pid_verifier_on_anvil() {
     assert_eq!(words.len(), 86);
     let pv = nachweis_bridge::noir::decode_public_inputs(&words).unwrap();
     let input: InputFile =
-        serde_json::from_str(&std::fs::read_to_string(repo_root().join("prover-sp1/fixtures/input.json")).unwrap()).unwrap();
+        serde_json::from_str(&std::fs::read_to_string(repo_root().join("prover-sp1/fixtures/realistic-input.json")).unwrap()).unwrap();
     let subject: Address = input.bound_address_hex.parse().unwrap();
     assert_eq!(pv.subject, subject);
     let proof_hex = format!("0x{}", hex::encode(&proof));

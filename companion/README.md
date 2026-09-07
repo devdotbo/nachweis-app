@@ -17,7 +17,7 @@ about 4 to 6 s on an M3 Max and 1.9 GB of memory.
 ```
 cd companion && bun install
 bun run src/cli.ts help
-bun test                      # 14 tests: nonce vectors, statement pre-check on the SP1 fixture, minted
+bun test                      # 17 tests: nonce vectors, statement pre-check on the SP1 fixture, minted
                               # presentation vs gen-prover.ts, x5c leaf round trip, JWE round trip, public inputs
 ```
 
@@ -32,8 +32,9 @@ bun test                      # 14 tests: nonce vectors, statement pre-check on 
 | `submit` | bridge path: `POST /sessions {bound_address, challenge_hex}` (same nonce), EIP-191 address proof signed with `--wallet-key`, then `POST /sessions/:id/noir-proof {proof_hex, public_inputs_hex[86], tier}`. `--direct`: sends `attestWithProof` itself with `--sender-key` to `--registry` over `--rpc` and reads back `isEligible` |
 | `run` | all of the above in one go, with a timeline at the end. `--stub-wallet ISSUER_KEY_FILE` answers the request inline instead of a phone |
 | `status` | the session without secrets or claims; `--registry` adds `isEligible` |
-| `issuer-key FILE` | the test issuer: creates a P-256 key and a self-signed leaf (0600), prints the SEC1 key and its sha256, which `NoirPidVerifier` pins |
-| `mint-test-presentation` | the phone stand-in, mirroring `verifier-service/tests/bridge_http.rs` (`mint_presentation`, `answer_as_wallet`): reads the signed request, mints an SD-JWT VC (`vct urn:eudi:pid:de:1`, `x5c` leaf, `exp` one year, `cnf.jwk` fresh holder key, disclosures given_name, family_name, `age_equal_or_over.18` in the byte layout the circuit matches) plus a KB-JWT (`iat`, `exp = iat + 300`, `aud`, `nonce`, `sd_hash`), encrypts to the advertised key, `POST /response/:id` |
+| `issuer-key FILE` | the test issuer: creates a P-256 key and a self-signed leaf plus a self-signed "CA" certificate (two-certificate `x5c`, about 580 DER bytes each, with the extensions of a sandbox issuer certificate; 0600), prints the SEC1 key and its sha256, which `NoirPidVerifier` pins |
+| `mint-test-presentation` | the phone stand-in, mirroring `verifier-service/tests/bridge_http.rs` (`mint_presentation`, `answer_as_wallet`): reads the signed request, mints an SD-JWT VC in the 23-claim German PID layout (`vct urn:eudi:pid:de:1`, two-certificate `x5c`, `exp` one year, `cnf.jwk` fresh holder key in ERICA's key order, `status.status_list`, 12 top-level digests, nested `age_equal_or_over`, `address`, `place_of_birth`; disclosures given_name, family_name, `age_equal_or_over.18`) plus a KB-JWT (header with `kid` as ERICA sends it; `nonce`, `aud` = the pinned `client_id`, `iat`, `exp = iat + 300`, `sd_hash`), encrypts to the advertised key, `POST /response/:id`. `--age-shape nested|disclosed|plain` picks how the age object arrives (`circuits/pid-sdjwt/REALISM.md`, section 3), `--minimal` the older three-digest layout |
+| `mint-fixture` | the same minter without a verifier: writes `prover-sp1/fixtures/<name>-input.json` and `<name>-over18.sdjwt` (default name `realistic`) with the SP1 fixture's subject and challenge, so the Noir fixtures in `contracts/test/fixtures/noir` can be regenerated (`--issuer-key`, `--out`, `--name`, `--age-shape`, `--issuer-exp`) |
 
 Environment: `NACHWEIS_COMPANION_DIR` (default `~/.nachweis-companion`), `NACHWEIS_SESSION`,
 `NACHWEIS_VERIFIER_URL`, `NACHWEIS_BRIDGE_URL`, `NACHWEIS_ADDRESS`, `NACHWEIS_WALLET_KEY`,
@@ -139,21 +140,25 @@ What is unverified until the phone run, and how the companion handles it:
 
 1. The wallet accepting a client-generated encryption key in `client_metadata.jwks` (the open
    question in `docs/blind-relay.md`). If it refuses, the wallet does not post and `wait` times out.
-2. The KB-JWT `aud`. The circuit pins `"aud":"https://self-issued.me/v2"` (`AUD_FRAGMENT` in
-   `circuits/pid-sdjwt/src/constants.nr`) and the bridge's SP1 path expects the same; an OpenID4VP
-   wallet sets `aud` to the verifier's `client_id` (`x509_hash:…`). `prove --aud <client_id>` makes
-   the native pre-check accept it, but the circuit fragment then has to be changed to the
-   registered `client_id` and the VK, the `HonkVerifier` and the fixtures regenerated
-   (`/circuits/README.md`). The stand-in mints with the pinned value, so the offline run does not
-   hit this.
+2. Resolved (circuit realism pass, `circuits/pid-sdjwt/REALISM.md`). The circuit pins
+   `"aud":"x509_hash:VE3qp3vLVkU8JyVmXkjL7CSDVxVoTFdTv5fAEwmjKOI"`, the `client_id` of the
+   registered registrar leaf (`fixtures/live/access-leaf.pem` in the relay repo), and `prove`
+   and the stand-in default to the same string (`PINNED_AUD` in `src/util.ts`, checked against
+   `constants.nr` by a test). What remains open: whether the sandbox wallet sends the
+   `x509_hash` client_id (spec) or the literal `https://self-issued.me/v2` (ERICA's simulator
+   does); in the second case the constant is one line, plus VK, verifier and fixtures. A new
+   registrar leaf changes the constant the same way. The bridge's SP1 path (`EXPECTED_AUD`)
+   still defaults to the literal; set it to the `client_id` for a real wallet.
 3. The issuer key. `prove` takes it from the `x5c` leaf, as the bridge does for a real credential;
    `NoirPidVerifier` must be deployed with `PID_ISSUER_KEY_HASH` = sha256 of the sandbox issuer's
    SEC1 key (the circuit does not check the x5c chain, the contract pins the key).
-4. Payload shape. The circuit matches `"vct":"urn:eudi:pid:de:1"`, `"age_equal_or_over":{"_sd":[`
-   with 43-char digests at a 46-byte stride, `"cnf":{"jwk":{` with `x`/`y` within 128 bytes, and
-   `"exp":<10 digits>` at prover-supplied offsets, with `PAYLOAD_MAX_LEN` 1024. A real sandbox PID
-   with more `_sd` digests and a `status` claim may exceed that or serialise differently; the
-   pre-check passes and `gen-prover.ts` refuses with the exact reason in that case.
+4. Resolved as far as it can be without a captured sandbox PID (`REALISM.md`, sections 3, 4
+   and 7). Bounds now fit a reconstructed 23-claim PID with margin (payload 2304 raw bytes,
+   header 2304 base64url chars, KB header with `kid`, KB payload 384); the age object may be
+   nested in the payload, disclosed with nested digests, or disclosed with plain values; digest
+   order, whitespace and key order do not matter. Still assumed: `"vct":"urn:eudi:pid:de:1"`
+   (three vct literals are in circulation), an `exp` in the issuer payload, `alg`/`typ` within
+   the first 96 decoded header bytes. `gen-prover.ts` refuses with the exact reason otherwise.
 5. `enc`. The wallet may pick A256GCM; both are accepted on decrypt.
 
 ## Privacy statement

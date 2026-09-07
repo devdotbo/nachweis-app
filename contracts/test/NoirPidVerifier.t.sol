@@ -13,7 +13,7 @@ import {NoirFixture} from "./NoirFixture.sol";
 ///         (test/fixtures/noir). Every honk verification costs about 2.85 M gas.
 contract NoirPidVerifierTest is Test {
     bytes32 constant POLICY = keccak256("nachweis.pid.over18.v1");
-    bytes32 constant ISSUER_KEY_HASH = 0x78cf23963b47d3e393c79ea091c4ed80ebbae4ff78992058dd92fd34e1635183;
+    bytes32 constant ISSUER_KEY_HASH = 0xb52359580c14e2d79d34605740d86338adc6a0868a22ec648d1896187813fd26;
     uint256 constant BITS_BOTH = 0x3;
     uint256 constant EIP170_LIMIT = 24_576;
 

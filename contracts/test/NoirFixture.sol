@@ -4,7 +4,8 @@ pragma solidity 0.8.28;
 import {Vm} from "forge-std/Vm.sol";
 
 /// @notice Loads test/fixtures/noir/{proof,public_inputs,vk_hash}.bin, the bb (evm target) output for the
-///         pid-sdjwt circuit on the minted PID vector. See test/fixtures/noir/SOURCE.md.
+///         pid-sdjwt circuit on the realistic PID vector (prover-sp1/fixtures/realistic-input.json). See
+///         test/fixtures/noir/SOURCE.md.
 library NoirFixture {
     struct Data {
         bytes proof;
@@ -35,7 +36,7 @@ library NoirFixture {
         }
         d.vkHash = bytes32(vm.readFileBinary(string.concat(dir, "vk_hash.bin")));
         d.subject = 0xF99EDdE971F4e9c88715a79CA78963284A2955dC;
-        d.issuerKeyHash = 0x78cf23963b47d3e393c79ea091c4ed80ebbae4ff78992058dd92fd34e1635183;
+        d.issuerKeyHash = 0xb52359580c14e2d79d34605740d86338adc6a0868a22ec648d1896187813fd26;
         d.over18 = 1;
         d.expiry = 1819756800; // issuer credential exp, 2027-09-01T00:00:00Z
         d.nonce = 0x306863157ddb59f4e5a56f41aa8591e68b574c8c3475c43d9bd469220be90762;
