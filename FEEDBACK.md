@@ -1,15 +1,16 @@
 # Uniswap developer feedback
 
-Project: Nachweis (ETHOnline 2026). Integration: a Uniswap v4 permissioned pool on Sepolia whose allowlist checker reads the Nachweis `AttestationRegistry`. Written during the integration, dated 2026-09-07. Lines marked TODO are for the live Sepolia run, which has not happened yet.
+Project: Nachweis (ETHOnline 2026). Integration: a Uniswap v4 permissioned pool on Sepolia whose allowlist checker reads the Nachweis `AttestationRegistry`. Written during the integration, dated 2026-09-07. Lines marked TODO are for the live Sepolia run, which has not happened yet; everything else was observed on a Sepolia fork against the deployed contracts.
 
 ## What was integrated
 
 - `IAllowlistChecker` implementation: `contracts/src/uniswap/EudiAllowlistChecker.sol`. Returns `SWAP_ALLOWED | LIQUIDITY_ALLOWED` when the registry holds a live decision for the account under the pool's policy, `NONE` otherwise.
 - The checker exercised through the real `PermissionsAdapterFactory` and `PermissionsAdapter` bytecode in unit tests, and against the live Sepolia factory in a fork test.
 - A Foundry script that runs onboarding steps 1 to 6 (create adapter, allowlist and fund, verify, approve wrappers and hook, initialize the pool with `PermissionedHooks`, enable swapping). Simulated on a Sepolia fork; all six steps succeeded, including `PoolManager.initialize` through the deployed hook.
+- A liquidity mint through the deployed `PermissionedPositionManager` (Permit2 approvals, `MINT_POSITION` + `SETTLE_PAIR`) and an exact-input swap through the deployed permissioned Universal Router (`V4_SWAP`: `SWAP_EXACT_IN_SINGLE`, `SETTLE_ALL`, `TAKE_ALL`), as scripts and as fork tests. The fork tests run the whole sequence: onboard, mint, swap as an attested investor, revoke, the same swap reverts in `PermissionedHooks.beforeSwap`, a never-attested address is rejected the same way.
 - Details and verification notes: `contracts/docs/uniswap-permissioned-pool.md`.
 
-Stack parts used: v4-periphery permissioned pools (factory, adapter, hooks), v4-core PoolManager, the developer docs deploy guide, deployments.json.
+Stack parts used: v4-periphery permissioned pools (factory, adapter, hooks, PermissionedPositionManager), the permissioned build of the Universal Router, Permit2, v4-core PoolManager, StateView, the developer docs (deploy, provide-liquidity and swapping pages), deployments.json.
 
 ## What worked well
 
@@ -18,6 +19,9 @@ Stack parts used: v4-periphery permissioned pools (factory, adapter, hooks), v4-
 - `deployments.json` is a machine-readable source for the addresses and agreed with the guide.
 - The deployed factory bytecode on Sepolia reproduces from `main` with the repository's own `foundry.toml` (byte-identical apart from immutables). That made it possible to test against the real adapter code without an RPC.
 - `depositForVerification` emitting its own event is a good touch: verification is visible without parsing plain ERC-20 transfers.
+- The provide-liquidity page is exactly right: two Permit2 approvals on the underlying token, `MINT_POSITION` + `SETTLE_PAIR`, done. The mint worked on the first fork run against the deployed position manager.
+- The swap needed no permissioned-specific calldata at all. The standard `V4_SWAP` encoding with the adapter as the pool currency went through the permissioned Universal Router on the first attempt; wrapping on the way in and unwrapping on the way out is invisible to the caller, which is the point of the adapter design.
+- ERC-7751 `WrappedError` from the PoolManager names the hook address and the callback selector, so "which contract refused the swap" is answerable from the revert data alone.
 
 ## What was unclear or missing
 
@@ -31,11 +35,18 @@ Stack parts used: v4-periphery permissioned pools (factory, adapter, hooks), v4-
 8. The step 7 configuration field is `kycUrl`. For an issuer that verifies eligibility with an EU Digital Identity Wallet presentation (age, residency predicates) and never performs KYC in the AML sense, the name is misleading in a way that matters to regulated issuers. `verificationUrl` or `onboardingUrl` would be neutral.
 9. The example checker in step 1 has no access control on `setPermissions`. The text says so, but a copy-paste-ready example that is unsafe by default is the one that gets copied. An example that reads an existing on-chain predicate, or one with `Ownable`, would be a safer default.
 10. The guide does not say that the adapter constructor reverts with `InvalidAllowListChecker` when `supportsInterface` is missing. Naming the error next to the ERC-165 sentence would save a debugging round.
-11. `deployments.json` lists two Universal Routers on Sepolia (`universal-router@2.0.0` and the permissioned build). The guide explains this in a note; the feed's records do not say which is which beyond the id. A `variant` field would help tooling.
+11. `deployments.json` lists three Universal Routers on Sepolia (the 2.0.0 release, `UniversalRouter#v2.2`, and the permissioned build). The guide explains this in a note; the feed's records do not say which is which beyond the id. A `variant` field would help tooling.
+12. There is no page for swapping through a permissioned pool without the Trading API. "Swapping through Permissioned Pools" covers the `/v1/permissions` endpoint and the `x-universal-router-version: 2.2.0` header; the direct path (Permit2 approval, `V4_SWAP` encoding, which router address) had to be assembled from the v4-periphery router tests and the universal-router source. A code block like the one on the provide-liquidity page would close that gap. The Trading API path is also not testable before step 7, so a hackathon project cannot use it at all.
+13. `IV4Router.ExactInputSingleParams` on `main` has a field `minHopPriceX36` that older releases do not have, and the deployed Sepolia router decodes the six-field layout (a five-field encoding fails the `0x160` length check). Nothing in the docs mentions the field or which layout a given deployment expects. Since `deployments.json` says `sourceRef: main` for the router, a commit hash there would pin this.
+14. `deployments.json` gives `https://github.com/Uniswap/v4-hooks-public` as the source repo of `PermissionedHooks`, but that repository contains WETHHook, WstETHHook and WstETHRoutingHook only. The production hook source is still unpublished as far as I can find; the mock in v4-periphery is what I verified behaviour against, and the fork tests confirm the deployed hook behaves like the mock for `beforeSwap` and `beforeAddLiquidity`.
+15. `Unauthorized()` has the same selector in `PermissionedHooks`, `PermissionedV4Router` and `PermissionedPositionManager`. Inside a `WrappedError` the target address disambiguates; a bare `Unauthorized()` from the router or the position manager does not say which check failed (recipient, caller, hook allow-list). Distinct error names, or an argument, would help front ends show the right message.
+16. The provide-liquidity page says nothing about sizing: which price to read (`StateView.getSlot0`), how to turn amounts into `liquidity` (`LiquidityAmounts`, which lives under `test/utils` in v4-core, not in a published library), and that `amount0Max` / `amount1Max` must leave a rounding margin. All of that is standard v4, but a first-time integrator lands on this page.
+17. The permissioned Universal Router has no public `PERMIT2` getter (the position manager has `permit2()`), so a script cannot assert it is talking to the expected Permit2. The canonical address is in `deployments.json`, which is what I relied on.
 
 ## What broke
 
-- Nothing in the Uniswap contracts. The one failing test during development was my expectation of the token's error in step 3 (item 4 above).
+- Nothing in the Uniswap contracts. The one failing test during development was my expectation of the token's error in step 3 (item 4 above). The liquidity mint and both swap directions of the fork tests (allowed, revoked, never attested) passed on the first run against the deployed contracts.
+- Tooling, not Uniswap: `developers.uniswap.org/docs/...` answers a 303 to `/llms.mdx/...` for non-browser clients, which my fetch tool refused to follow. `curl -L` with a browser user agent worked.
 - TODO (live Sepolia): gas, reverts, and whether `PoolManager.initialize` behaves as in the fork simulation.
 
 ## Suggestions
@@ -46,10 +57,13 @@ Stack parts used: v4-periphery permissioned pools (factory, adapter, hooks), v4-
 - Bubble token reverts in `depositForVerification`.
 - Put the production hook source (or a pointer to it) in v4-periphery.
 - Rename `kycUrl`, or document that it is a display label rather than a requirement to run KYC.
+- Add a "swap without the Trading API" code block (Permit2 approvals, `V4_SWAP` encoding with the six-field `ExactInputSingleParams`, the permissioned router address) next to the provide-liquidity page, and a sizing paragraph on that page.
+- Fix the `PermissionedHooks` source pointer in `deployments.json`, or publish the hook.
 
 ## Live Sepolia experience
 
+Fork results on 2026-09-07 (read-only public RPC, block 11655920 area): onboarding 6 steps, a full-range mint of 1000 NDF / 1000 mUSD (liquidity 999000000000000, tokenId 9 on the deployed position manager), a swap of 100 mUSD for 90.65 NDF, a revoke followed by `WrappedError(PermissionedHooks, beforeSwap, Unauthorized(), HookCallFailed())` for the identical calldata. Dry-run gas for the bootstrapping runs: 8,195,312 (mint) and 8,921,394 (mint plus swap).
+
 TODO: transaction hashes of steps 2 to 6.
-TODO: first swap through the permissioned Universal Router (permit2 approval flow, calldata encoding experience).
-TODO: liquidity mint through `PermissionedPositionManager`.
+TODO: the same mint and swap broadcast, gas actually paid.
 TODO: step 7 form submission and response.
