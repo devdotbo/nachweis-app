@@ -4,7 +4,7 @@
  */
 import { expect, type Page } from '@playwright/test'
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, readFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 export interface StackEnv {
@@ -33,6 +33,11 @@ const ENV_PATH = process.env.APP_E2E_ENV ?? resolve(import.meta.dirname, '../../
 export function loadStack(): StackEnv {
   if (!existsSync(ENV_PATH)) throw new Error(`no stack: ${ENV_PATH} is missing, start one with scripts/app-e2e-local.sh`)
   return JSON.parse(readFileSync(ENV_PATH, 'utf8')) as StackEnv
+}
+
+/** Drops the screenshots of an earlier run so the directory only shows this one. */
+export function clearShots(mode: string): void {
+  rmSync(resolve(import.meta.dirname, '../_preview/e2e', mode), { recursive: true, force: true })
 }
 
 /** Full-page screenshot into app/_preview/e2e/<mode>/<name>.png (gitignored). */

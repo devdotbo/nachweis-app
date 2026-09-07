@@ -9,6 +9,8 @@ import { bridge, isTerminal } from './bridge'
 import { verifier } from './verifier'
 
 const VERIFIER_POLL_MS = 2000
+/** Sessions for which POST /sessions/:id/attest went out (once per session, whatever the answer). */
+const attestRequested = new Set<string>()
 
 /** Polls the verifier for every pending session, whichever role is on screen. */
 function useSessionPolling() {
@@ -38,6 +40,19 @@ function useSessionPolling() {
           const patch: Parameters<typeof updateSession>[1] = { bridge: b, bridgeError: undefined }
           if (b.state === 'attested') patch.state = 'attested'
           updateSession(s.request.sessionId, patch)
+          // The bridge's verifier mode stops at proved; the attest transaction is asked for explicitly.
+          if (b.state === 'proved' && !attestRequested.has(s.request.sessionId)) {
+            attestRequested.add(s.request.sessionId)
+            updateSession(s.request.sessionId, { bridge: { ...b, detail: 'proof ready, asking the bridge to attest' } })
+            try {
+              await bridge.requestAttest(s.request.sessionId)
+              const after = await bridge.getSession(s.request.sessionId)
+              if (!alive) return
+              updateSession(s.request.sessionId, after.state === 'attested' ? { bridge: after, state: 'attested' } : { bridge: after })
+            } catch (e) {
+              if (alive) updateSession(s.request.sessionId, { bridgeError: e instanceof Error ? e.message : String(e) })
+            }
+          }
         } catch (e) {
           if (alive) updateSession(s.request.sessionId, { bridgeError: e instanceof Error ? e.message : String(e) })
         }

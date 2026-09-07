@@ -7,6 +7,8 @@
  *        (when VITE_BRIDGE_URL is set; the bridge creates the presentation request at the verifier itself)
  *   POST /sessions/:id/address-proof {signature}   EIP-191 signature of "nachweis:session:<id>"
  *   GET  /sessions/:id -> {state: created|presented|verified|proving|proved|attested|failed, tx_hash?, detail?}
+ *   POST /sessions/:id/attest {}  once the bridge reports proved (its verifier mode proves but does not
+ *        attest by itself): the bridge sends attestWithProof with the operator key. 409 unless proved.
  *   GET  /sessions/:id/handoff -> {session_id, bound_address, challenge_hex, nonce, verifier_url, bridge_url, expires_at}
  *        (two-device flow: what the phone prover needs to join this session; only while created or presented)
  *
@@ -31,6 +33,8 @@ export interface BridgeSession {
 export interface BridgeClient {
   submitAddressProof(sessionId: string, signature: Hex): Promise<void>
   getSession(sessionId: string): Promise<BridgeSession>
+  /** Asks the bridge to send attestWithProof for a proved session (the operator key signs, never the investor). */
+  requestAttest(sessionId: string): Promise<void>
   /** Two-device flow: the handoff the phone prover scans or pastes. */
   getHandoff(sessionId: string): Promise<Handoff>
 }
@@ -135,6 +139,14 @@ const httpClient: BridgeClient = {
     const detail = body.detail ?? body.error ?? undefined
     return { state: body.state, txHash: tx && /^0x[0-9a-fA-F]{64}$/.test(tx) ? (tx as Hex) : undefined, detail }
   },
+  async requestAttest(sessionId) {
+    const res = await fetch(`${BRIDGE_URL}/sessions/${encodeURIComponent(sessionId)}/attest`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', accept: 'application/json' },
+      body: '{}',
+    })
+    if (!res.ok) throw new Error(`bridge ${res.status}: ${(await res.text().catch(() => '')) || 'attest refused'}`)
+  },
   getHandoff: fetchHandoff,
 }
 
@@ -186,6 +198,9 @@ const mockClient: BridgeClient = {
       e.txHash = await e.attesting
     }
     return { state: 'attested', txHash: e.txHash, detail: 'attestWithProof confirmed' }
+  },
+  async requestAttest() {
+    /* the mock bridge attests on its own */
   },
   async getHandoff(sessionId) {
     const s = getSession(sessionId)

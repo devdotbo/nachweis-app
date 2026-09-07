@@ -10,9 +10,10 @@
 import { expect, test } from '@playwright/test'
 import { writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { card, expectConnected, loadStack, runBun, shot } from './stack'
+import { card, clearShots, expectConnected, loadStack, runBun, shot } from './stack'
 
 const env = loadStack()
+test.beforeAll(() => clearShots(env.mode))
 
 test.describe('investor proves on the phone, subscribes, issuer revokes', () => {
   test.skip(env.mode !== 'noir', `stack mode is ${env.mode}, this spec needs noir`)
