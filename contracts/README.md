@@ -23,6 +23,8 @@ forge test
 - `src/test/MockProofVerifier.sol`, `src/test/MockSp1Gateway.sol`: test doubles. Not for deployment.
 - `src/test/MockStable.sol`: unrestricted 6-decimal demo stablecoin for the pool's second currency. Not for deployment beyond testnets.
 - `script/Deploy.s.sol`: deploys and configures everything from env vars. See the header comment; RPC URL and keys come from `.env` (template in `/.env.example`).
+
+Every script defaults `POLICY_ID` to `keccak256("nachweis.pid.over18.v1")` = `0xd27260f1ca509ba75dea6cd27b2985a96e423550e16db3350d2945e215e3d05f`, the same id the bridge (`service`) and the app use. Pass `POLICY_ID` only to run a second policy.
 - `script/DeploySp1Verifier.s.sol`: deploys `Sp1PidVerifier` for one policy and optionally registers it. Dry run only so far.
 - `script/DeployNoirVerifier.s.sol`: deploys `HonkVerifier` (or reuses one) and `NoirPidVerifier` for one policy, optionally registers it. Dry run only so far.
 - `script/CreatePermissionedPool.s.sol`: onboards the FundToken into a Uniswap v4 permissioned pool on Sepolia (deploy guide steps 1 to 6, shared with the fork tests through `script/lib/PermissionedPoolOnboarding.sol`). Dry-run only so far.

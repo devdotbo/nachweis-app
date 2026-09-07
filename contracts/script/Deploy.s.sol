@@ -11,7 +11,7 @@ import {Subscription} from "../src/Subscription.sol";
 /// Env vars (see /.env.example):
 ///   DEPLOYER_PRIVATE_KEY   required; deployer becomes registry owner and token issuer
 ///   OPERATOR_ADDRESS       optional; issuer key that attests/revokes (default: deployer)
-///   POLICY_ID              optional bytes32 (default: keccak256("nachweis.demo.fund.v1"))
+///   POLICY_ID              optional bytes32 (default: keccak256("nachweis.pid.over18.v1"))
 ///   REQUIRED_BITS          optional uint (default: FundToken.DEFAULT_REQUIRED_BITS = 0x3, identity evidence | over 18)
 ///   DEMO_AMOUNT            optional uint (default: 100e18)
 ///
@@ -22,7 +22,7 @@ contract Deploy is Script {
         uint256 deployerKey = vm.envUint("DEPLOYER_PRIVATE_KEY");
         address deployer = vm.addr(deployerKey);
         address operator = vm.envOr("OPERATOR_ADDRESS", deployer);
-        bytes32 policyId = vm.envOr("POLICY_ID", keccak256("nachweis.demo.fund.v1"));
+        bytes32 policyId = vm.envOr("POLICY_ID", keccak256("nachweis.pid.over18.v1"));
         uint256 requiredBits = vm.envOr("REQUIRED_BITS", uint256(0x3)) /* FundToken.DEFAULT_REQUIRED_BITS; literal because forge build cannot resolve the constant through the type in script jobs */;
         uint256 demoAmount = vm.envOr("DEMO_AMOUNT", uint256(100e18));
 
