@@ -31,6 +31,8 @@ cargo test                     # unit tests + the anvil end-to-end test (skips i
 | `SP1_PROVER` | sp1-sdk prover selection: `cpu` (local), `mock`, `network` | sp1 default |
 | `RUST_LOG` | tracing filter | `info` |
 
+Fixture caveat: the synthetic prover fixture in `../prover-sp1/fixtures` carries ERICA's `x5c` but is signed with a fresh issuer key, so the bridge needs `ISSUER_KEY_SEC1_HEX` (from `input.json`, `issuer_key_sec1_hex`) for the fixture, while a real ERICA credential takes the issuer key from the `x5c` leaf and must run without the override.
+
 Groth16 wrapping uses the in-process gnark prover (`native-gnark`, default feature, needs Go).
 Build with `--no-default-features` to let sp1-sdk use the Docker image instead.
 
