@@ -32,6 +32,18 @@ export const RPC_URL: string | undefined = env.VITE_RPC_URL && env.VITE_RPC_URL 
 /** Chain the wallet must be on. Default Sepolia (11155111); 31337 for a plain anvil. */
 export const CHAIN_ID: number = env.VITE_CHAIN_ID && /^\d+$/.test(env.VITE_CHAIN_ID) ? Number(env.VITE_CHAIN_ID) : 11155111
 
+function privateKeyOr(value: string | undefined): Hex | undefined {
+  return value && /^0x[0-9a-fA-F]{64}$/.test(value) ? (value as Hex) : undefined
+}
+/**
+ * Dev signer (local testing only, see src/lib/devSigner.ts): a wagmi connector that signs in the
+ * page with these keys. `__NACHWEIS_DEV_SIGNER__` is set by vite.config.ts from the presence of the
+ * keys, so a build without them drops the connector and the keys are never read.
+ */
+export const DEV_PRIVATE_KEY: Hex | undefined = __NACHWEIS_DEV_SIGNER__ ? privateKeyOr(env.VITE_DEV_PRIVATE_KEY) : undefined
+export const DEV_OPERATOR_KEY: Hex | undefined = __NACHWEIS_DEV_SIGNER__ ? privateKeyOr(env.VITE_DEV_OPERATOR_KEY) : undefined
+export const DEV_SIGNER: boolean = Boolean(DEV_PRIVATE_KEY || DEV_OPERATOR_KEY)
+
 /** Display labels for predicate bits. Decision bits: 1 = identity evidence (bit 0), 2 = over 18 (bit 1). */
 export const BIT_LABELS: readonly string[] = ['identity evidence', 'over 18']
 export const TIER_LABELS: Record<number, string> = { 0: 'none', 1: 'A', 2: 'B' }

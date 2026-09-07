@@ -1,4 +1,4 @@
-import { MOCK, CONFIG_WARNINGS } from '../config'
+import { DEV_SIGNER, MOCK, CONFIG_WARNINGS } from '../config'
 import type { Wallet } from '../lib/wallet'
 
 export function ConnectCard({ wallet, title, lead }: { wallet: Wallet; title: string; lead: string }) {
@@ -17,11 +17,12 @@ export function ConnectCard({ wallet, title, lead }: { wallet: Wallet; title: st
       ) : (
         <div className="row">
           <button type="button" className="btn btn-blue" onClick={wallet.connect} disabled={wallet.connecting}>
-            {MOCK ? 'Connect (mock wallet)' : 'Connect injected wallet'}
+            {MOCK ? 'Connect (mock wallet)' : DEV_SIGNER ? 'Connect dev signer' : 'Connect injected wallet'}
           </button>
           <span className="status idle">not connected</span>
         </div>
       )}
+      {wallet.devSigner ? <p className="note">Dev signer, local only: this page holds the private key and signs without a prompt.</p> : null}
       {wallet.wrongChain ? (
         <div className="row">
           <span className="status closed">wrong network</span>

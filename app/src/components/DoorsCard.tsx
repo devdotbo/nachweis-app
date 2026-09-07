@@ -1,6 +1,7 @@
-import type { Address } from 'viem'
+import { formatUnits, type Address } from 'viem'
+import { useQueryClient } from '@tanstack/react-query'
 import { POOL } from '../config'
-import { useEligible, useRegistryTx } from '../lib/chain'
+import { useEligible, useFundBalance, useRegistryTx } from '../lib/chain'
 import { shortHex } from '../lib/format'
 import { TxLine } from './TxLine'
 
@@ -8,6 +9,10 @@ export function DoorsCard({ address }: { address?: Address }) {
   const eligible = useEligible(address)
   const open = Boolean(eligible)
   const { tx, subscribe } = useRegistryTx(address)
+  const balance = useFundBalance(address)
+  const queryClient = useQueryClient()
+  // The subscribe receipt is awaited inside subscribe(); refresh the balance right after instead of waiting for the 8 s poll.
+  const doSubscribe = () => void subscribe().then(() => queryClient.invalidateQueries()).catch(() => {})
   return (
     <section className={`card${address ? '' : ' locked'}`}>
       <h2>
@@ -19,9 +24,12 @@ export function DoorsCard({ address }: { address?: Address }) {
           <h3>Subscribe</h3>
           <span className={`status ${open ? 'open' : 'closed'}`}>{open ? 'open' : 'closed'}</span>
           <p className="hint">Subscription.subscribe() mints the demo amount of FundToken; the token's transfer hook checks eligibility again.</p>
-          <button type="button" className="btn btn-mint" disabled={!open || tx.status === 'pending'} onClick={() => void subscribe().catch(() => {})}>
+          <button type="button" className="btn btn-mint" disabled={!open || tx.status === 'pending'} onClick={doSubscribe}>
             {tx.status === 'pending' ? 'Sending' : 'Subscribe'}
           </button>
+          <p className="hint" data-testid="fund-balance">
+            FundToken balance: <code>{balance === undefined ? '…' : formatUnits(balance, 18)}</code>
+          </p>
         </div>
         <div className="door">
           <h3>Swap</h3>

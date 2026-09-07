@@ -5,8 +5,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { Address, Hex } from 'viem'
 import { usePublicClient, useReadContract, useWriteContract } from 'wagmi'
-import { MOCK, POLICY_ID, REGISTRY, REQUIRED_BITS, SUBSCRIPTION } from '../config'
-import { registryAbi, subscriptionAbi } from './contracts'
+import { FUND_TOKEN, MOCK, POLICY_ID, REGISTRY, REQUIRED_BITS, SUBSCRIPTION } from '../config'
+import { fundTokenAbi, registryAbi, subscriptionAbi } from './contracts'
 import { mockAttest, mockDecisionOf, mockIsEligible, mockRevoke, mockSubscribe, useMockState } from './mockChain'
 import { EMPTY_DECISION, type Decision, type RegistryEvent, type TxState } from './types'
 
@@ -43,6 +43,11 @@ function useEligibleMock(subject?: Address): boolean | undefined {
 
 function useRegistryEventsMock(): { events: RegistryEvent[]; loading: boolean } {
   return { events: useMockState().events, loading: false }
+}
+
+function useFundBalanceMock(holder?: Address): bigint | undefined {
+  const s = useMockState()
+  return holder ? (s.balances[holder.toLowerCase()] ?? 0n) : undefined
 }
 
 function useTxState(): [TxState, (t: TxState) => void, <T>(label: string, fn: () => Promise<Hex>) => Promise<T | void>] {
@@ -98,6 +103,18 @@ function useEligibleChain(subject?: Address): boolean | undefined {
     query: { enabled: Boolean(subject), refetchInterval: POLL_MS },
   })
   return q.data as boolean | undefined
+}
+
+/** FundToken.balanceOf(holder), refreshed every 8 seconds (and by the subscribe tx through query invalidation). */
+function useFundBalanceChain(holder?: Address): bigint | undefined {
+  const q = useReadContract({
+    address: FUND_TOKEN,
+    abi: fundTokenAbi,
+    functionName: 'balanceOf',
+    args: holder ? [holder] : undefined,
+    query: { enabled: Boolean(holder), refetchInterval: POLL_MS },
+  })
+  return q.data as bigint | undefined
 }
 
 function useRegistryEventsChain(): { events: RegistryEvent[]; loading: boolean } {
@@ -176,4 +193,5 @@ function shortError(e: unknown): string {
 export const useDecision: (subject?: Address) => DecisionRead = MOCK ? useDecisionMock : useDecisionChain
 export const useEligible: (subject?: Address) => boolean | undefined = MOCK ? useEligibleMock : useEligibleChain
 export const useRegistryEvents: () => { events: RegistryEvent[]; loading: boolean } = MOCK ? useRegistryEventsMock : useRegistryEventsChain
+export const useFundBalance: (holder?: Address) => bigint | undefined = MOCK ? useFundBalanceMock : useFundBalanceChain
 export const useRegistryTx: (actor?: Address) => RegistryTx = MOCK ? useRegistryTxMock : () => useRegistryTxChain()

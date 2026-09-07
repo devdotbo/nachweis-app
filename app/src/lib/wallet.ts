@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { bytesToHex, type Address, type Hex } from 'viem'
 import { useAccount, useChainId, useConnect, useDisconnect, useSignMessage, useSwitchChain } from 'wagmi'
 import { MOCK } from '../config'
+import { DEV_SIGNER_TYPE, devSignerId } from './devSigner'
 import { chain } from './WalletProvider'
 import { MOCK_INVESTOR, MOCK_OPERATOR } from './mockChain'
 import type { Role } from './role'
@@ -19,6 +20,8 @@ export interface Wallet {
   signMessage: (message: string) => Promise<Hex>
   connecting: boolean
   error?: string
+  /** True while the connection is a dev signer (local testing only). */
+  devSigner: boolean
 }
 
 const mockConnected: Record<Role, boolean> = { investor: false, issuer: false }
@@ -40,6 +43,7 @@ function useMockWallet(role: Role): Wallet {
     disconnect: () => setConnected(false),
     switchToChain: () => {},
     chainName: 'mock',
+    devSigner: false,
     signMessage: async () => {
       await new Promise((r) => setTimeout(r, 600))
       return bytesToHex(crypto.getRandomValues(new Uint8Array(65)))
@@ -48,20 +52,27 @@ function useMockWallet(role: Role): Wallet {
   }
 }
 
-function useChainWallet(): Wallet {
-  const { address, isConnected } = useAccount()
+function useChainWallet(role: Role): Wallet {
+  const { address, isConnected, connector: current } = useAccount()
   const chainId = useChainId()
   const { connect, connectors, isPending, error } = useConnect()
   const { disconnect } = useDisconnect()
   const { switchChain } = useSwitchChain()
   const { signMessageAsync } = useSignMessage()
-  const injectedConnector = connectors[0]
+  // Dev signer for this role when configured (investor key, operator key), else the injected wallet.
+  const devForRole = connectors.find((c) => c.id === devSignerId(role))
+  const anyDev = connectors.find((c) => c.type === DEV_SIGNER_TYPE)
+  const wanted = devForRole ?? (current?.type === DEV_SIGNER_TYPE ? anyDev : undefined) ?? connectors.find((c) => c.type !== DEV_SIGNER_TYPE) ?? connectors[0]
+  // Role switch with a dev signer per role: follow the role, like changing the account in an extension.
+  useEffect(() => {
+    if (isConnected && current?.type === DEV_SIGNER_TYPE && devForRole && current.id !== devForRole.id) connect({ connector: devForRole, chainId: chain.id })
+  }, [isConnected, current, devForRole, connect])
   return {
     address,
     isConnected,
     wrongChain: isConnected && chainId !== chain.id,
     connect: () => {
-      if (injectedConnector) connect({ connector: injectedConnector, chainId: chain.id })
+      if (wanted) connect({ connector: wanted, chainId: chain.id })
     },
     disconnect: () => disconnect(),
     switchToChain: () => switchChain({ chainId: chain.id }),
@@ -69,7 +80,8 @@ function useChainWallet(): Wallet {
     signMessage: (message) => signMessageAsync({ message }),
     connecting: isPending,
     error: error?.message,
+    devSigner: isConnected && current?.type === DEV_SIGNER_TYPE,
   }
 }
 
-export const useWallet: (role: Role) => Wallet = MOCK ? useMockWallet : (_role) => useChainWallet()
+export const useWallet: (role: Role) => Wallet = MOCK ? useMockWallet : useChainWallet
