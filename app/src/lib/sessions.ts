@@ -4,6 +4,7 @@
  */
 import { useSyncExternalStore } from 'react'
 import type { Address } from 'viem'
+import type { BridgeSession } from '../bridge'
 import type { ClaimLine, PresentationRequest } from '../verifier'
 
 export type SessionState = 'pending' | 'presented' | 'rejected' | 'attested' | 'revoked'
@@ -18,6 +19,12 @@ export interface Session {
   note?: string
   reason?: string
   error?: string
+  /** The wallet's EIP-191 signature of "nachweis:session:<id>", sent to the bridge. */
+  signature: 'pending' | 'signed' | 'failed'
+  signatureError?: string
+  /** Last state the bridge reported. */
+  bridge?: BridgeSession
+  bridgeError?: string
 }
 
 let sessions: Session[] = []

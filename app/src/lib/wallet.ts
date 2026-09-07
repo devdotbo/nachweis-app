@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import type { Address } from 'viem'
-import { useAccount, useChainId, useConnect, useDisconnect, useSwitchChain } from 'wagmi'
+import { bytesToHex, type Address, type Hex } from 'viem'
+import { useAccount, useChainId, useConnect, useDisconnect, useSignMessage, useSwitchChain } from 'wagmi'
 import { sepolia } from 'wagmi/chains'
 import { MOCK } from '../config'
 import { MOCK_INVESTOR, MOCK_OPERATOR } from './mockChain'
@@ -13,6 +13,8 @@ export interface Wallet {
   connect: () => void
   disconnect: () => void
   switchToSepolia: () => void
+  /** EIP-191 personal_sign. */
+  signMessage: (message: string) => Promise<Hex>
   connecting: boolean
   error?: string
 }
@@ -35,6 +37,10 @@ function useMockWallet(role: Role): Wallet {
     connect: () => setConnected(true),
     disconnect: () => setConnected(false),
     switchToSepolia: () => {},
+    signMessage: async () => {
+      await new Promise((r) => setTimeout(r, 600))
+      return bytesToHex(crypto.getRandomValues(new Uint8Array(65)))
+    },
     connecting: false,
   }
 }
@@ -45,6 +51,7 @@ function useChainWallet(): Wallet {
   const { connect, connectors, isPending, error } = useConnect()
   const { disconnect } = useDisconnect()
   const { switchChain } = useSwitchChain()
+  const { signMessageAsync } = useSignMessage()
   const injectedConnector = connectors[0]
   return {
     address,
@@ -55,6 +62,7 @@ function useChainWallet(): Wallet {
     },
     disconnect: () => disconnect(),
     switchToSepolia: () => switchChain({ chainId: sepolia.id }),
+    signMessage: (message) => signMessageAsync({ message }),
     connecting: isPending,
     error: error?.message,
   }
