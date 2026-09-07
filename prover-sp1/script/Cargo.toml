@@ -1,0 +1,31 @@
+[package]
+version = "0.1.0"
+name = "nachweis-pid-script"
+edition = "2021"
+default-run = "nachweis-pid"
+
+[[bin]]
+name = "nachweis-pid"
+path = "src/bin/main.rs"
+
+[[bin]]
+name = "vkey"
+path = "src/bin/vkey.rs"
+
+[dependencies]
+sp1-sdk = { version = "=6.1.0", features = ["blocking", "native-gnark"] }
+serde_json = { version = "1.0" }
+serde = { version = "1.0.200", features = ["derive"] }
+clap = { version = "4.0", features = ["derive", "env"] }
+tracing = "0.1.40"
+hex = "0.4.3"
+alloy-sol-types = { workspace = true }
+nachweis-pid-lib = { path = "../lib" }
+p256 = { version = "0.13.2", features = ["ecdsa"] }
+sha2 = "0.10"
+base64 = "0.22"
+rand = "0.8"
+x509-cert = { version = "0.2.4", default-features = false }
+
+[build-dependencies]
+sp1-build = { version = "=6.1.0" }

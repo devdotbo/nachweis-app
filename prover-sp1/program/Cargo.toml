@@ -1,0 +1,13 @@
+[package]
+version = "0.1.0"
+name = "nachweis-pid-program"
+edition = "2021"
+
+[dependencies]
+alloy-sol-types = { workspace = true }
+sp1-zkvm = { version = "=6.1.0" }
+nachweis-pid-lib = { path = "../lib" }
+# Pin the transitive sp1 crates to the gateway-supported 6.1.0 (semver ^6 otherwise resolves 6.7.0
+# and the linker misses syscall_halt).
+sp1-lib = { version = "=6.1.0" }
+sp1-primitives = { version = "=6.1.0" }
