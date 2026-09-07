@@ -84,3 +84,27 @@ gen-prover.ts logic plus the parity test against the new committed Prover.toml.
 - mopro-ffi 0.3.7, uniffi as pinned by mopro-ffi
 - Xcode 26.6 (17F113), iOS SDK 26.5, simulator runtime iOS 18.5, deployment target iOS 17.0
 - Android: same crate with `IOS_ARCHS` replaced by `ANDROID_ARCHS` (arm64-android static lib exists for this bb tag; not built here)
+
+## Android: the prebuilt Barretenberg library needs a `std::__1` libc++ (link with Zig)
+
+`barretenberg-static-arm64-android.tar.gz` (v5.0.0-nightly.20260324) is built
+with `clang version 20.1.2 (zig-bootstrap)` (`strings libbb-external.a`) and
+references libc++ in the upstream ABI namespace `std::__1`
+(`_ZNSt3__1...`, e.g. the VTT of `basic_ostringstream`, `to_chars`,
+`mutex::lock`, 133 symbols in total). Every NDK ships libc++ in the
+`std::__ndk1` namespace instead (checked on 2026-09-07 with `llvm-nm -D` on
+`libc++_shared.so` of NDK 27.0.12077973 and of NDK r29: 0 `__1` symbols,
+1,459 `__ndk1` symbols). A plain `cargo ndk` link therefore succeeds (shared
+libraries may have undefined symbols) but `dlopen` on the phone fails with
+"cannot locate symbol _ZTTNSt3__119basic_ostringstream..." (seen on the API
+35 arm64 emulator). Installing a newer NDK does not help.
+
+mopro-cli's Noir adapter (`cli/src/build/android_noir.rs`) links with
+`zig cc` for this reason: Zig bakes its own static `__1` libc++ into the .so
+(resolving barretenberg-rs's `-lc++`), the NDK's bionic headers and crt come
+in through a `ZIG_LIBC` file, and a trailing `-lc++_shared` keeps the NDK's
+`__ndk1` libc++ for everything else. `prover-android/scripts/build-rust.sh`
+does the same with a 4-line linker wrapper passed as `-Clinker` to
+`cargo ndk` (C code is still compiled by the NDK clang); the .so then needs
+`libc++_shared.so` from the NDK next to it. iOS is unaffected (libc++ comes
+with the OS and uses `__1`).

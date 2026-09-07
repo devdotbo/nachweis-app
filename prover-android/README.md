@@ -25,13 +25,15 @@ Toolchain decision and versions: `TOOLCHAIN.md`. Measurements: below.
       bn254_g1.dat            SRS, 2^20 + 1 points, 64 MB, gitignored (scripts/prepare-assets.sh)
       bn254_g2.dat            128 B
       test-vector.json        prover-sp1/fixtures/realistic-input.json (realistic PID presentation, WP13 circuit)
-    scripts/build-rust.sh     mopro Android build of the core (cargo ndk + bindings) copied into app/
+    scripts/build-rust.sh     cargo ndk build of the core with a Zig linker wrapper, libc++_shared.so, Kotlin bindings
     scripts/prepare-assets.sh SRS and test vector into assets
 
 ## Build
 
 Prerequisites: Rust (1.89+), `rustup target add aarch64-linux-android`,
-`cargo install cargo-ndk`, Android SDK with NDK 29 and platform 35, JDK 17
+`cargo install cargo-ndk`, Zig (`brew install zig`, the linker for the
+Android .so, see `TOOLCHAIN.md`), Android SDK with an NDK (27) and platform
+35, JDK 17
 (`export JAVA_HOME=...`), network for the first build (barretenberg-rs downloads
 `libbb-external.a`, Gradle downloads AGP 8.13.2 / Kotlin 2.2.21).
 

@@ -9,29 +9,40 @@ Android specifics, measured on this Mac (2026-09-07):
 
 | piece | version | note |
 | --- | --- | --- |
-| NDK | 29.0.13599879 (LLVM 20) | required by the prebuilt Barretenberg library, see below |
-| cargo-ndk | installed via `cargo install cargo-ndk`; mopro's `cargo run --bin android` calls `cargo ndk -t arm64-v8a build --link-libcxx-shared --lib --release` | |
+| NDK | 27.0.12077973 (compiles C sources, bionic sysroot for the link) | any NDK; the libc++ question is solved by Zig, see below |
+| Zig | 0.16.0 (Homebrew) | linker for the Android .so (static `std::__1` libc++), see below |
+| cargo-ndk | 3.5.4 (`cargo install cargo-ndk`); `scripts/build-rust.sh` runs `cargo ndk -t arm64-v8a --platform 30 build --release` with the Zig linker wrapper | mopro's `cargo run --bin android` links with the NDK and produces a .so that does not load |
 | Rust | 1.92.0, targets `aarch64-linux-android` (`x86_64-linux-android` optional) | |
 | AGP / Kotlin / Gradle | 8.13.2 / 2.2.21 (compose plugin) / 9.1.0 | JDK 17 (`JAVA_HOME`) |
 | JNA | 5.17.0 (`@aar`) | what the uniffi Kotlin bindings load the .so with |
 | minSdk / target | 30 / 35 | |
 
-## libc++: NDK 27 links, NDK 29 runs
+## libc++: the prebuilt Barretenberg wants `std::__1`, every NDK ships `std::__ndk1`
 
-`libbb-external.a` for arm64-android is built with Zig clang 20.1.2. Linked
-with NDK 27 (LLVM 18) the app's `libprover_mobile_core.so` builds, but on the
-device `dlopen` fails:
+`libbb-external.a` for arm64-android is built with Zig clang 20.1.2 against
+upstream libc++ (`std::__1`). Linked with the NDK (27) the app's
+`libprover_mobile_core.so` builds, but on the device `dlopen` fails:
 
     cannot locate symbol "_ZTTNSt3__119basic_ostringstreamIcNS_11char_traitsIcEENS_9allocatorIcEEEE"
     referenced by ".../lib/arm64/libprover_mobile_core.so"
 
-(VTT of `std::basic_ostringstream`; also `basic_istringstream`,
-`basic_stringstream` vtables). NDK 27's `libc++_shared.so` does not export
-them, NDK 29's does. `scripts/build-rust.sh` therefore defaults to
-`$ANDROID_HOME/ndk/29.*` and ships NDK 29's `libc++_shared.so` in
-`jniLibs/arm64-v8a` next to the core. NDK 29 was installed with
-`sdkmanager --install "ndk;29.0.13599879"` (the SDK's `ndk/29.0.13599879`
-directory was an unfinished Android Studio download before).
+133 symbols are affected (stringstream VTT/vtables, `to_chars`, `mutex`,
+`condition_variable`, `thread`, `locale`, filesystem, ...). The NDK's
+`libc++_shared.so` cannot provide them in any version: NDK 27 and NDK r29
+both export only `std::__ndk1` symbols (checked with `llvm-nm -D`; the
+earlier note that NDK 29 would fix it was wrong, a full NDK 29 download was
+started and abandoned once its `libc++_shared.so`, fetched alone out of the
+zip with HTTP range requests, showed 0 `__1` symbols).
+
+The fix, the same one mopro-cli uses for its Noir adapter
+(`cli/src/build/android_noir.rs`): link the .so with `zig cc -target
+aarch64-linux-android`, which statically links Zig's own (`__1`) libc++ and
+resolves barretenberg-rs's `-lc++`; a `ZIG_LIBC` file points Zig at the NDK
+sysroot (bionic headers, crt objects for API 30) and `-lc++_shared` stays
+for the rest. `scripts/build-rust.sh` writes that wrapper and passes it as
+`-Clinker` to `cargo ndk` (NDK 27's clang still compiles the C sources);
+Kotlin bindings come from the host dylib because the Zig-linked .so has no
+`.symtab` for uniffi-bindgen. Zig 0.16.0 from Homebrew.
 
 ## Earlier Android-side core (superseded)
 
