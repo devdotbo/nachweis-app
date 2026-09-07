@@ -18,6 +18,11 @@ export const fromHex = (s: string): Buffer => {
 
 export const random32 = (): Buffer => randomBytes(32);
 
+/// The verifier's registered client_id (x509_hash of verifier/fixtures/live/access-leaf.pem), the
+/// KB-JWT aud the circuit pins (AUD_FRAGMENT in circuits/pid-sdjwt/src/constants.nr, derived in
+/// circuits/pid-sdjwt/REALISM.md). A new registrar leaf changes both.
+export const PINNED_AUD = "x509_hash:VE3qp3vLVkU8JyVmXkjL7CSDVxVoTFdTv5fAEwmjKOI";
+
 /// The nonce the verifier, the circuit and the contract all compute: sha256(address20 || challenge32).
 export function nonceOf(address20: Uint8Array, challenge: Uint8Array): Buffer {
   if (address20.length !== 20) throw new Error("address must be 20 bytes");
