@@ -51,7 +51,7 @@ export function IssuerPending({ operator, sessions }: { operator?: Address; sess
   return (
     <section className={`card${locked ? ' locked' : ''}`}>
       <h2>
-        <span className="n">2</span>Presentations
+        <span className="n">3</span>Presentations
       </h2>
       <p className="lead">
         Sessions created in this browser, verified by the verifier-service. Held in memory only. Approve writes an EligibilityDecision (policy, bits 0x{REQUIRED_BITS.toString(16)}, tier A, 30 days,

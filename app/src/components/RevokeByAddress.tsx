@@ -12,7 +12,7 @@ export function RevokeByAddress({ operator }: { operator?: Address }) {
   return (
     <section className={`card${operator ? '' : ' locked'}`}>
       <h2>
-        <span className="n">3</span>Revoke by address
+        <span className="n">2</span>Revoke by address
       </h2>
       <p className="lead">AttestationRegistry.revoke(subject, policyId). Closes Subscribe and Swap for that address.</p>
       <div className="row">
