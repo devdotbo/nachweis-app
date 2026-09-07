@@ -14,17 +14,56 @@ use sha2::{Digest, Sha256};
 
 use crate::CoreError;
 
-// Max lengths from circuits/pid-sdjwt/src/constants.nr. Any change there is a
-// circuit change (new artifact, new VK) and must be mirrored here.
-pub const HEADER_B64_MAX: usize = 2048;
-pub const PAYLOAD_MAX_LEN: usize = 1024;
-pub const TAIL_MAX: usize = 512;
-pub const KB_PAYLOAD_MAX: usize = 320;
-pub const SALT_MAX_LEN: usize = 32;
-pub const MAX_AGE_ENTRIES: usize = 8;
+/// BoundedVec capacities of the circuit's `fn main`, read from the artifact
+/// ABI (`Bounds::from_artifact`) so a revised circuit (larger payload or
+/// disclosure bounds) needs no code change here. The defaults are the
+/// pid-sdjwt values of 2026-09-07 (constants.nr) and serve the tests.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Bounds {
+    pub header_b64_max: usize,
+    pub payload_max_len: usize,
+    pub tail_max: usize,
+    pub kb_payload_max: usize,
+    pub salt_max_len: usize,
+}
+
+impl Default for Bounds {
+    fn default() -> Self {
+        Bounds { header_b64_max: 2048, payload_max_len: 1024, tail_max: 512, kb_payload_max: 320, salt_max_len: 32 }
+    }
+}
+
+impl Bounds {
+    /// Capacity of each BoundedVec parameter from the nargo artifact JSON.
+    pub fn from_artifact(circuit_json: &str) -> Result<Bounds, CoreError> {
+        let v: Value = serde_json::from_str(circuit_json).map_err(|e| err(format!("circuit json: {e}")))?;
+        Self::from_abi(&v["abi"])
+    }
+
+    pub fn from_abi(abi: &Value) -> Result<Bounds, CoreError> {
+        let cap = |name: &str| -> Result<usize, CoreError> {
+            let p = abi["parameters"]
+                .as_array()
+                .and_then(|a| a.iter().find(|p| p["name"] == name))
+                .ok_or_else(|| err(format!("artifact ABI has no parameter {name}")))?;
+            let fields = p["type"]["fields"].as_array().ok_or_else(|| err(format!("{name} is not a BoundedVec struct")))?;
+            let storage = fields.iter().find(|f| f["name"] == "storage").ok_or_else(|| err(format!("{name} has no storage field")))?;
+            storage["type"]["length"].as_u64().map(|n| n as usize).ok_or_else(|| err(format!("{name}.storage has no length")))
+        };
+        Ok(Bounds {
+            header_b64_max: cap("issuer_header_b64")?,
+            payload_max_len: cap("payload")?,
+            tail_max: cap("disclosures_tail")?,
+            kb_payload_max: cap("kb_payload")?,
+            salt_max_len: cap("age_salt")?,
+        })
+    }
+}
 
 const KB_HEADER_B64: &str = "eyJhbGciOiJFUzI1NiIsInR5cCI6ImtiK2p3dCJ9";
-const EXPECTED_AUD: &str = "https://self-issued.me/v2";
+/// The `aud` the circuit pins (AUD_FRAGMENT in constants.nr) unless the caller
+/// passes another one (wp13 pins the registered client_id).
+pub const DEFAULT_AUD: &str = "https://self-issued.me/v2";
 const P256_N_HEX: &str = "FFFFFFFF00000000FFFFFFFFFFFFFFFFBCE6FAADA7179E84F3B9CAC2FC632551";
 
 /// What the app hands the core: the decrypted presentation plus what the
@@ -34,11 +73,17 @@ pub struct ProverInput {
     /// `issuer_jwt~disc1~...~discN~kb_jwt`
     pub presentation: String,
     /// SEC1 uncompressed issuer key, 65 bytes, hex (with or without 0x).
+    /// Empty: taken from the issuer JWT header's `x5c` leaf, as the bridge
+    /// and the companion do for a real credential.
+    #[serde(default)]
     pub issuer_key_sec1_hex: String,
     /// 20-byte EVM address, hex.
     pub bound_address_hex: String,
     /// 32-byte challenge, hex.
     pub challenge_hex: String,
+    /// KB-JWT `aud` the circuit pins; `None` means `DEFAULT_AUD`.
+    #[serde(default)]
+    pub expected_aud: Option<String>,
 }
 
 /// Fixed-size and bounded circuit inputs, in the ABI order of `fn main`.
@@ -68,6 +113,14 @@ pub struct CircuitInputs {
     pub subject: [u8; 20],
     /// Expected public outputs, for display and for checking the proof.
     pub expected: ExpectedOutputs,
+    pub bounds: Bounds,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum InputValue {
+    Bytes(Vec<u8>),
+    Bounded(Vec<u8>),
+    Scalar(u64),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -132,6 +185,56 @@ fn low_s(sig: &[u8; 64]) -> [u8; 64] {
 }
 
 pub fn derive(input: &ProverInput) -> Result<CircuitInputs, CoreError> {
+    derive_with_bounds(input, Bounds::default())
+}
+
+/// P-256 SubjectPublicKeyInfo of the first `x5c` certificate in a JWT header:
+/// the SEC1 uncompressed point (65 bytes). Minimal DER walk, same as
+/// companion/src/der.ts `publicKeyFromCertificate`.
+pub fn issuer_key_from_x5c(header_b64: &str) -> Result<Vec<u8>, CoreError> {
+    let header: Value = serde_json::from_slice(&from_b64url(header_b64)?).map_err(|e| err(format!("issuer header JSON: {e}")))?;
+    let leaf = header["x5c"].as_array().and_then(|a| a.first()).and_then(Value::as_str).ok_or_else(|| err("issuer header has no x5c"))?;
+    let der = base64::engine::general_purpose::STANDARD.decode(leaf).map_err(|e| err(format!("x5c base64: {e}")))?;
+    struct Tlv { tag: u8, start: usize, end: usize }
+    fn read(buf: &[u8], off: usize) -> Result<Tlv, CoreError> {
+        let tag = *buf.get(off).ok_or_else(|| err("DER: truncated"))?;
+        let mut len = *buf.get(off + 1).ok_or_else(|| err("DER: truncated"))? as usize;
+        let mut p = off + 2;
+        if len & 0x80 != 0 {
+            let n = len & 0x7f;
+            if n == 0 || n > 4 { return Err(err("DER: unsupported length form")); }
+            len = 0;
+            for _ in 0..n { len = (len << 8) | *buf.get(p).ok_or_else(|| err("DER: truncated"))? as usize; p += 1; }
+        }
+        if p + len > buf.len() { return Err(err("DER: element runs past the end")); }
+        Ok(Tlv { tag, start: p, end: p + len })
+    }
+    fn children(buf: &[u8], t: &Tlv) -> Result<Vec<Tlv>, CoreError> {
+        let mut out = Vec::new();
+        let mut p = t.start;
+        while p < t.end { let c = read(buf, p)?; p = c.end; out.push(c); }
+        Ok(out)
+    }
+    let cert = read(&der, 0)?;
+    if cert.tag != 0x30 { return Err(err("DER: certificate is not a SEQUENCE")); }
+    let tbs = read(&der, cert.start)?;
+    if tbs.tag != 0x30 { return Err(err("DER: tbsCertificate is not a SEQUENCE")); }
+    let fields = children(&der, &tbs)?;
+    let i = if fields.first().map(|f| f.tag) == Some(0xa0) { 1 } else { 0 };
+    let spki = fields.get(i + 5).filter(|f| f.tag == 0x30).ok_or_else(|| err("DER: subjectPublicKeyInfo not found"))?;
+    let parts = children(&der, spki)?;
+    let (alg, bits) = (parts.first().ok_or_else(|| err("DER: spki"))?, parts.get(1).ok_or_else(|| err("DER: spki"))?);
+    if bits.tag != 0x03 { return Err(err("DER: subjectPublicKey is not a BIT STRING")); }
+    let alg_children = children(&der, alg)?;
+    let curve = alg_children.get(1).map(|c| &der[c.start..c.end]).unwrap_or(&[]);
+    if curve != [0x2a, 0x86, 0x48, 0xce, 0x3d, 0x03, 0x01, 0x07] { return Err(err(format!("x5c leaf key is not P-256 (curve OID {})", hex::encode(curve)))); }
+    let key = &der[bits.start + 1..bits.end];
+    if key.len() != 65 || key[0] != 4 { return Err(err(format!("x5c leaf key is not an uncompressed point ({} bytes)", key.len()))); }
+    Ok(key.to_vec())
+}
+
+pub fn derive_with_bounds(input: &ProverInput, bounds: Bounds) -> Result<CircuitInputs, CoreError> {
+    let expected_aud = input.expected_aud.as_deref().filter(|a| !a.is_empty()).unwrap_or(DEFAULT_AUD);
     let parts: Vec<&str> = input.presentation.trim().split('~').collect();
     if parts.len() < 2 {
         return Err(err("presentation has no KB-JWT"));
@@ -193,9 +296,6 @@ pub fn derive(input: &ProverInput) -> Result<CircuitInputs, CoreError> {
         .iter()
         .position(|v| v == &Value::String(age_digest.clone()))
         .ok_or_else(|| err("age disclosure digest not in age_equal_or_over._sd"))?;
-    if age_digest_index >= MAX_AGE_ENTRIES {
-        return Err(err("age digest index exceeds MAX_AGE_ENTRIES"));
-    }
     // Check the fixed 46-byte stride layout the circuit assumes.
     let entries_base = age_sd_offset + age_sd_fragment.len();
     for j in 0..=age_digest_index {
@@ -226,7 +326,7 @@ pub fn derive(input: &ProverInput) -> Result<CircuitInputs, CoreError> {
     }
     let kb_obj: Value =
         serde_json::from_slice(&kb_payload_raw).map_err(|e| err(format!("KB payload JSON: {e}")))?;
-    let kb_aud_offset = unique_index(&kb_payload_raw, format!("\"aud\":\"{EXPECTED_AUD}\"").as_bytes(), "aud fragment")?;
+    let kb_aud_offset = unique_index(&kb_payload_raw, format!("\"aud\":\"{expected_aud}\"").as_bytes(), "aud fragment")?;
     let kb_nonce_offset = unique_index(&kb_payload_raw, b"\"nonce\":\"", "nonce fragment")?;
     let kb_sd_hash_offset = unique_index(&kb_payload_raw, b"\"sd_hash\":\"", "sd_hash fragment")?;
 
@@ -237,7 +337,11 @@ pub fn derive(input: &ProverInput) -> Result<CircuitInputs, CoreError> {
     }
 
     // --- keys, subject, challenge ---
-    let sec1 = hex::decode(strip0x(&input.issuer_key_sec1_hex)).map_err(|e| err(format!("issuer key hex: {e}")))?;
+    let sec1 = if input.issuer_key_sec1_hex.trim().is_empty() {
+        issuer_key_from_x5c(header_b64)?
+    } else {
+        hex::decode(strip0x(input.issuer_key_sec1_hex.trim())).map_err(|e| err(format!("issuer key hex: {e}")))?
+    };
     if sec1.len() != 65 || sec1[0] != 4 {
         return Err(err("issuer key must be SEC1 uncompressed (65 bytes)"));
     }
@@ -266,16 +370,16 @@ pub fn derive(input: &ProverInput) -> Result<CircuitInputs, CoreError> {
     let expiry = payload_obj.get("exp").and_then(Value::as_u64).ok_or_else(|| err("issuer exp missing"))?;
 
     Ok(CircuitInputs {
-        issuer_header_b64: bounded("issuer_header_b64", header_b64.as_bytes(), HEADER_B64_MAX)?,
-        payload: bounded("payload", &payload_raw, PAYLOAD_MAX_LEN)?,
+        issuer_header_b64: bounded("issuer_header_b64", header_b64.as_bytes(), bounds.header_b64_max)?,
+        payload: bounded("payload", &payload_raw, bounds.payload_max_len)?,
         issuer_sig_b64: sig_b64.as_bytes().try_into().unwrap(),
         issuer_sig: low_s(&issuer_sig_raw),
-        disclosures_tail: bounded("disclosures_tail", tail.as_bytes(), TAIL_MAX)?,
-        kb_payload: bounded("kb_payload", &kb_payload_raw, KB_PAYLOAD_MAX)?,
+        disclosures_tail: bounded("disclosures_tail", tail.as_bytes(), bounds.tail_max)?,
+        kb_payload: bounded("kb_payload", &kb_payload_raw, bounds.kb_payload_max)?,
         kb_signature: low_s(&kb_sig_raw),
         issuer_pub_x,
         issuer_pub_y,
-        age_salt: bounded("age_salt", age_salt.as_bytes(), SALT_MAX_LEN)?,
+        age_salt: bounded("age_salt", age_salt.as_bytes(), bounds.salt_max_len)?,
         age_sd_offset: age_sd_offset as u32,
         age_digest_index: age_digest_index as u32,
         vct_offset: vct_offset as u32,
@@ -295,6 +399,7 @@ pub fn derive(input: &ProverInput) -> Result<CircuitInputs, CoreError> {
             nonce_hex: format!("0x{nonce_hex}"),
             subject_hex: format!("0x{}", hex::encode(subject)),
         },
+        bounds,
     })
 }
 
@@ -317,16 +422,16 @@ impl CircuitInputs {
             format!("{name}.storage = {}\n{name}.len = {}\n", list(&padded(b, max)), b.len())
         };
         let mut t = String::new();
-        t += &bounded("issuer_header_b64", &self.issuer_header_b64, HEADER_B64_MAX);
-        t += &bounded("payload", &self.payload, PAYLOAD_MAX_LEN);
+        t += &bounded("issuer_header_b64", &self.issuer_header_b64, self.bounds.header_b64_max);
+        t += &bounded("payload", &self.payload, self.bounds.payload_max_len);
         t += &format!("issuer_sig_b64 = {}\n", list(&self.issuer_sig_b64));
         t += &format!("issuer_sig = {}\n", list(&self.issuer_sig));
-        t += &bounded("disclosures_tail", &self.disclosures_tail, TAIL_MAX);
-        t += &bounded("kb_payload", &self.kb_payload, KB_PAYLOAD_MAX);
+        t += &bounded("disclosures_tail", &self.disclosures_tail, self.bounds.tail_max);
+        t += &bounded("kb_payload", &self.kb_payload, self.bounds.kb_payload_max);
         t += &format!("kb_signature = {}\n", list(&self.kb_signature));
         t += &format!("issuer_pub_x = {}\n", list(&self.issuer_pub_x));
         t += &format!("issuer_pub_y = {}\n", list(&self.issuer_pub_y));
-        t += &bounded("age_salt", &self.age_salt, SALT_MAX_LEN);
+        t += &bounded("age_salt", &self.age_salt, self.bounds.salt_max_len);
         t += &format!("age_sd_offset = {}\n", self.age_sd_offset);
         t += &format!("age_digest_index = {}\n", self.age_digest_index);
         t += &format!("vct_offset = {}\n", self.vct_offset);
@@ -342,45 +447,76 @@ impl CircuitInputs {
         t
     }
 
-    /// The witness vector in ABI order, flattened the way `noirc_abi` encodes
-    /// `fn main` parameters: a BoundedVec is `storage[MAX]` then `len`, arrays
-    /// are element by element, scalars are one field. One decimal string per
-    /// field element; entry i becomes ACIR witness index i, as noir-rs does. The circuit ABI in the artifact is the reference for the
-    /// order; `witness_len_matches_abi` in lib.rs checks the count against it.
-    pub fn to_flat_witness(&self) -> Vec<String> {
-        let mut w: Vec<String> = Vec::with_capacity(4300);
-        let push_bytes = |w: &mut Vec<String>, b: &[u8]| w.extend(b.iter().map(|x| x.to_string()));
-        let push_bounded = |w: &mut Vec<String>, b: &[u8], max: usize| {
-            push_bytes(w, &padded(b, max));
-            w.push(b.len().to_string());
-        };
-        push_bounded(&mut w, &self.issuer_header_b64, HEADER_B64_MAX);
-        push_bounded(&mut w, &self.payload, PAYLOAD_MAX_LEN);
-        push_bytes(&mut w, &self.issuer_sig_b64);
-        push_bytes(&mut w, &self.issuer_sig);
-        push_bounded(&mut w, &self.disclosures_tail, TAIL_MAX);
-        push_bounded(&mut w, &self.kb_payload, KB_PAYLOAD_MAX);
-        push_bytes(&mut w, &self.kb_signature);
-        push_bytes(&mut w, &self.issuer_pub_x);
-        push_bytes(&mut w, &self.issuer_pub_y);
-        push_bounded(&mut w, &self.age_salt, SALT_MAX_LEN);
-        for v in [
-            self.age_sd_offset,
-            self.age_digest_index,
-            self.vct_offset,
-            self.cnf_offset,
-            self.x_offset,
-            self.y_offset,
-            self.exp_offset,
-            self.kb_aud_offset,
-            self.kb_nonce_offset,
-            self.kb_sd_hash_offset,
-        ] {
-            w.push(v.to_string());
+    /// Every `fn main` parameter by name: fixed arrays and scalars as-is,
+    /// BoundedVecs as (bytes, capacity from `bounds`).
+    pub fn values(&self) -> Vec<(&'static str, InputValue)> {
+        use InputValue::*;
+        vec![
+            ("issuer_header_b64", Bounded(self.issuer_header_b64.clone())),
+            ("payload", Bounded(self.payload.clone())),
+            ("issuer_sig_b64", Bytes(self.issuer_sig_b64.to_vec())),
+            ("issuer_sig", Bytes(self.issuer_sig.to_vec())),
+            ("disclosures_tail", Bounded(self.disclosures_tail.clone())),
+            ("kb_payload", Bounded(self.kb_payload.clone())),
+            ("kb_signature", Bytes(self.kb_signature.to_vec())),
+            ("issuer_pub_x", Bytes(self.issuer_pub_x.to_vec())),
+            ("issuer_pub_y", Bytes(self.issuer_pub_y.to_vec())),
+            ("age_salt", Bounded(self.age_salt.clone())),
+            ("age_sd_offset", Scalar(self.age_sd_offset as u64)),
+            ("age_digest_index", Scalar(self.age_digest_index as u64)),
+            ("vct_offset", Scalar(self.vct_offset as u64)),
+            ("cnf_offset", Scalar(self.cnf_offset as u64)),
+            ("x_offset", Scalar(self.x_offset as u64)),
+            ("y_offset", Scalar(self.y_offset as u64)),
+            ("exp_offset", Scalar(self.exp_offset as u64)),
+            ("kb_aud_offset", Scalar(self.kb_aud_offset as u64)),
+            ("kb_nonce_offset", Scalar(self.kb_nonce_offset as u64)),
+            ("kb_sd_hash_offset", Scalar(self.kb_sd_hash_offset as u64)),
+            ("challenge", Bytes(self.challenge.to_vec())),
+            ("subject", Bytes(self.subject.to_vec())),
+        ]
+    }
+
+    /// The witness vector flattened the way `noirc_abi` encodes `fn main`
+    /// parameters, driven by the artifact ABI: parameters in ABI order, a
+    /// BoundedVec as `storage[capacity]` then `len`, arrays element by
+    /// element, scalars as one field. One decimal string per field element;
+    /// entry i becomes ACIR witness index i (as noir-rs does). Fails when the
+    /// artifact names a parameter this derivation does not produce or a
+    /// fixed array length differs, so a revised circuit fails loudly.
+    pub fn to_flat_witness(&self, abi: &Value) -> Result<Vec<String>, CoreError> {
+        let values = self.values();
+        let params = abi["parameters"].as_array().ok_or_else(|| err("artifact ABI has no parameters"))?;
+        let mut w: Vec<String> = Vec::with_capacity(4400);
+        for p in params {
+            let name = p["name"].as_str().unwrap_or("");
+            let (_, v) = values.iter().find(|(n, _)| *n == name).ok_or_else(|| err(format!("artifact parameter {name} is not derived by this core")))?;
+            let t = &p["type"];
+            match (t["kind"].as_str(), v) {
+                (Some("struct"), InputValue::Bounded(b)) => {
+                    let fields = t["fields"].as_array().ok_or_else(|| err(format!("{name}: struct without fields")))?;
+                    for f in fields {
+                        match f["name"].as_str() {
+                            Some("storage") => {
+                                let cap = f["type"]["length"].as_u64().unwrap_or(0) as usize;
+                                if b.len() > cap { return Err(err(format!("{name}: {} bytes exceeds capacity {cap}", b.len()))); }
+                                w.extend(padded(b, cap).iter().map(|x| x.to_string()));
+                            }
+                            Some("len") => w.push(b.len().to_string()),
+                            other => return Err(err(format!("{name}: unexpected BoundedVec field {other:?}"))),
+                        }
+                    }
+                }
+                (Some("array"), InputValue::Bytes(b)) => {
+                    let n = t["length"].as_u64().unwrap_or(0) as usize;
+                    if b.len() != n { return Err(err(format!("{name}: artifact wants {n} bytes, derived {}", b.len()))); }
+                    w.extend(b.iter().map(|x| x.to_string()));
+                }
+                (Some("integer"), InputValue::Scalar(x)) => w.push(x.to_string()),
+                (kind, _) => return Err(err(format!("{name}: artifact kind {kind:?} does not match the derived value"))),
+            }
         }
-        push_bytes(&mut w, &self.challenge);
-        push_bytes(&mut w, &self.subject);
-        w
+        Ok(w)
     }
 
     /// The 86 public inputs (subject 20, issuer_key_hash 32, over18, expiry,

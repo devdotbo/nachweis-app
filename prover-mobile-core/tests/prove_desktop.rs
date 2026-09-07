@@ -36,7 +36,7 @@ fn core_proof_matches_bb_evm_target() {
         circuit.to_string_lossy().into(),
         srs.to_string_lossy().into(),
         vk.clone(),
-        ci.to_flat_witness(),
+        ci.to_flat_witness(&serde_json::from_str::<serde_json::Value>(&std::fs::read_to_string(&circuit).unwrap()).unwrap()["abi"]).unwrap(),
         true,
         false,
     )

@@ -12,10 +12,13 @@ final class FlowModel: ObservableObject {
     @Published var bridgeURL = UserDefaults.standard.string(forKey: "bridgeURL") ?? "http://localhost:8787"
     @Published var verifierURL = UserDefaults.standard.string(forKey: "verifierURL") ?? "http://localhost:3000"
     @Published var boundAddress = UserDefaults.standard.string(forKey: "boundAddress") ?? "0xf99edde971f4e9c88715a79ca78963284a2955dc"
-    /// SEC1 uncompressed issuer key. Test issuer key by default; a production
-    /// build takes it from the pinned issuerKeyHash configuration, not from the
-    /// presentation's x5c (the circuit does not check the chain).
-    @Published var issuerKeySec1Hex = UserDefaults.standard.string(forKey: "issuerKeySec1Hex") ?? TestVector.issuerKeySec1Hex
+    /// SEC1 uncompressed issuer key override. Empty: the core takes it from
+    /// the x5c leaf (as bridge and companion do). The synthetic test vector
+    /// is signed with a fresh key, so the test path sets it from input.json.
+    @Published var issuerKeySec1Hex = UserDefaults.standard.string(forKey: "issuerKeySec1Hex") ?? ""
+    /// KB-JWT `aud` the circuit pins; empty means the circuit default
+    /// (`https://self-issued.me/v2` today, the registered client_id after wp13).
+    @Published var expectedAud = UserDefaults.standard.string(forKey: "expectedAud") ?? ""
     @Published var redirectURI = "nachweis://return"
     @Published var lowMemoryMode = false
 
@@ -52,27 +55,26 @@ final class FlowModel: ObservableObject {
         UserDefaults.standard.set(verifierURL, forKey: "verifierURL")
         UserDefaults.standard.set(boundAddress, forKey: "boundAddress")
         UserDefaults.standard.set(issuerKeySec1Hex, forKey: "issuerKeySec1Hex")
+        UserDefaults.standard.set(expectedAud, forKey: "expectedAud")
     }
 
-    /// Bridge session first (it owns the challenge), then the relay request
-    /// with that challenge, so the KB-JWT nonce the wallet signs is the one
-    /// the contract will recompute.
+    /// Same order as the companion CLI: the app picks the 32-byte challenge,
+    /// posts the relay request with it, and creates the bridge session with
+    /// the same `challenge_hex` at submit time, so the bridge nonce equals the
+    /// KB-JWT nonce the wallet signed.
     func request() {
         run {
             self.persistConfig()
-            guard let bridge = URL(string: self.bridgeURL), let verifier = URL(string: self.verifierURL) else { throw Fail("bad URL") }
-            let s = try await BridgeClient(baseURL: bridge).createSession(boundAddress: self.boundAddress)
-            guard let ch = s.challenge_hex else { throw Fail("bridge session has no challenge_hex") }
-            self.bridgeSessionID = s.session_id
+            guard let verifier = URL(string: self.verifierURL) else { throw Fail("bad verifier URL") }
+            let ch = "0x" + Data.random(count: 32).hexString
             self.challengeHex = ch
-            self.note("bridge session \(s.session_id.prefix(8)), challenge \(ch.prefix(10))…")
             let key = ClientKey()
             self.clientKey = key
-            self.note("client key: \(self.keyBacking)")
+            self.note("challenge \(ch.prefix(10))…, client key: \(self.keyBacking)")
             let r = try await RelayClient(baseURL: verifier).createRequest(clientJWK: key.publicJWK, boundAddress: self.boundAddress, challengeHex: ch, redirectURI: self.redirectURI)
-            guard r.nonce.lowercased() == (s.nonce ?? "").lowercased() else { throw Fail("relay nonce \(r.nonce) != bridge nonce \(s.nonce ?? "nil")") }
             self.relay = r
             self.relayStatus = "pending"
+            self.note("relay session \(r.session_id.prefix(8)), nonce \(r.nonce.prefix(12))…")
             self.step = .waiting
             self.startPolling()
         }
@@ -169,7 +171,7 @@ final class FlowModel: ObservableObject {
     func derive() {
         run {
             guard let pres = self.presentation, let ch = self.challengeHex else { throw Fail("no presentation") }
-            let d = try ProverEngine.deriveInputs(presentation: pres, issuerKeySec1Hex: self.issuerKeySec1Hex, boundAddressHex: self.boundAddress, challengeHex: ch)
+            let d = try ProverEngine.deriveInputs(presentation: pres, issuerKeySec1Hex: self.issuerKeySec1Hex, boundAddressHex: self.boundAddress, challengeHex: ch, expectedAud: self.expectedAud)
             self.derived = d
             self.note("inputs derived: \(d.witness.count) witness values, nonce \(d.nonce.prefix(12))…, expiry \(d.expiry)")
         }
@@ -179,7 +181,7 @@ final class FlowModel: ObservableObject {
         run {
             if self.derived == nil {
                 guard let pres = self.presentation, let ch = self.challengeHex else { throw Fail("no presentation") }
-                self.derived = try ProverEngine.deriveInputs(presentation: pres, issuerKeySec1Hex: self.issuerKeySec1Hex, boundAddressHex: self.boundAddress, challengeHex: ch)
+                self.derived = try ProverEngine.deriveInputs(presentation: pres, issuerKeySec1Hex: self.issuerKeySec1Hex, boundAddressHex: self.boundAddress, challengeHex: ch, expectedAud: self.expectedAud)
             }
             let inputs = self.derived!
             let low = self.lowMemoryMode
@@ -224,20 +226,19 @@ final class FlowModel: ObservableObject {
 
     func submit() {
         run {
-            guard let o = self.outcome, let bridge = URL(string: self.bridgeURL) else { throw Fail("no proof") }
+            guard let o = self.outcome, let bridge = URL(string: self.bridgeURL), let ch = self.challengeHex else { throw Fail("no proof") }
             let client = BridgeClient(baseURL: bridge)
-            var id = self.bridgeSessionID
-            if id == nil {
-                // Test vector path: a fresh bridge session cannot carry the
-                // fixture's challenge (the bridge picks it), so the bridge
-                // will reject the nonce. We still submit to exercise the
-                // endpoint and show the bridge's answer.
-                let s = try await client.createSession(boundAddress: self.boundAddress)
-                id = s.session_id
-                self.bridgeSessionID = id
-                self.note("bridge session \(s.session_id.prefix(8)) (test vector: nonce will not match this session)")
+            if self.bridgeSessionID == nil {
+                let s = try await client.createSession(boundAddress: self.boundAddress, challengeHex: ch)
+                self.bridgeSessionID = s.session_id
+                if let d = self.derived, let n = s.nonce, n.lowercased() != d.nonce.lowercased().replacingOccurrences(of: "0x", with: "") {
+                    self.note("warning: bridge nonce \(n.prefix(12)) != proof nonce \(d.nonce.prefix(14))")
+                }
+                self.note("bridge session \(s.session_id.prefix(8)) created with the same challenge")
             }
-            let s = try await client.submitNoirProof(sessionID: id!, proof: o.proof, publicInputs: o.publicInputs)
+            // The bridge may require an EIP-191 address proof (REQUIRE_ADDRESS_PROOF);
+            // the phone holds no key, the investor's browser signs it. 401 here means that.
+            let s = try await client.submitNoirProof(sessionID: self.bridgeSessionID!, proof: o.proof, publicInputs: o.publicInputs, tier: 1)
             self.bridgeState = s.state; self.bridgeDetail = s.detail; self.txHash = s.tx_hash
             self.note("submitted: state \(s.state ?? "?") \(s.detail ?? "")")
             self.step = .submit
@@ -296,8 +297,6 @@ struct TestVector: Decodable {
     var issuerKeySec1Hex: String { issuer_key_sec1_hex }
     var boundAddressHex: String { bound_address_hex }
     var challengeHex: String { challenge_hex }
-
-    static let issuerKeySec1Hex = (try? load().issuer_key_sec1_hex) ?? ""
 
     static func load() throws -> TestVector {
         guard let p = Bundle.main.url(forResource: "test_input", withExtension: "json") else { throw FlowModel.Fail("test_input.json not bundled") }

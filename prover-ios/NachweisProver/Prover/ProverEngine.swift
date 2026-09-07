@@ -21,6 +21,7 @@ enum ProverEngine {
         let expiry: UInt64
         let nonce: String
         let subject: String
+        let issuerKeySec1Hex: String
         let publicInputsHex: [String]
     }
 
@@ -39,9 +40,12 @@ enum ProverEngine {
     static var vkPath: String { get throws { try resource("vk_keccak", "bin") } }
 
     /// Same derivation as circuits/tools/gen-prover.ts, done in the Rust core.
-    static func deriveInputs(presentation: String, issuerKeySec1Hex: String, boundAddressHex: String, challengeHex: String) throws -> Inputs {
-        let d = try deriveInputs(presentation: presentation, issuerKeySec1Hex: issuerKeySec1Hex, boundAddressHex: boundAddressHex, challengeHex: challengeHex)
-        return Inputs(witness: d.witness, proverToml: d.proverToml, issuerKeyHash: d.issuerKeyHashHex, over18: d.over18, expiry: d.expiry, nonce: d.nonceHex, subject: d.subjectHex, publicInputsHex: d.publicInputsHex)
+    /// Bounds and witness order come from the bundled artifact's ABI, so a
+    /// revised circuit is a resource swap (pid_sdjwt.json + vk_keccak.bin).
+    /// Empty issuer key: from the x5c leaf. Empty aud: the circuit default.
+    static func deriveInputs(presentation: String, issuerKeySec1Hex: String, boundAddressHex: String, challengeHex: String, expectedAud: String = "") throws -> Inputs {
+        let d = try NachweisProver.deriveInputs(circuitJsonPath: try circuitPath, presentation: presentation, issuerKeySec1Hex: issuerKeySec1Hex, boundAddressHex: boundAddressHex, challengeHex: challengeHex, expectedAud: expectedAud)
+        return Inputs(witness: d.witness, proverToml: d.proverToml, issuerKeyHash: d.issuerKeyHashHex, over18: d.over18, expiry: d.expiry, nonce: d.nonceHex, subject: d.subjectHex, issuerKeySec1Hex: d.issuerKeySec1Hex, publicInputsHex: d.publicInputsHex)
     }
 
     /// Runs on the calling (background) thread; samples phys_footprint every

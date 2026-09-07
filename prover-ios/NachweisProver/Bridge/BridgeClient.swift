@@ -18,9 +18,11 @@ struct BridgeClient {
         let tx_hash: String?
     }
 
-    /// POST /sessions {bound_address}. The bridge picks the 32-byte challenge.
-    func createSession(boundAddress: String) async throws -> Session {
-        try await HTTP.postJSON(baseURL.appendingPathComponent("sessions"), body: ["bound_address": boundAddress])
+    /// POST /sessions {bound_address, challenge_hex}: the client's challenge
+    /// (the one in the relay request), so the bridge nonce equals the KB-JWT
+    /// nonce. Same order as companion `submit`.
+    func createSession(boundAddress: String, challengeHex: String) async throws -> Session {
+        try await HTTP.postJSON(baseURL.appendingPathComponent("sessions"), body: ["bound_address": boundAddress, "challenge_hex": challengeHex])
     }
 
     func getSession(id: String) async throws -> Session {
@@ -30,10 +32,11 @@ struct BridgeClient {
     /// The proof bytes as `bb prove -t evm` writes them, the 86 public inputs
     /// as 32-byte hex words. The phone holds no Ethereum key: the bridge (or
     /// the investor's browser via NoirPidVerifier) sends the transaction.
-    func submitNoirProof(sessionID: String, proof: Data, publicInputs: [Data]) async throws -> Session {
+    func submitNoirProof(sessionID: String, proof: Data, publicInputs: [Data], tier: Int = 1) async throws -> Session {
         try await HTTP.postJSON(baseURL.appendingPathComponent("sessions/\(sessionID)/noir-proof"), body: [
             "proof_hex": "0x" + proof.hexString,
             "public_inputs_hex": publicInputs.map { "0x" + $0.hexString },
+            "tier": tier,
         ])
     }
 }

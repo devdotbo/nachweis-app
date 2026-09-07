@@ -2,7 +2,7 @@ import CryptoKit
 import Foundation
 
 /// JWE compact serialization, `alg: ECDH-ES` (direct key agreement),
-/// `enc: A128GCM` (RFC 7516, RFC 7518 section 4.6). This is what the EUDI
+/// `enc: A128GCM` or `A256GCM` (RFC 7516, RFC 7518 section 4.6). This is what the EUDI
 /// wallets send for `direct_post.jwt`; the relay stores it unopened.
 enum JWEDecryptor {
     struct Header: Decodable {
@@ -25,7 +25,9 @@ enum JWEDecryptor {
         guard let headerRaw = Data(base64URL: parts[0]) else { throw Error.format("header base64url") }
         let header = try JSONDecoder().decode(Header.self, from: headerRaw)
         guard header.alg == "ECDH-ES" else { throw Error.format("alg \(header.alg), expected ECDH-ES") }
-        guard header.enc == "A128GCM" else { throw Error.format("enc \(header.enc), expected A128GCM") }
+        // The wallet may pick A256GCM; both are direct-agreement AES-GCM (companion accepts both too).
+        let keyBits: UInt32
+        switch header.enc { case "A128GCM": keyBits = 128; case "A256GCM": keyBits = 256; default: throw Error.format("enc \(header.enc), expected A128GCM or A256GCM") }
         guard parts[1].isEmpty else { throw Error.format("ECDH-ES has an empty encrypted key") }
         guard header.epk.kty == "EC", header.epk.crv == "P-256",
               let x = Data(base64URL: header.epk.x), let y = Data(base64URL: header.epk.y),
@@ -38,7 +40,7 @@ enum JWEDecryptor {
         let z = try key.sharedSecret(with: epk)
         let apu = header.apu.flatMap { Data(base64URL: $0) } ?? Data()
         let apv = header.apv.flatMap { Data(base64URL: $0) } ?? Data()
-        let cek = z.withUnsafeBytes { concatKDF(z: Data($0), algorithmID: "A128GCM", apu: apu, apv: apv, keyBits: 128) }
+        let cek = z.withUnsafeBytes { concatKDF(z: Data($0), algorithmID: header.enc, apu: apu, apv: apv, keyBits: keyBits) }
 
         let box = try AES.GCM.SealedBox(nonce: AES.GCM.Nonce(data: iv), ciphertext: ct, tag: tag)
         // AAD is the ASCII of the protected header exactly as transmitted.

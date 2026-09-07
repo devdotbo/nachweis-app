@@ -5,7 +5,7 @@ pub mod inputs;
 #[cfg(feature = "noir")]
 pub mod noir;
 
-pub use inputs::{derive, CircuitInputs, ExpectedOutputs, ProverInput};
+pub use inputs::{derive, derive_with_bounds, issuer_key_from_x5c, Bounds, CircuitInputs, ExpectedOutputs, ProverInput};
 
 #[derive(Debug, thiserror::Error)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Error))]
@@ -54,26 +54,45 @@ pub struct DerivedInputs {
     pub expiry: u64,
     pub nonce_hex: String,
     pub subject_hex: String,
+    /// The issuer key actually used (SEC1 hex), for display when it came from x5c.
+    pub issuer_key_sec1_hex: String,
     /// 86 public inputs, 32-byte big-endian each, hex without 0x.
     pub public_inputs_hex: Vec<String>,
 }
 
+/// `circuit_json_path`: the bundled artifact; its ABI gives the BoundedVec
+/// capacities and the witness order. `issuer_key_sec1_hex` empty: from the
+/// x5c leaf. `expected_aud` empty: the circuit default.
 #[cfg_attr(feature = "uniffi", uniffi::export)]
 pub fn derive_inputs(
+    circuit_json_path: String,
     presentation: String,
     issuer_key_sec1_hex: String,
     bound_address_hex: String,
     challenge_hex: String,
+    expected_aud: String,
 ) -> Result<DerivedInputs, CoreError> {
-    let ci = derive(&ProverInput { presentation, issuer_key_sec1_hex, bound_address_hex, challenge_hex })?;
+    let json = std::fs::read_to_string(&circuit_json_path).map_err(|e| CoreError::Input(format!("{circuit_json_path}: {e}")))?;
+    let artifact: serde_json::Value = serde_json::from_str(&json).map_err(|e| CoreError::Input(format!("circuit json: {e}")))?;
+    drop(json);
+    let bounds = Bounds::from_abi(&artifact["abi"])?;
+    let input = ProverInput {
+        presentation,
+        issuer_key_sec1_hex,
+        bound_address_hex,
+        challenge_hex,
+        expected_aud: if expected_aud.is_empty() { None } else { Some(expected_aud) },
+    };
+    let ci = derive_with_bounds(&input, bounds)?;
     Ok(DerivedInputs {
         prover_toml: ci.to_prover_toml(),
-        witness: ci.to_flat_witness(),
+        witness: ci.to_flat_witness(&artifact["abi"])?,
         issuer_key_hash_hex: ci.expected.issuer_key_hash_hex.clone(),
         over18: ci.expected.over18,
         expiry: ci.expected.expiry,
         nonce_hex: ci.expected.nonce_hex.clone(),
         subject_hex: ci.expected.subject_hex.clone(),
+        issuer_key_sec1_hex: format!("04{}{}", hex::encode(ci.issuer_pub_x), hex::encode(ci.issuer_pub_y)),
         public_inputs_hex: ci.expected_public_inputs().iter().map(hex::encode).collect(),
     })
 }

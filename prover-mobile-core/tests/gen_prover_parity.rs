@@ -23,11 +23,39 @@ fn prover_toml_matches_gen_prover_ts() {
     assert_eq!(ci.expected.expiry, 1819756800);
 }
 
+fn artifact() -> serde_json::Value {
+    serde_json::from_str(&fixture("circuits/pid-sdjwt/target/pid_sdjwt.json")).unwrap()
+}
+
 #[test]
 fn flat_witness_len_matches_artifact_abi() {
     let circuit = fixture("circuits/pid-sdjwt/target/pid_sdjwt.json");
     let n = prover_mobile_core::abi_witness_len(&circuit).unwrap();
-    assert_eq!(derive(&input()).unwrap().to_flat_witness().len(), n);
+    let w = derive(&input()).unwrap().to_flat_witness(&artifact()["abi"]).unwrap();
+    assert_eq!(w.len(), n);
+    assert_eq!(n, 4281);
+    // BoundedVec layout: storage then len; first param is issuer_header_b64 ("eyJ..." starts with 'e' = 101).
+    assert_eq!(w[0], "101");
+    assert_eq!(w[2048], "1855");
+}
+
+#[test]
+fn bounds_come_from_the_artifact() {
+    let b = prover_mobile_core::Bounds::from_abi(&artifact()["abi"]).unwrap();
+    assert_eq!(b, prover_mobile_core::Bounds::default());
+}
+
+#[test]
+fn issuer_key_from_x5c_leaf() {
+    // The synthetic fixture carries ERICA's x5c but is signed with a fresh key
+    // (service/README.md), so the leaf key differs from input.json's key; it
+    // must still parse as a P-256 point. Companion test vectors use a
+    // self-signed leaf whose key equals the signing key.
+    let i = input();
+    let header = i.presentation.split('.').next().unwrap();
+    let k = prover_mobile_core::issuer_key_from_x5c(header).unwrap();
+    assert_eq!(k.len(), 65);
+    assert_eq!(k[0], 4);
 }
 
 #[test]

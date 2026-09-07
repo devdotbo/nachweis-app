@@ -74,13 +74,14 @@ struct SessionView: View {
                 LabeledField("Bridge URL", text: $flow.bridgeURL)
                 LabeledField("Verifier (relay) URL", text: $flow.verifierURL)
                 LabeledField("Bound address", text: $flow.boundAddress)
-                LabeledField("Issuer key (SEC1 hex)", text: $flow.issuerKeySec1Hex)
+                LabeledField("Issuer key override (SEC1 hex, empty = x5c leaf)", text: $flow.issuerKeySec1Hex)
+                LabeledField("KB-JWT aud (empty = circuit default)", text: $flow.expectedAud)
                 LabeledField("Redirect URI (same device)", text: $flow.redirectURI)
             }
             Toggle("bb low-memory mode", isOn: $flow.lowMemoryMode)
             Button { flow.request() } label: { Label("Request", systemImage: "qrcode") }
                 .buttonStyle(.borderedProminent).disabled(flow.busy)
-            Text("Creates a bridge session (it picks the challenge), generates a P-256 key (Secure Enclave when available) and posts the relay request with the public JWK. The verifier never sees the presentation.")
+            Text("Picks a 32-byte challenge, generates a P-256 key (Secure Enclave when available) and posts the relay request with the public JWK. The bridge session is created at submit time with the same challenge. The verifier never sees the presentation.")
                 .font(.footnote).foregroundStyle(.secondary)
             Divider()
             Button { flow.loadTestPresentation() } label: { Label("Load test presentation", systemImage: "doc.text") }
@@ -149,7 +150,7 @@ struct ProveView: View {
                 Button { flow.prove() } label: { Label("Prove", systemImage: "cpu") }.buttonStyle(.borderedProminent).disabled(flow.busy)
             }
             if let d = flow.derived {
-                Text("public outputs\n issuer_key_hash \(d.issuerKeyHash)\n over18 \(d.over18)  expiry \(d.expiry)\n nonce \(d.nonce)\n subject \(d.subject)")
+                Text("issuer key \(d.issuerKeySec1Hex.prefix(18))…\npublic outputs\n issuer_key_hash \(d.issuerKeyHash)\n over18 \(d.over18)  expiry \(d.expiry)\n nonce \(d.nonce)\n subject \(d.subject)")
                     .font(.system(size: 11, design: .monospaced)).textSelection(.enabled)
             }
             if let o = flow.outcome {
