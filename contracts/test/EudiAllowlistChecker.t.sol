@@ -13,10 +13,10 @@ import {PermissionFlag, PermissionFlags} from "../src/uniswap/libraries/Permissi
 ///         plus the ERC-165 handshake the PermissionsAdapter performs.
 contract EudiAllowlistCheckerTest is Test {
     bytes32 constant POLICY = keccak256("nachweis.demo.fund.v1");
-    uint256 constant BIT_ADULT = 1 << 0;
-    uint256 constant BIT_EU_RESIDENT = 1 << 1;
-    uint256 constant BIT_NOT_SANCTIONED = 1 << 2;
-    uint256 constant REQUIRED = BIT_ADULT | BIT_EU_RESIDENT | BIT_NOT_SANCTIONED;
+    uint256 constant BIT_IDENTITY = 1 << 0;
+    uint256 constant BIT_OVER_18 = 1 << 1;
+    uint256 constant BIT_EU_RESIDENT = 1 << 2; // reserved, never required
+    uint256 constant REQUIRED = BIT_IDENTITY | BIT_OVER_18; // 0x3
 
     address owner = makeAddr("owner");
     address operator = makeAddr("operator");
@@ -93,7 +93,7 @@ contract EudiAllowlistCheckerTest is Test {
     }
 
     function test_noneWhenRequiredBitsMissing() public {
-        _attest(alice, BIT_ADULT | BIT_EU_RESIDENT, uint64(block.timestamp + 365 days));
+        _attest(alice, BIT_IDENTITY | BIT_EU_RESIDENT, uint64(block.timestamp + 365 days)); // over 18 missing
         assertEq(_flags(alice), bytes2(0));
     }
 

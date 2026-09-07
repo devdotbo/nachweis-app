@@ -34,7 +34,7 @@ contract EudiAllowlistChecker is IAllowlistChecker, ERC165 {
     /// @notice Issuer policy the pool enforces (e.g. keccak256 of the policy document hash).
     bytes32 public immutable policyId;
 
-    /// @notice Predicate bits an account must hold under policyId (demo: adult | EU resident | not sanctioned).
+    /// @notice Predicate bits an account must hold under policyId (demo: identity evidence | over 18 = 0x3).
     uint256 public immutable requiredBits;
 
     /// @notice Flags granted to an eligible account. Swapping and providing liquidity, explicitly;

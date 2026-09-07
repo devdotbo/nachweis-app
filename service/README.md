@@ -43,7 +43,7 @@ Build with `--no-default-features` to let sp1-sdk use the Docker image instead.
 | `GET /sessions/:id` | | `state`, `detail` (one human-readable line), `error`, `address_verified`, public values, proof, `tx_hash`, decoded `Attested` event; 404 for unknown ids. The presentation is never returned |
 | `POST /sessions/:id/presentation` | `{sd_jwt_presentation}` | local mode entry: runs the statement natively (422 with the statement's error on failure), then generates the proof per `PROOF_MODE`. Returns `{status, public_values_hex, public_values, proof_hex, proof_system, vkey, cycles}`. Blocks until the proof is done |
 | `POST /sessions/:id/attest` | `{tier?}` | `attestWithProof` with the session's proof; 409 unless the session is `proved` and (with `REQUIRE_ADDRESS_PROOF`) `address_verified`. Reverts come back as 502 with the typed error decoded (registry, `Sp1PidVerifier`, gateway) plus the raw revert data. Returns `{tx_hash, attested, call}` |
-| `POST /sessions/:id/attest-operator` | `{tier?, bits?}` | `attestByOperator` (fallback demo); needs at least a natively verified session. `bits` overrides the proof-path bits, e.g. `"0x7"` for the FundToken demo policy |
+| `POST /sessions/:id/attest-operator` | `{tier?, bits?}` | `attestByOperator` (fallback demo); needs at least a natively verified session. `bits` overrides the proof-path bits (default `0x3` = identity evidence \| over 18, which is `FundToken.DEFAULT_REQUIRED_BITS`); bits `0x4` (EU resident) and `0x8` (not sanctioned) are reserved and required nowhere |
 | `POST /revoke` | `{subject}` | `revoke(subject, POLICY_ID)` |
 | `GET /health` | | mode, proof mode, registry, operator |
 
@@ -136,9 +136,9 @@ list, freshness window) stay in front of the bridge, which then proves the state
    freshness off chain, or commit both values separately.
 2. `policyId` is not in the public values; the adapter has to pin `issuerKeyHash`, `vctHash` and
    the vkey per policy and check `publicInputs[1]` against its own mapping.
-3. The FundToken demo policy expects `REQUIRED_BITS = 0x7` (adult, EU resident, not sanctioned);
-   the proof path can only assert `0x3`. Either lower `REQUIRED_BITS` to the provable bits or use
-   `attest-operator` with `bits: "0x7"` for the fund token demo.
+3. Resolved: the FundToken demo policy requires `REQUIRED_BITS = 0x3` (identity evidence, over 18),
+   exactly the bits the proof path asserts (`FundToken.DEFAULT_REQUIRED_BITS`, the deploy script
+   default). Bits `0x4` (EU resident) and `0x8` (not sanctioned) are reserved and not required.
 4. Replay: the registry consumes `verifier.nonceOf(proof)` once per policy (`NonceConsumed`). With the
    SP1 adapter that is the nonce from the public values, so one proof attests once. With
    `MockProofVerifier` the nonce is `keccak256` of the first payload of an

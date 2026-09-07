@@ -11,10 +11,10 @@ import {IProofVerifier} from "../src/interfaces/IProofVerifier.sol";
 
 contract NachweisTest is Test {
     bytes32 constant POLICY = keccak256("nachweis.demo.fund.v1");
-    uint256 constant BIT_ADULT = 1 << 0;
-    uint256 constant BIT_EU_RESIDENT = 1 << 1;
-    uint256 constant BIT_NOT_SANCTIONED = 1 << 2;
-    uint256 constant REQUIRED = BIT_ADULT | BIT_EU_RESIDENT | BIT_NOT_SANCTIONED;
+    uint256 constant BIT_IDENTITY = 1 << 0;
+    uint256 constant BIT_OVER_18 = 1 << 1;
+    uint256 constant BIT_EU_RESIDENT = 1 << 2; // reserved, never required
+    uint256 constant REQUIRED = BIT_IDENTITY | BIT_OVER_18; // 0x3
     uint256 constant DEMO_AMOUNT = 100e18;
 
     address owner = makeAddr("owner");
@@ -77,7 +77,7 @@ contract NachweisTest is Test {
     function test_eligibleAfterOperatorAttest() public {
         _attest(alice);
         assertTrue(registry.isEligible(alice, POLICY, REQUIRED));
-        assertTrue(registry.isEligible(alice, POLICY, BIT_ADULT));
+        assertTrue(registry.isEligible(alice, POLICY, BIT_IDENTITY));
         assertFalse(registry.isEligible(alice, POLICY, REQUIRED | (1 << 7)));
         assertFalse(registry.isEligible(alice, keccak256("other"), REQUIRED));
         Decision memory d = registry.decisionOf(alice, POLICY);
@@ -209,7 +209,7 @@ contract NachweisTest is Test {
         Decision memory d = _decision(REQUIRED, uint64(block.timestamp + 1 days));
         bytes32[] memory inputs = _inputs(alice, d);
 
-        inputs[2] = bytes32(BIT_ADULT);
+        inputs[2] = bytes32(BIT_IDENTITY);
         vm.expectRevert(abi.encodeWithSelector(AttestationRegistry.PublicInputMismatch.selector, 2));
         registry.attestWithProof(alice, d, hex"01", inputs);
 

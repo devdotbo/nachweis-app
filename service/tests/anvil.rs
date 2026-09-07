@@ -303,10 +303,11 @@ async fn mock_pipeline_attests_and_revokes_on_anvil() {
     let again = http.post(format!("{base}/sessions/{sid}/attest")).send().await.unwrap();
     assert_eq!(again.status(), 409, "attested session must not re-attest");
 
-    // 5. operator fallback reopens after revoke, then revoke again.
+    // 5. operator fallback reopens after revoke (bits override: identity only, so 0x3 stays
+    //    ineligible while 0x1 is eligible), then revoke again.
     let op: serde_json::Value = http
         .post(format!("{base}/sessions/{sid}/attest-operator"))
-        .json(&serde_json::json!({ "bits": "0x7", "tier": 2 }))
+        .json(&serde_json::json!({ "bits": "0x1", "tier": 2 }))
         .send()
         .await
         .unwrap()
@@ -316,8 +317,9 @@ async fn mock_pipeline_attests_and_revokes_on_anvil() {
         .await
         .unwrap();
     assert_eq!(op["path"], "operator");
-    assert_eq!(op["attested"]["bits"], "0x7");
-    assert!(chain.is_eligible(subject, policy_id, U256::from(7)).await.unwrap());
+    assert_eq!(op["attested"]["bits"], "0x1");
+    assert!(chain.is_eligible(subject, policy_id, U256::from(1)).await.unwrap());
+    assert!(!chain.is_eligible(subject, policy_id, U256::from(3)).await.unwrap());
     chain.revoke(subject, policy_id).await.unwrap();
     assert!(!chain.is_eligible(subject, policy_id, U256::from(1)).await.unwrap());
 }

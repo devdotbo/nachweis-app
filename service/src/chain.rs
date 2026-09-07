@@ -96,7 +96,9 @@ pub fn describe_error(context: &str, e: alloy::contract::Error) -> anyhow::Error
 pub const BIT_IDENTITY: u64 = 1;
 pub const BIT_OVER18: u64 = 2;
 
-/// bits = identity evidence | over-18 (when the proof says so).
+/// bits = identity evidence | over-18 (when the proof says so). For an adult this is 0x3, the
+/// FundToken demo policy's REQUIRED_BITS (FundToken.DEFAULT_REQUIRED_BITS); it is also the
+/// attest-operator default when the request carries no `bits` override.
 pub fn decision_bits(over18: bool) -> U256 {
     U256::from(BIT_IDENTITY | if over18 { BIT_OVER18 } else { 0 })
 }
