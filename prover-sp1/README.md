@@ -60,7 +60,7 @@ cargo run --release --bin evm -- --system plonk
 These commands will also generate fixtures that can be used to test the verification of SP1 proofs
 inside Solidity.
 
-Fixture caveat: the synthetic fixture in `fixtures/` (`synthetic-over18.sdjwt`, `input.json`) carries ERICA's `x5c` chain in the issuer JWT header but is signed with a fresh issuer key (`issuer_key_sec1_hex` in `input.json`), so the bridge (`service`) must be given that key via `ISSUER_KEY_SEC1_HEX` for the fixture, while a real ERICA credential needs no override because the key is taken from the `x5c` leaf certificate.
+Fixture caveat: the synthetic fixture in `fixtures/` (`synthetic-over18.sdjwt`, `input.json`) carries ERICA's `x5c` chain in the issuer JWT header but is signed with a fresh issuer key (`issuer_key_sec1_hex` in `input.json`), so the bridge (`service`) must be given that key via `ISSUER_KEY_SEC1_HEX` for the fixture, while a real ERICA credential needs no override because the key is taken from the `x5c` leaf certificate. Its KB-JWT expired five minutes after minting (exp = iat + 300, as the sandbox wallet does): the host needs `--allow-stale-kb` for `--execute`/`--prove` and the bridge `KB_JWT_WINDOW_SECS=0`. The committed `expiry` is the issuer credential `exp` (1819756800, 2027-09-01); see `NOTES.md`, "Expiry decision".
 
 ### Retrieve the Verification Key
 
