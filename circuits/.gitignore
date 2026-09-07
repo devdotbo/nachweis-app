@@ -1,2 +1,5 @@
 target/
 out/
+Prover_neg_*.toml
+pid-sdjwt/Prover.*.toml
+!pid-sdjwt/Prover.baseline-swiyu.toml
