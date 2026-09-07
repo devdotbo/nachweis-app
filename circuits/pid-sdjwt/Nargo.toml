@@ -1,5 +1,5 @@
 [package]
-name = "d10_swiyu_jwt"
+name = "pid_sdjwt"
 type = "bin"
 
 [dependencies]
