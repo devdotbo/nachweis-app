@@ -14,7 +14,7 @@ if [ "${REFRESH_CIRCUIT:-0}" = 1 ]; then
   cp "$CIRCUIT/out/adapted/vk" "$ASSETS/pid_sdjwt_evm.vk"
   cp "$CIRCUIT/out/adapted/vk_hash" "$ASSETS/pid_sdjwt_evm.vk_hash"
 fi
-cp "$ROOT/prover-sp1/fixtures/input.json" "$ASSETS/test-vector.json"
+cp "$ROOT/prover-sp1/fixtures/realistic-input.json" "$ASSETS/test-vector.json"
 POINTS=$(( (1 << 20) + 1 ))
 BYTES=$(( POINTS * 64 ))
 if [ ! -f "$ASSETS/bn254_g1.dat" ] || [ "$(stat -f %z "$ASSETS/bn254_g1.dat")" -lt "$BYTES" ]; then

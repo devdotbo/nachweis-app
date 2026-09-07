@@ -12,7 +12,7 @@ Toolchain decision and versions: `TOOLCHAIN.md`. Measurements: below.
 
     ../prover-mobile-core/  shared Rust core (mopro/uniffi): input derivation, witness, UltraHonk keccak proof
     app/         Android app; app/src/main/java/org/nachweis/prover
-      circuit/   ProverInputs.kt (port of circuits/tools/gen-prover.ts), PublicInputs.kt, IssuerKey.kt
+      circuit/   PublicInputs.kt (86-word decode), IssuerKey.kt (x5c leaf), Codec.kt
       crypto/    EcKeys.kt (P-256 JWK), Jwe.kt (ECDH-ES A128GCM/A256GCM compact decrypt)
       net/       RelayClient.kt (/relay/request, /relay/status, /relay/response), BridgeClient.kt
       prover/    ProverService.kt (asset staging, SRS load, prove)
@@ -21,10 +21,10 @@ Toolchain decision and versions: `TOOLCHAIN.md`. Measurements: below.
     app/src/main/assets/
       pid_sdjwt.json          compiled circuit (nargo 1.0.0-beta.21), committed
       pid_sdjwt_evm.vk        desktop VK, bb write_vk -t evm, committed (1,888 B)
-      pid_sdjwt_evm.vk_hash   c0d55f4d...5018, equals contracts/test/fixtures/noir/vk_hash.bin
+      pid_sdjwt_evm.vk_hash   24a16511...7da6, equals VK_HASH in contracts/src/noir/PidSdJwtUltraHonkVerifier.sol
       bn254_g1.dat            SRS, 2^20 + 1 points, 64 MB, gitignored (scripts/prepare-assets.sh)
       bn254_g2.dat            128 B
-      test-vector.json        prover-sp1/fixtures/input.json (synthetic PID presentation)
+      test-vector.json        prover-sp1/fixtures/realistic-input.json (realistic PID presentation, WP13 circuit)
     scripts/build-rust.sh     mopro Android build of the core (cargo ndk + bindings) copied into app/
     scripts/prepare-assets.sh SRS and test vector into assets
 
@@ -38,7 +38,7 @@ Prerequisites: Rust (1.89+), `rustup target add aarch64-linux-android`,
     cd prover-android
     scripts/prepare-assets.sh          # SRS from ~/.bb-crs or crs.aztec.network
     scripts/build-rust.sh              # prover-mobile-core -> app/src/main/jniLibs/arm64-v8a + java/uniffi/mopro
-    ./gradlew testDebugUnitTest        # ProverInputs vs Prover.toml, JWE, public inputs
+    ./gradlew testDebugUnitTest        # JWE (RFC 7518 C, round trip), public inputs decode
     ./gradlew assembleDebug            # app/build/outputs/apk/debug/app-debug.apk
 
 Host check of the Rust core (proves the committed vector, writes the proof for
@@ -67,8 +67,8 @@ verifier `http://10.0.2.2:8080`, bridge `http://10.0.2.2:8787`).
 
 ## Flow in the app
 
-1. Session: verifier (relay) URL, bridge URL, bound address, optional issuer
-   key override. "Request presentation" generates a P-256 key (in memory) and
+1. Session: verifier (relay) URL, bridge URL, bound address. "Request
+   presentation" generates a P-256 key (in memory) and
    a 32-byte challenge, calls `POST /relay/request`, checks that the returned
    nonce equals `sha256(address || challenge)`.
 2. Waiting: the `openid4vp://` URI as QR (cross-device) and as a link
@@ -101,8 +101,8 @@ verifier `http://10.0.2.2:8080`, bridge `http://10.0.2.2:8787`).
    version of this whole flow).
 
 "Load test presentation" on the Session screen skips 1 to 3 with the bundled
-synthetic vector (address `0xf99e...55dc`, the issuer key override from the
-vector, since the synthetic credential is not signed by its `x5c` leaf).
+realistic vector (`prover-sp1/fixtures/realistic-input.json`, address
+`0xf99e...55dc`, issuer key = its `x5c` leaf).
 
 ## Measurements
 
