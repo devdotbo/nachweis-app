@@ -62,7 +62,14 @@ struct Decision {
 }
 ```
 
-No names, no strings, no personal data. The demo policy uses bit 0 = adult, bit 1 = EU resident, bit 2 = not sanctioned; `REQUIRED_BITS = 0x7`.
+No names, no strings, no personal data. The demo policy requires `REQUIRED_BITS = 0x3` (`FundToken.DEFAULT_REQUIRED_BITS`, the bits the proof path can assert):
+
+| bit | value | meaning | required |
+|---|---|---|---|
+| 0 | 0x1 | identity evidence accepted | yes |
+| 1 | 0x2 | over 18 | yes |
+| 2 | 0x4 | EU resident (reserved, not provable yet) | no |
+| 3 | 0x8 | not sanctioned (reserved, not provable yet) | no |
 
 `isEligible(subject, policyId, requiredBits)` is true iff the decision is not revoked, `expiry > block.timestamp`, and `(bits & requiredBits) == requiredBits`. A missing decision has `expiry == 0` and is never eligible.
 
