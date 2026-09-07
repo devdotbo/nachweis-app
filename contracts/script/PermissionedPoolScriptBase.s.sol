@@ -46,7 +46,7 @@ abstract contract PermissionedPoolScriptBase is Script {
 
     function _policy() internal view returns (bytes32 policyId, uint256 requiredBits) {
         policyId = vm.envOr("POLICY_ID", keccak256("nachweis.demo.fund.v1"));
-        requiredBits = vm.envOr("REQUIRED_BITS", uint256(0x7));
+        requiredBits = vm.envOr("REQUIRED_BITS", FundToken.DEFAULT_REQUIRED_BITS);
     }
 
     /// @dev Loads an existing pool or bootstraps one under the deployer key. `bootstrapped` tells the caller
