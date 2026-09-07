@@ -12,13 +12,16 @@ forge test
 - `src/AttestationRegistry.sol`: one `Decision` per (subject address, policyId). Operator path and proof path for writing, `IEligibility` for reading.
 - `src/FundToken.sol`: ERC-20 whose `_update` hook requires `registry.isEligible(to, policyId, REQUIRED_BITS)` for every transfer and mint. Exceptions: burns (`to == 0`) and transfers to the issuer (redemption). Mint only by the issuer or the `Subscription` contract.
 - `src/Subscription.sol`: `subscribe()` mints a fixed demo amount to an eligible caller, otherwise reverts with `NotEligible()`.
-- `src/interfaces/IEligibility.sol`: the `Decision` struct and the read interface consumers use (fund token now, Uniswap v4 pool allowlist checker later). View-only.
+- `src/interfaces/IEligibility.sol`: the `Decision` struct and the read interface consumers use (fund token, Uniswap v4 pool allowlist checker). View-only.
 - `src/interfaces/IProofVerifier.sol`: pluggable proof verifier, one per policy (`verify` plus `nonceOf` for replay protection).
 - `src/sp1/Sp1PidVerifier.sol`: `IProofVerifier` for the SP1 Groth16 proof of the EUDI PID verification (see below).
 - `src/sp1/interfaces/ISP1Verifier.sol`: SP1 verifier interface, vendored from sp1-contracts v6.1.0.
+- `src/uniswap/EudiAllowlistChecker.sol`: Uniswap v4 permissioned-pool `IAllowlistChecker` backed by the registry. Interfaces copied from v4-periphery under `src/uniswap/interfaces` and `src/uniswap/libraries`; Sepolia addresses in `src/uniswap/UniswapSepolia.sol`. See `docs/uniswap-permissioned-pool.md`.
 - `src/test/MockProofVerifier.sol`, `src/test/MockSp1Gateway.sol`: test doubles. Not for deployment.
+- `src/test/MockStable.sol`: unrestricted 6-decimal demo stablecoin for the pool's second currency. Not for deployment beyond testnets.
 - `script/Deploy.s.sol`: deploys and configures everything from env vars. See the header comment; RPC URL and keys come from `.env` (template in `/.env.example`).
 - `script/DeploySp1Verifier.s.sol`: deploys `Sp1PidVerifier` for one policy and optionally registers it. Dry run only so far.
+- `script/CreatePermissionedPool.s.sol`: onboards the FundToken into a Uniswap v4 permissioned pool on Sepolia (deploy guide steps 1 to 6). Dry-run only so far.
 
 ## Decision layout
 
