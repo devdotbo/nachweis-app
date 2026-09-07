@@ -1,9 +1,11 @@
 //! Derives the pid-sdjwt circuit inputs from an SD-JWT presentation.
 //!
-//! Port of `circuits/tools/gen-prover.ts`; the two must produce the same
-//! Prover.toml for the same input (tested in `tests/gen_prover_parity.rs`).
-//! All offsets are byte offsets into the raw (base64url-decoded) JSON of the
-//! issuer payload and the KB-JWT payload.
+//! Port of `circuits/tools/gen-prover.ts` (WP13 circuit: three age shapes,
+//! KB header as input, pinned aud); the two must produce the same Prover.toml
+//! for the same input (`tests/gen_prover_parity.rs`). All offsets are byte
+//! offsets into the raw (base64url-decoded) JSON of the issuer payload, the
+//! KB-JWT header and payload, and (shapes B, C) the raw age object disclosure.
+//! The age shapes are described in circuits/pid-sdjwt/REALISM.md, section 3.
 
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD as B64URL;
@@ -14,48 +16,133 @@ use sha2::{Digest, Sha256};
 
 use crate::CoreError;
 
-// Max lengths from circuits/pid-sdjwt/src/constants.nr. Any change there is a
-// circuit change (new artifact, new VK) and must be mirrored here.
-pub const HEADER_B64_MAX: usize = 2048;
-pub const PAYLOAD_MAX_LEN: usize = 1024;
-pub const TAIL_MAX: usize = 512;
-pub const KB_PAYLOAD_MAX: usize = 320;
-pub const SALT_MAX_LEN: usize = 32;
-pub const MAX_AGE_ENTRIES: usize = 8;
+/// BoundedVec capacities of the circuit's `fn main`, read from the artifact
+/// ABI (`Bounds::from_artifact`) so a revised circuit needs no code change
+/// here. The defaults are the WP13 pid-sdjwt values (constants.nr,
+/// 2026-09-07) and serve the tests.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Bounds {
+    pub header_b64_max: usize,
+    pub payload_max_len: usize,
+    pub tail_max: usize,
+    pub kb_header_max: usize,
+    pub kb_payload_max: usize,
+    pub salt_max_len: usize,
+    pub age_obj_disc_max: usize,
+}
 
-const KB_HEADER_B64: &str = "eyJhbGciOiJFUzI1NiIsInR5cCI6ImtiK2p3dCJ9";
-const EXPECTED_AUD: &str = "https://self-issued.me/v2";
+impl Default for Bounds {
+    fn default() -> Self {
+        Bounds {
+            header_b64_max: 2304,
+            payload_max_len: 2304,
+            tail_max: 768,
+            kb_header_max: 128,
+            kb_payload_max: 384,
+            salt_max_len: 32,
+            age_obj_disc_max: 512,
+        }
+    }
+}
+
+impl Bounds {
+    /// Capacity of each BoundedVec parameter from the nargo artifact JSON.
+    pub fn from_artifact(circuit_json: &str) -> Result<Bounds, CoreError> {
+        let v: Value = serde_json::from_str(circuit_json).map_err(|e| err(format!("circuit json: {e}")))?;
+        Self::from_abi(&v["abi"])
+    }
+
+    pub fn from_abi(abi: &Value) -> Result<Bounds, CoreError> {
+        let cap = |name: &str| -> Result<usize, CoreError> {
+            let p = abi["parameters"]
+                .as_array()
+                .and_then(|a| a.iter().find(|p| p["name"] == name))
+                .ok_or_else(|| err(format!("artifact ABI has no parameter {name}")))?;
+            let fields = p["type"]["fields"].as_array().ok_or_else(|| err(format!("{name} is not a BoundedVec struct")))?;
+            let storage = fields.iter().find(|f| f["name"] == "storage").ok_or_else(|| err(format!("{name} has no storage field")))?;
+            storage["type"]["length"].as_u64().map(|n| n as usize).ok_or_else(|| err(format!("{name}.storage has no length")))
+        };
+        Ok(Bounds {
+            header_b64_max: cap("issuer_header_b64")?,
+            payload_max_len: cap("payload")?,
+            tail_max: cap("disclosures_tail")?,
+            kb_header_max: cap("kb_header")?,
+            kb_payload_max: cap("kb_payload")?,
+            salt_max_len: cap("age_salt")?,
+            age_obj_disc_max: cap("age_obj_disclosure")?,
+        })
+    }
+}
+
+/// Circuit constants that are checks, not ABI shapes (constants.nr): the
+/// cnf.jwk x/y must lie within this many bytes after `"cnf":{"jwk":{`, and
+/// alg/typ of the issuer header must lie in the first 96 decoded bytes
+/// (128 base64url chars).
+pub const CNF_WINDOW: usize = 128;
+pub const HEADER_PREFIX_B64: usize = 128;
+pub const HEADER_PREFIX_RAW: usize = 96;
+
+/// The `aud` the circuit pins (AUD_FRAGMENT in constants.nr): the registered
+/// client_id of the verifier. Passed explicitly so a re-registration is a
+/// parameter, not a rebuild of this crate.
+pub const PINNED_AUD: &str = "x509_hash:VE3qp3vLVkU8JyVmXkjL7CSDVxVoTFdTv5fAEwmjKOI";
 const P256_N_HEX: &str = "FFFFFFFF00000000FFFFFFFFFFFFFFFFBCE6FAADA7179E84F3B9CAC2FC632551";
 
 /// What the app hands the core: the decrypted presentation plus what the
-/// bridge session knows (issuer key, bound address, challenge).
+/// bridge session knows (bound address, challenge) and the pinned aud.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProverInput {
     /// `issuer_jwt~disc1~...~discN~kb_jwt`
     pub presentation: String,
     /// SEC1 uncompressed issuer key, 65 bytes, hex (with or without 0x).
+    /// Empty: taken from the issuer JWT header's `x5c` leaf, as the bridge
+    /// and the companion do for a real credential.
+    #[serde(default)]
     pub issuer_key_sec1_hex: String,
     /// 20-byte EVM address, hex.
     pub bound_address_hex: String,
     /// 32-byte challenge, hex.
     pub challenge_hex: String,
+    /// KB-JWT `aud` the circuit pins; `None` means `PINNED_AUD`.
+    #[serde(default)]
+    pub expected_aud: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AgeShape {
+    /// `age_equal_or_over: {_sd: [...]}` nested in the issuer payload.
+    A,
+    /// The age object itself is a disclosure with an `_sd` array.
+    B,
+    /// The age object is a disclosure with plain values (`"18": true`).
+    C,
 }
 
 /// Fixed-size and bounded circuit inputs, in the ABI order of `fn main`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CircuitInputs {
     pub issuer_header_b64: Vec<u8>,
+    pub hdr_alg_offset: u32,
+    pub hdr_typ_offset: u32,
     pub payload: Vec<u8>,
     pub issuer_sig_b64: [u8; 86],
     pub issuer_sig: [u8; 64],
     pub disclosures_tail: Vec<u8>,
+    pub kb_header: Vec<u8>,
+    pub kb_alg_offset: u32,
+    pub kb_typ_offset: u32,
     pub kb_payload: Vec<u8>,
     pub kb_signature: [u8; 64],
     pub issuer_pub_x: [u8; 32],
     pub issuer_pub_y: [u8; 32],
     pub age_salt: Vec<u8>,
+    pub age_obj_disclosed: u32,
+    pub age_leaf_disclosed: u32,
+    pub age_obj_disclosure: Vec<u8>,
+    pub sd_offset: u32,
+    pub age_obj_digest_offset: u32,
     pub age_sd_offset: u32,
-    pub age_digest_index: u32,
+    pub age_target_offset: u32,
     pub vct_offset: u32,
     pub cnf_offset: u32,
     pub x_offset: u32,
@@ -66,8 +153,17 @@ pub struct CircuitInputs {
     pub kb_sd_hash_offset: u32,
     pub challenge: [u8; 32],
     pub subject: [u8; 20],
+    pub shape: AgeShape,
     /// Expected public outputs, for display and for checking the proof.
     pub expected: ExpectedOutputs,
+    pub bounds: Bounds,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum InputValue {
+    Bytes(Vec<u8>),
+    Bounded(Vec<u8>),
+    Scalar(u64),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -100,8 +196,23 @@ fn hex_fixed<const N: usize>(label: &str, s: &str) -> Result<[u8; N], CoreError>
     v.try_into().map_err(|_| err(format!("{label} must be {N} bytes")))
 }
 
-/// Byte index of `needle` in `hay` starting at `from`, requiring exactly one
-/// occurrence in the whole haystack (the circuit assumes uniqueness).
+fn find(hay: &[u8], needle: &[u8], from: usize) -> Option<usize> {
+    if needle.is_empty() || hay.len() < needle.len() || from > hay.len() - needle.len() {
+        return None;
+    }
+    (from..=hay.len() - needle.len()).find(|&i| &hay[i..i + needle.len()] == needle)
+}
+
+fn rfind(hay: &[u8], needle: &[u8], before: usize) -> Option<usize> {
+    if needle.is_empty() || hay.len() < needle.len() {
+        return None;
+    }
+    let last = before.min(hay.len() - needle.len());
+    (0..=last).rev().find(|&i| &hay[i..i + needle.len()] == needle)
+}
+
+/// Byte index of `needle` in `hay`, requiring exactly one occurrence (the
+/// circuit assumes uniqueness).
 fn unique_index(hay: &[u8], needle: &[u8], label: &str) -> Result<usize, CoreError> {
     let first = find(hay, needle, 0).ok_or_else(|| err(format!("{label} not found")))?;
     if find(hay, needle, first + 1).is_some() {
@@ -110,11 +221,15 @@ fn unique_index(hay: &[u8], needle: &[u8], label: &str) -> Result<usize, CoreErr
     Ok(first)
 }
 
-fn find(hay: &[u8], needle: &[u8], from: usize) -> Option<usize> {
-    if needle.is_empty() || hay.len() < needle.len() {
-        return None;
+/// Finds `needle` inside the array/object that opens right after
+/// `anchor_end`, before any `]` or `}` (the circuit checks the same: no
+/// closer between the container start and the target).
+fn target_inside(hay: &[u8], anchor_end: usize, needle: &[u8], label: &str) -> Result<usize, CoreError> {
+    let t = find(hay, needle, anchor_end).ok_or_else(|| err(format!("{label}: target not found")))?;
+    if hay[anchor_end..t].iter().any(|&b| b == b']' || b == b'}') {
+        return Err(err(format!("{label}: container closes before the target")));
     }
-    (from..=hay.len() - needle.len()).find(|&i| &hay[i..i + needle.len()] == needle)
+    Ok(t)
 }
 
 /// The ECDSA blackbox in Noir/Barretenberg only accepts low-s signatures. The
@@ -131,7 +246,63 @@ fn low_s(sig: &[u8; 64]) -> [u8; 64] {
     out
 }
 
+/// P-256 SubjectPublicKeyInfo of the first `x5c` certificate in a JWT header:
+/// the SEC1 uncompressed point (65 bytes). Minimal DER walk, same as
+/// companion/src/der.ts `publicKeyFromCertificate`.
+pub fn issuer_key_from_x5c(header_b64: &str) -> Result<Vec<u8>, CoreError> {
+    let header: Value = serde_json::from_slice(&from_b64url(header_b64)?).map_err(|e| err(format!("issuer header JSON: {e}")))?;
+    let leaf = header["x5c"].as_array().and_then(|a| a.first()).and_then(Value::as_str).ok_or_else(|| err("issuer header has no x5c"))?;
+    let der = base64::engine::general_purpose::STANDARD.decode(leaf).map_err(|e| err(format!("x5c base64: {e}")))?;
+    struct Tlv { tag: u8, start: usize, end: usize }
+    fn read(buf: &[u8], off: usize) -> Result<Tlv, CoreError> {
+        let tag = *buf.get(off).ok_or_else(|| err("DER: truncated"))?;
+        let mut len = *buf.get(off + 1).ok_or_else(|| err("DER: truncated"))? as usize;
+        let mut p = off + 2;
+        if len & 0x80 != 0 {
+            let n = len & 0x7f;
+            if n == 0 || n > 4 { return Err(err("DER: unsupported length form")); }
+            len = 0;
+            for _ in 0..n { len = (len << 8) | *buf.get(p).ok_or_else(|| err("DER: truncated"))? as usize; p += 1; }
+        }
+        if p + len > buf.len() { return Err(err("DER: element runs past the end")); }
+        Ok(Tlv { tag, start: p, end: p + len })
+    }
+    fn children(buf: &[u8], t: &Tlv) -> Result<Vec<Tlv>, CoreError> {
+        let mut out = Vec::new();
+        let mut p = t.start;
+        while p < t.end { let c = read(buf, p)?; p = c.end; out.push(c); }
+        Ok(out)
+    }
+    let cert = read(&der, 0)?;
+    if cert.tag != 0x30 { return Err(err("DER: certificate is not a SEQUENCE")); }
+    let tbs = read(&der, cert.start)?;
+    if tbs.tag != 0x30 { return Err(err("DER: tbsCertificate is not a SEQUENCE")); }
+    let fields = children(&der, &tbs)?;
+    let i = if fields.first().map(|f| f.tag) == Some(0xa0) { 1 } else { 0 };
+    let spki = fields.get(i + 5).filter(|f| f.tag == 0x30).ok_or_else(|| err("DER: subjectPublicKeyInfo not found"))?;
+    let parts = children(&der, spki)?;
+    let (alg, bits) = (parts.first().ok_or_else(|| err("DER: spki"))?, parts.get(1).ok_or_else(|| err("DER: spki"))?);
+    if bits.tag != 0x03 { return Err(err("DER: subjectPublicKey is not a BIT STRING")); }
+    let alg_children = children(&der, alg)?;
+    let curve = alg_children.get(1).map(|c| &der[c.start..c.end]).unwrap_or(&[]);
+    if curve != [0x2a, 0x86, 0x48, 0xce, 0x3d, 0x03, 0x01, 0x07] { return Err(err(format!("x5c leaf key is not P-256 (curve OID {})", hex::encode(curve)))); }
+    let key = &der[bits.start + 1..bits.end];
+    if key.len() != 65 || key[0] != 4 { return Err(err(format!("x5c leaf key is not an uncompressed point ({} bytes)", key.len()))); }
+    Ok(key.to_vec())
+}
+
+struct Disclosure {
+    raw: Vec<u8>,
+    arr: Vec<Value>,
+    digest: String,
+}
+
 pub fn derive(input: &ProverInput) -> Result<CircuitInputs, CoreError> {
+    derive_with_bounds(input, Bounds::default())
+}
+
+pub fn derive_with_bounds(input: &ProverInput, bounds: Bounds) -> Result<CircuitInputs, CoreError> {
+    let expected_aud = input.expected_aud.as_deref().filter(|a| !a.is_empty()).unwrap_or(PINNED_AUD);
     let parts: Vec<&str> = input.presentation.trim().split('~').collect();
     if parts.len() < 2 {
         return Err(err("presentation has no KB-JWT"));
@@ -155,61 +326,125 @@ pub fn derive(input: &ProverInput) -> Result<CircuitInputs, CoreError> {
     if sig_b64.len() != 86 {
         return Err(err(format!("issuer signature base64url length {}, expected 86", sig_b64.len())));
     }
+    if header_b64.len() < HEADER_PREFIX_B64 {
+        return Err(err(format!("issuer header shorter than {HEADER_PREFIX_B64} base64url chars")));
+    }
+
+    // --- issuer header: alg and typ inside the first 96 decoded bytes ---
+    let header_head = from_b64url(&header_b64[..HEADER_PREFIX_B64])?;
+    let hdr_alg_offset = find(&header_head, b"\"alg\":\"ES256\"", 0)
+        .filter(|&o| o + 13 <= HEADER_PREFIX_RAW)
+        .ok_or_else(|| err(format!("issuer header: \"alg\":\"ES256\" not within the first {HEADER_PREFIX_RAW} decoded bytes")))?;
+    let hdr_typ_offset = find(&header_head, b"\"typ\":\"dc+sd-jwt\"", 0)
+        .or_else(|| find(&header_head, b"\"typ\":\"vc+sd-jwt\"", 0))
+        .filter(|&o| o + 17 <= HEADER_PREFIX_RAW)
+        .ok_or_else(|| err(format!("issuer header: \"typ\":\"dc+sd-jwt\" (or vc+sd-jwt) not within the first {HEADER_PREFIX_RAW} decoded bytes")))?;
 
     // --- issuer payload offsets ---
     let vct_offset = unique_index(&payload_raw, b"\"vct\":\"urn:eudi:pid:de:1\"", "vct fragment")?;
-    let age_sd_fragment: &[u8] = b"\"age_equal_or_over\":{\"_sd\":[";
-    let age_sd_offset = unique_index(&payload_raw, age_sd_fragment, "age_equal_or_over._sd fragment")?;
     let cnf_fragment: &[u8] = b"\"cnf\":{\"jwk\":{";
     let cnf_offset = unique_index(&payload_raw, cnf_fragment, "cnf fragment")?;
     let x_offset = find(&payload_raw, b"\"x\":\"", cnf_offset).ok_or_else(|| err("cnf.jwk x not found"))?;
     let y_offset = find(&payload_raw, b"\"y\":\"", cnf_offset).ok_or_else(|| err("cnf.jwk y not found"))?;
+    if x_offset >= cnf_offset + CNF_WINDOW || y_offset >= cnf_offset + CNF_WINDOW {
+        return Err(err(format!("cnf.jwk x/y further than {CNF_WINDOW} bytes after cnf")));
+    }
     let exp_offset = unique_index(&payload_raw, b"\"exp\":", "exp fragment")?;
+    {
+        let after = &payload_raw[exp_offset + 6..];
+        let ok = after.len() >= 11 && after[..10].iter().all(u8::is_ascii_digit) && (after[10] == b',' || after[10] == b'}');
+        if !ok {
+            return Err(err("issuer exp is not a 10 digit number"));
+        }
+    }
 
-    // --- age disclosure ---
-    let mut age_disc: Option<(&str, String)> = None;
+    // --- age shape and witness ---
+    let mut decoded: Vec<Disclosure> = Vec::with_capacity(disclosures.len());
     for d in disclosures {
         let raw = from_b64url(d)?;
-        if let Ok(Value::Array(arr)) = serde_json::from_slice::<Value>(&raw) {
-            if arr.len() == 3 && arr[1] == "18" && arr[2] == Value::Bool(true) {
-                if let Some(salt) = arr[0].as_str() {
-                    age_disc = Some((d, salt.to_string()));
-                    break;
+        let arr = match serde_json::from_slice::<Value>(&raw) {
+            Ok(Value::Array(a)) if a.len() == 3 => a,
+            _ => return Err(err("only object-property disclosures are supported")),
+        };
+        decoded.push(Disclosure { raw, arr, digest: B64URL.encode(sha256(d.as_bytes())) });
+    }
+    let leaf = decoded.iter().find(|d| d.arr[1] == "18" && d.arr[2] == Value::Bool(true));
+    let obj = decoded.iter().find(|d| d.arr[1] == "age_equal_or_over" && d.arr[2].is_object());
+    let age_in_payload = payload_obj.get("age_equal_or_over").map(Value::is_object).unwrap_or(false);
+    let shape = if age_in_payload && payload_obj["age_equal_or_over"]["_sd"].is_array() {
+        AgeShape::A
+    } else if obj.map(|o| o.arr[2]["_sd"].is_array()).unwrap_or(false) {
+        AgeShape::B
+    } else if obj.map(|o| o.arr[2]["18"] == Value::Bool(true)).unwrap_or(false) {
+        AgeShape::C
+    } else {
+        return Err(err("no age_equal_or_over.18: neither nested _sd in the payload (A), nor a disclosed age object with _sd (B) or with plain values (C)"));
+    };
+    if matches!(shape, AgeShape::A | AgeShape::B) && leaf.is_none() {
+        return Err(err("no presented disclosure [\"salt\",\"18\",true]"));
+    }
+    let mut age_salt = String::new();
+    if let Some(l) = leaf {
+        age_salt = l.arr[0].as_str().map(str::to_string).unwrap_or_else(|| l.arr[0].to_string());
+        // The circuit rebuilds the disclosure as ["<salt>","18",true] byte for byte.
+        if l.raw != format!("[\"{age_salt}\",\"18\",true]").into_bytes() {
+            return Err(err("age disclosure is not in the canonical form the circuit rebuilds"));
+        }
+        if age_salt.len() > bounds.salt_max_len {
+            return Err(err("age salt exceeds SALT_MAX_LEN"));
+        }
+    }
+    let leaf_digest_quoted: Vec<u8> = leaf.map(|l| format!("\"{}\"", l.digest).into_bytes()).unwrap_or_default();
+
+    let mut age_obj_disclosed = 0u32;
+    let age_leaf_disclosed = if leaf.is_some() { 1u32 } else { 0 };
+    let mut age_obj_raw: Vec<u8> = Vec::new();
+    let mut sd_offset = 0usize;
+    let mut age_obj_digest_offset = 0usize;
+    let age_sd_offset;
+    let age_target_offset;
+    match shape {
+        AgeShape::A => {
+            let frag: &[u8] = b"\"age_equal_or_over\":{\"_sd\":[";
+            age_sd_offset = unique_index(&payload_raw, frag, "age_equal_or_over._sd fragment")?;
+            age_target_offset = target_inside(&payload_raw, age_sd_offset + frag.len(), &leaf_digest_quoted, "age_equal_or_over._sd")?;
+        }
+        AgeShape::B | AgeShape::C => {
+            let o = obj.expect("shape B/C has an object disclosure");
+            age_obj_disclosed = 1;
+            age_obj_raw = o.raw.clone();
+            if age_obj_raw.len() > bounds.age_obj_disc_max {
+                return Err(err(format!("age object disclosure {} bytes exceeds AGE_OBJ_DISC_MAX {}", age_obj_raw.len(), bounds.age_obj_disc_max)));
+            }
+            // anchor the object disclosure digest in the payload's "_sd" array that contains it
+            let obj_digest_quoted = format!("\"{}\"", o.digest).into_bytes();
+            age_obj_digest_offset = find(&payload_raw, &obj_digest_quoted, 0).ok_or_else(|| err("age object disclosure digest not in the issuer payload"))?;
+            let sd_idx = rfind(&payload_raw, b"\"_sd\":[", age_obj_digest_offset).ok_or_else(|| err("no \"_sd\":[ before the age object digest"))?;
+            sd_offset = sd_idx;
+            target_inside(&payload_raw, sd_idx + 7, &obj_digest_quoted, "top-level _sd")?;
+            let disc = &age_obj_raw;
+            if shape == AgeShape::B {
+                let frag: &[u8] = b"\"age_equal_or_over\",{\"_sd\":[";
+                age_sd_offset = unique_index(disc, frag, "age_equal_or_over fragment in the disclosure")?;
+                age_target_offset = target_inside(disc, age_sd_offset + frag.len(), &leaf_digest_quoted, "disclosed age object _sd")?;
+            } else {
+                let frag: &[u8] = b"\"age_equal_or_over\",{";
+                age_sd_offset = unique_index(disc, frag, "age_equal_or_over fragment in the disclosure")?;
+                age_target_offset = target_inside(disc, age_sd_offset + frag.len(), b"\"18\":true", "disclosed age object")?;
+                if !matches!(disc.get(age_target_offset + 9), Some(b',') | Some(b'}')) {
+                    return Err(err("\"18\":true not terminated by , or }"));
                 }
             }
+            // ["<salt>", must precede the claim name
+            let ok = disc.starts_with(b"[\"")
+                && age_sd_offset >= 2
+                && disc[age_sd_offset - 2] == b'"'
+                && disc[age_sd_offset - 1] == b','
+                && !disc[2..age_sd_offset - 2].contains(&b'"');
+            if !ok {
+                return Err(err("age object disclosure is not [\"<salt>\",\"age_equal_or_over\",{..."));
+            }
         }
-    }
-    let (age_disc_b64, age_salt) = age_disc.ok_or_else(|| err("no presented disclosure [\"salt\",\"18\",true]"))?;
-    // The circuit rebuilds the disclosure as ["<salt>","18",true] byte for byte.
-    if from_b64url(age_disc_b64)? != format!("[\"{age_salt}\",\"18\",true]").into_bytes() {
-        return Err(err("age disclosure is not in the canonical form the circuit rebuilds"));
-    }
-    let age_digest = B64URL.encode(sha256(age_disc_b64.as_bytes()));
-    let age_array = payload_obj
-        .pointer("/age_equal_or_over/_sd")
-        .and_then(Value::as_array)
-        .ok_or_else(|| err("age_equal_or_over._sd missing"))?;
-    let age_digest_index = age_array
-        .iter()
-        .position(|v| v == &Value::String(age_digest.clone()))
-        .ok_or_else(|| err("age disclosure digest not in age_equal_or_over._sd"))?;
-    if age_digest_index >= MAX_AGE_ENTRIES {
-        return Err(err("age digest index exceeds MAX_AGE_ENTRIES"));
-    }
-    // Check the fixed 46-byte stride layout the circuit assumes.
-    let entries_base = age_sd_offset + age_sd_fragment.len();
-    for j in 0..=age_digest_index {
-        let s = entries_base + 46 * j;
-        if payload_raw.get(s) != Some(&b'"') || payload_raw.get(s + 44) != Some(&b'"') {
-            return Err(err(format!("age _sd entry {j} not 43 chars quoted")));
-        }
-        if j < age_digest_index && payload_raw.get(s + 45) != Some(&b',') {
-            return Err(err(format!("age _sd entry {j} not followed by ,")));
-        }
-    }
-    let ds = entries_base + 46 * age_digest_index + 1;
-    if payload_raw.get(ds..ds + 43) != Some(age_digest.as_bytes()) {
-        return Err(err("age digest stride check failed"));
     }
 
     // --- KB-JWT ---
@@ -217,16 +452,22 @@ pub fn derive(input: &ProverInput) -> Result<CircuitInputs, CoreError> {
     if kb_parts.len() != 3 {
         return Err(err("KB-JWT is not header.payload.signature"));
     }
-    if kb_parts[0] != KB_HEADER_B64 {
-        return Err(err("KB-JWT header is not {alg:ES256,typ:kb+jwt}"));
+    let kb_header_raw = from_b64url(kb_parts[0])?;
+    if B64URL.encode(&kb_header_raw) != kb_parts[0] {
+        return Err(err("KB header base64url round trip differs"));
     }
+    let kb_alg_offset = find(&kb_header_raw, b"\"alg\":\"ES256\"", 0);
+    let kb_typ_offset = find(&kb_header_raw, b"\"typ\":\"kb+jwt\"", 0);
+    let (Some(kb_alg_offset), Some(kb_typ_offset)) = (kb_alg_offset, kb_typ_offset) else {
+        return Err(err("KB-JWT header lacks alg ES256 or typ kb+jwt"));
+    };
     let kb_payload_raw = from_b64url(kb_parts[1])?;
     if B64URL.encode(&kb_payload_raw) != kb_parts[1] {
         return Err(err("KB payload base64url round trip differs"));
     }
     let kb_obj: Value =
         serde_json::from_slice(&kb_payload_raw).map_err(|e| err(format!("KB payload JSON: {e}")))?;
-    let kb_aud_offset = unique_index(&kb_payload_raw, format!("\"aud\":\"{EXPECTED_AUD}\"").as_bytes(), "aud fragment")?;
+    let kb_aud_offset = unique_index(&kb_payload_raw, format!("\"aud\":\"{expected_aud}\"").as_bytes(), "aud fragment")?;
     let kb_nonce_offset = unique_index(&kb_payload_raw, b"\"nonce\":\"", "nonce fragment")?;
     let kb_sd_hash_offset = unique_index(&kb_payload_raw, b"\"sd_hash\":\"", "sd_hash fragment")?;
 
@@ -237,7 +478,11 @@ pub fn derive(input: &ProverInput) -> Result<CircuitInputs, CoreError> {
     }
 
     // --- keys, subject, challenge ---
-    let sec1 = hex::decode(strip0x(&input.issuer_key_sec1_hex)).map_err(|e| err(format!("issuer key hex: {e}")))?;
+    let sec1 = if input.issuer_key_sec1_hex.trim().is_empty() {
+        issuer_key_from_x5c(header_b64)?
+    } else {
+        hex::decode(strip0x(input.issuer_key_sec1_hex.trim())).map_err(|e| err(format!("issuer key hex: {e}")))?
+    };
     if sec1.len() != 65 || sec1[0] != 4 {
         return Err(err("issuer key must be SEC1 uncompressed (65 bytes)"));
     }
@@ -266,18 +511,28 @@ pub fn derive(input: &ProverInput) -> Result<CircuitInputs, CoreError> {
     let expiry = payload_obj.get("exp").and_then(Value::as_u64).ok_or_else(|| err("issuer exp missing"))?;
 
     Ok(CircuitInputs {
-        issuer_header_b64: bounded("issuer_header_b64", header_b64.as_bytes(), HEADER_B64_MAX)?,
-        payload: bounded("payload", &payload_raw, PAYLOAD_MAX_LEN)?,
+        issuer_header_b64: bounded("issuer_header_b64", header_b64.as_bytes(), bounds.header_b64_max)?,
+        hdr_alg_offset: hdr_alg_offset as u32,
+        hdr_typ_offset: hdr_typ_offset as u32,
+        payload: bounded("payload", &payload_raw, bounds.payload_max_len)?,
         issuer_sig_b64: sig_b64.as_bytes().try_into().unwrap(),
         issuer_sig: low_s(&issuer_sig_raw),
-        disclosures_tail: bounded("disclosures_tail", tail.as_bytes(), TAIL_MAX)?,
-        kb_payload: bounded("kb_payload", &kb_payload_raw, KB_PAYLOAD_MAX)?,
+        disclosures_tail: bounded("disclosures_tail", tail.as_bytes(), bounds.tail_max)?,
+        kb_header: bounded("kb_header", &kb_header_raw, bounds.kb_header_max)?,
+        kb_alg_offset: kb_alg_offset as u32,
+        kb_typ_offset: kb_typ_offset as u32,
+        kb_payload: bounded("kb_payload", &kb_payload_raw, bounds.kb_payload_max)?,
         kb_signature: low_s(&kb_sig_raw),
         issuer_pub_x,
         issuer_pub_y,
-        age_salt: bounded("age_salt", age_salt.as_bytes(), SALT_MAX_LEN)?,
+        age_salt: bounded("age_salt", age_salt.as_bytes(), bounds.salt_max_len)?,
+        age_obj_disclosed,
+        age_leaf_disclosed,
+        age_obj_disclosure: bounded("age_obj_disclosure", &age_obj_raw, bounds.age_obj_disc_max)?,
+        sd_offset: sd_offset as u32,
+        age_obj_digest_offset: age_obj_digest_offset as u32,
         age_sd_offset: age_sd_offset as u32,
-        age_digest_index: age_digest_index as u32,
+        age_target_offset: age_target_offset as u32,
         vct_offset: vct_offset as u32,
         cnf_offset: cnf_offset as u32,
         x_offset: x_offset as u32,
@@ -288,6 +543,7 @@ pub fn derive(input: &ProverInput) -> Result<CircuitInputs, CoreError> {
         kb_sd_hash_offset: kb_sd_hash_offset as u32,
         challenge,
         subject,
+        shape,
         expected: ExpectedOutputs {
             issuer_key_hash_hex: format!("0x{}", hex::encode(sha256(&sec1))),
             over18: 1,
@@ -295,6 +551,7 @@ pub fn derive(input: &ProverInput) -> Result<CircuitInputs, CoreError> {
             nonce_hex: format!("0x{nonce_hex}"),
             subject_hex: format!("0x{}", hex::encode(subject)),
         },
+        bounds,
     })
 }
 
@@ -316,71 +573,127 @@ impl CircuitInputs {
         let bounded = |name: &str, b: &[u8], max: usize| {
             format!("{name}.storage = {}\n{name}.len = {}\n", list(&padded(b, max)), b.len())
         };
-        let mut t = String::new();
-        t += &bounded("issuer_header_b64", &self.issuer_header_b64, HEADER_B64_MAX);
-        t += &bounded("payload", &self.payload, PAYLOAD_MAX_LEN);
+        let shape = match self.shape { AgeShape::A => "A", AgeShape::B => "B", AgeShape::C => "C" };
+        let mut t = format!("# age shape {shape}\n");
+        t += &bounded("issuer_header_b64", &self.issuer_header_b64, self.bounds.header_b64_max);
+        t += &format!("hdr_alg_offset = {}\n", self.hdr_alg_offset);
+        t += &format!("hdr_typ_offset = {}\n", self.hdr_typ_offset);
+        t += &bounded("payload", &self.payload, self.bounds.payload_max_len);
         t += &format!("issuer_sig_b64 = {}\n", list(&self.issuer_sig_b64));
         t += &format!("issuer_sig = {}\n", list(&self.issuer_sig));
-        t += &bounded("disclosures_tail", &self.disclosures_tail, TAIL_MAX);
-        t += &bounded("kb_payload", &self.kb_payload, KB_PAYLOAD_MAX);
+        t += &bounded("disclosures_tail", &self.disclosures_tail, self.bounds.tail_max);
+        t += &bounded("kb_header", &self.kb_header, self.bounds.kb_header_max);
+        t += &format!("kb_alg_offset = {}\n", self.kb_alg_offset);
+        t += &format!("kb_typ_offset = {}\n", self.kb_typ_offset);
+        t += &bounded("kb_payload", &self.kb_payload, self.bounds.kb_payload_max);
         t += &format!("kb_signature = {}\n", list(&self.kb_signature));
         t += &format!("issuer_pub_x = {}\n", list(&self.issuer_pub_x));
         t += &format!("issuer_pub_y = {}\n", list(&self.issuer_pub_y));
-        t += &bounded("age_salt", &self.age_salt, SALT_MAX_LEN);
-        t += &format!("age_sd_offset = {}\n", self.age_sd_offset);
-        t += &format!("age_digest_index = {}\n", self.age_digest_index);
-        t += &format!("vct_offset = {}\n", self.vct_offset);
-        t += &format!("cnf_offset = {}\n", self.cnf_offset);
-        t += &format!("x_offset = {}\n", self.x_offset);
-        t += &format!("y_offset = {}\n", self.y_offset);
-        t += &format!("exp_offset = {}\n", self.exp_offset);
-        t += &format!("kb_aud_offset = {}\n", self.kb_aud_offset);
-        t += &format!("kb_nonce_offset = {}\n", self.kb_nonce_offset);
-        t += &format!("kb_sd_hash_offset = {}\n", self.kb_sd_hash_offset);
+        t += &bounded("age_salt", &self.age_salt, self.bounds.salt_max_len);
+        t += &format!("age_obj_disclosed = {}\n", self.age_obj_disclosed);
+        t += &format!("age_leaf_disclosed = {}\n", self.age_leaf_disclosed);
+        t += &bounded("age_obj_disclosure", &self.age_obj_disclosure, self.bounds.age_obj_disc_max);
+        for (name, v) in [
+            ("sd_offset", self.sd_offset),
+            ("age_obj_digest_offset", self.age_obj_digest_offset),
+            ("age_sd_offset", self.age_sd_offset),
+            ("age_target_offset", self.age_target_offset),
+            ("vct_offset", self.vct_offset),
+            ("cnf_offset", self.cnf_offset),
+            ("x_offset", self.x_offset),
+            ("y_offset", self.y_offset),
+            ("exp_offset", self.exp_offset),
+            ("kb_aud_offset", self.kb_aud_offset),
+            ("kb_nonce_offset", self.kb_nonce_offset),
+            ("kb_sd_hash_offset", self.kb_sd_hash_offset),
+        ] {
+            t += &format!("{name} = {v}\n");
+        }
         t += &format!("challenge = {}\n", list(&self.challenge));
         t += &format!("subject = {}\n", list(&self.subject));
         t
     }
 
-    /// The witness vector in ABI order, flattened the way `noirc_abi` encodes
-    /// `fn main` parameters: a BoundedVec is `storage[MAX]` then `len`, arrays
-    /// are element by element, scalars are one field. One decimal string per
-    /// field element; entry i becomes ACIR witness index i, as noir-rs does. The circuit ABI in the artifact is the reference for the
-    /// order; `witness_len_matches_abi` in lib.rs checks the count against it.
-    pub fn to_flat_witness(&self) -> Vec<String> {
-        let mut w: Vec<String> = Vec::with_capacity(4300);
-        let push_bytes = |w: &mut Vec<String>, b: &[u8]| w.extend(b.iter().map(|x| x.to_string()));
-        let push_bounded = |w: &mut Vec<String>, b: &[u8], max: usize| {
-            push_bytes(w, &padded(b, max));
-            w.push(b.len().to_string());
-        };
-        push_bounded(&mut w, &self.issuer_header_b64, HEADER_B64_MAX);
-        push_bounded(&mut w, &self.payload, PAYLOAD_MAX_LEN);
-        push_bytes(&mut w, &self.issuer_sig_b64);
-        push_bytes(&mut w, &self.issuer_sig);
-        push_bounded(&mut w, &self.disclosures_tail, TAIL_MAX);
-        push_bounded(&mut w, &self.kb_payload, KB_PAYLOAD_MAX);
-        push_bytes(&mut w, &self.kb_signature);
-        push_bytes(&mut w, &self.issuer_pub_x);
-        push_bytes(&mut w, &self.issuer_pub_y);
-        push_bounded(&mut w, &self.age_salt, SALT_MAX_LEN);
-        for v in [
-            self.age_sd_offset,
-            self.age_digest_index,
-            self.vct_offset,
-            self.cnf_offset,
-            self.x_offset,
-            self.y_offset,
-            self.exp_offset,
-            self.kb_aud_offset,
-            self.kb_nonce_offset,
-            self.kb_sd_hash_offset,
-        ] {
-            w.push(v.to_string());
+    /// Every `fn main` parameter by name: fixed arrays and scalars as-is,
+    /// BoundedVecs as bytes (capacity comes from the artifact ABI).
+    pub fn values(&self) -> Vec<(&'static str, InputValue)> {
+        use InputValue::*;
+        vec![
+            ("issuer_header_b64", Bounded(self.issuer_header_b64.clone())),
+            ("hdr_alg_offset", Scalar(self.hdr_alg_offset as u64)),
+            ("hdr_typ_offset", Scalar(self.hdr_typ_offset as u64)),
+            ("payload", Bounded(self.payload.clone())),
+            ("issuer_sig_b64", Bytes(self.issuer_sig_b64.to_vec())),
+            ("issuer_sig", Bytes(self.issuer_sig.to_vec())),
+            ("disclosures_tail", Bounded(self.disclosures_tail.clone())),
+            ("kb_header", Bounded(self.kb_header.clone())),
+            ("kb_alg_offset", Scalar(self.kb_alg_offset as u64)),
+            ("kb_typ_offset", Scalar(self.kb_typ_offset as u64)),
+            ("kb_payload", Bounded(self.kb_payload.clone())),
+            ("kb_signature", Bytes(self.kb_signature.to_vec())),
+            ("issuer_pub_x", Bytes(self.issuer_pub_x.to_vec())),
+            ("issuer_pub_y", Bytes(self.issuer_pub_y.to_vec())),
+            ("age_salt", Bounded(self.age_salt.clone())),
+            ("age_obj_disclosed", Scalar(self.age_obj_disclosed as u64)),
+            ("age_leaf_disclosed", Scalar(self.age_leaf_disclosed as u64)),
+            ("age_obj_disclosure", Bounded(self.age_obj_disclosure.clone())),
+            ("sd_offset", Scalar(self.sd_offset as u64)),
+            ("age_obj_digest_offset", Scalar(self.age_obj_digest_offset as u64)),
+            ("age_sd_offset", Scalar(self.age_sd_offset as u64)),
+            ("age_target_offset", Scalar(self.age_target_offset as u64)),
+            ("vct_offset", Scalar(self.vct_offset as u64)),
+            ("cnf_offset", Scalar(self.cnf_offset as u64)),
+            ("x_offset", Scalar(self.x_offset as u64)),
+            ("y_offset", Scalar(self.y_offset as u64)),
+            ("exp_offset", Scalar(self.exp_offset as u64)),
+            ("kb_aud_offset", Scalar(self.kb_aud_offset as u64)),
+            ("kb_nonce_offset", Scalar(self.kb_nonce_offset as u64)),
+            ("kb_sd_hash_offset", Scalar(self.kb_sd_hash_offset as u64)),
+            ("challenge", Bytes(self.challenge.to_vec())),
+            ("subject", Bytes(self.subject.to_vec())),
+        ]
+    }
+
+    /// The witness vector flattened the way `noirc_abi` encodes `fn main`
+    /// parameters, driven by the artifact ABI: parameters in ABI order, a
+    /// BoundedVec as `storage[capacity]` then `len`, arrays element by
+    /// element, scalars as one field. One decimal string per field element;
+    /// entry i becomes ACIR witness index i (as noir-rs does). Fails when the
+    /// artifact names a parameter this derivation does not produce or a
+    /// fixed array length differs, so a revised circuit fails loudly.
+    pub fn to_flat_witness(&self, abi: &Value) -> Result<Vec<String>, CoreError> {
+        let values = self.values();
+        let params = abi["parameters"].as_array().ok_or_else(|| err("artifact ABI has no parameters"))?;
+        let mut w: Vec<String> = Vec::with_capacity(7000);
+        for p in params {
+            let name = p["name"].as_str().unwrap_or("");
+            let (_, v) = values.iter().find(|(n, _)| *n == name).ok_or_else(|| err(format!("artifact parameter {name} is not derived by this core")))?;
+            let t = &p["type"];
+            match (t["kind"].as_str(), v) {
+                (Some("struct"), InputValue::Bounded(b)) => {
+                    let fields = t["fields"].as_array().ok_or_else(|| err(format!("{name}: struct without fields")))?;
+                    for f in fields {
+                        match f["name"].as_str() {
+                            Some("storage") => {
+                                let cap = f["type"]["length"].as_u64().unwrap_or(0) as usize;
+                                if b.len() > cap { return Err(err(format!("{name}: {} bytes exceeds capacity {cap}", b.len()))); }
+                                w.extend(padded(b, cap).iter().map(|x| x.to_string()));
+                            }
+                            Some("len") => w.push(b.len().to_string()),
+                            other => return Err(err(format!("{name}: unexpected BoundedVec field {other:?}"))),
+                        }
+                    }
+                }
+                (Some("array"), InputValue::Bytes(b)) => {
+                    let n = t["length"].as_u64().unwrap_or(0) as usize;
+                    if b.len() != n { return Err(err(format!("{name}: artifact wants {n} bytes, derived {}", b.len()))); }
+                    w.extend(b.iter().map(|x| x.to_string()));
+                }
+                (Some("integer"), InputValue::Scalar(x)) => w.push(x.to_string()),
+                (kind, _) => return Err(err(format!("{name}: artifact kind {kind:?} does not match the derived value"))),
+            }
         }
-        push_bytes(&mut w, &self.challenge);
-        push_bytes(&mut w, &self.subject);
-        w
+        Ok(w)
     }
 
     /// The 86 public inputs (subject 20, issuer_key_hash 32, over18, expiry,
