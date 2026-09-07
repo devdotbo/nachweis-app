@@ -69,8 +69,7 @@ class FlowViewModel(app: Application) : AndroidViewModel(app) {
 
     // Prove
     var lowMemory by mutableStateOf(false)
-    data class Derived(val toml: String, val issuerKeyHashHex: String, val over18: Boolean, val expiry: Long, val nonceHex: String, val subjectHex: String)
-    var derived by mutableStateOf<Derived?>(null); private set
+    var derived by mutableStateOf<uniffi.mopro.DerivedInputs?>(null); private set
     var proof by mutableStateOf<ProofSummary?>(null); private set
     var proverVersion by mutableStateOf(""); private set
 
@@ -80,8 +79,9 @@ class FlowViewModel(app: Application) : AndroidViewModel(app) {
 
     init {
         viewModelScope.launch(Dispatchers.IO) {
-            // Touching the bindings loads the core .so; a dlopen problem shows here, not mid-flow.
-            runCatching { prover.version() }.onSuccess { v -> withContext(Dispatchers.Main) { proverVersion = v } }
+            // Touching the bindings loads libprover_mobile_core.so; a dlopen problem shows here, not mid-flow.
+            runCatching { prover.dyadicSize() }
+                .onSuccess { n -> withContext(Dispatchers.Main) { proverVersion = "prover-mobile-core loaded (Noir beta.21, bb 5.0.0-nightly.20260324), circuit 2^${Integer.numberOfTrailingZeros(n.toInt())}" } }
                 .onFailure { e -> withContext(Dispatchers.Main) { proverVersion = "core not loaded: ${e.message}" } }
         }
     }
@@ -208,23 +208,15 @@ class FlowViewModel(app: Application) : AndroidViewModel(app) {
 
     private suspend fun toProveBlocking() {
         val pres = presentation ?: throw IllegalStateException("no presentation")
-        // prover-mobile-core derives the inputs (port of gen-prover.ts, issuer key from the x5c leaf),
-        // then the witness is solved once without proving to read the expected public outputs.
-        val toml = prover.derive(pres, boundAddress.trim(), challengeHex)
-        val out = prover.execute(toml)
-        if (out.size != 66) throw IllegalStateException("circuit returned ${out.size} values, expected 66")
-        val issuerKeyHash = Codec.toHex(ByteArray(32) { out[it].last() })
-        val over18 = out[32].last().toInt() == 1
-        val expiry = java.math.BigInteger(1, out[33]).toLong()
-        val nonce = Codec.toHex(ByteArray(32) { out[34 + it].last() })
-        val subjectHex = Codec.toHex(Codec.hex(boundAddress))
+        // prover-mobile-core derives the inputs (port of gen-prover.ts, bounds and witness order from the
+        // artifact ABI, issuer key from the x5c leaf, aud = the pinned client_id).
+        val d = prover.derive(pres, boundAddress.trim(), challengeHex)
         val expectedNonce = Codec.toHex(Codec.sha256(Codec.hex(boundAddress) + Codec.hex(challengeHex)))
-        if (nonce != expectedNonce) throw IllegalStateException("circuit nonce $nonce != sha256(address||challenge) $expectedNonce")
-        if (!over18) throw IllegalStateException("circuit output over18 is false")
-        val d = Derived(toml, issuerKeyHash, over18, expiry, nonce, subjectHex)
+        if (d.nonceHex != expectedNonce) throw IllegalStateException("derived nonce ${d.nonceHex} != sha256(address||challenge) $expectedNonce")
+        if (d.over18.toInt() != 1) throw IllegalStateException("derived over18 is not 1")
         withContext(Dispatchers.Main) {
             derived = d; step = Step.PROVE
-            logLine("inputs derived (${toml.length} chars), witness solves: issuer_key_hash ${issuerKeyHash.take(16)}..., expiry $expiry, nonce ${nonce.take(16)}...")
+            logLine("inputs derived: ${d.witness.size} witness values, issuer_key_hash ${d.issuerKeyHashHex.take(16)}..., expiry ${d.expiry}, nonce ${d.nonceHex.take(16)}...")
         }
     }
 
@@ -236,12 +228,13 @@ class FlowViewModel(app: Application) : AndroidViewModel(app) {
         val points = prover.loadSrs()
         withContext(Dispatchers.Main) { logLine("SRS ready: $points points; proving (lowMemory=$lowMemory)") }
         val t0 = System.nanoTime()
-        val r = prover.prove(d.toml, lowMemory)
+        val r = prover.prove(d.witness, lowMemory)
         val wall = (System.nanoTime() - t0) / 1_000_000
         val decoded = PublicInputs.decode(r.publicInputs)
         if (decoded.nonceHex != d.nonceHex) throw IllegalStateException("public nonce differs from expected")
         if (decoded.subjectHex != d.subjectHex) throw IllegalStateException("public subject differs from expected")
-        if (decoded.issuerKeyHashHex != d.issuerKeyHashHex || decoded.expiry != d.expiry) throw IllegalStateException("public inputs differ from the executed witness")
+        if (decoded.expiry != d.expiry.toLong()) throw IllegalStateException("public expiry differs from expected")
+        if (r.publicInputs.map { Codec.toHex(it) } != d.publicInputsHex) throw IllegalStateException("public inputs differ from the derived expectation")
         val verified = runCatching { prover.verify(r.proof, r.publicInputs) }.getOrNull()
         val summary = ProofSummary(
             proofHex = Codec.toHex(r.proof),

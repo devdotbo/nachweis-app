@@ -102,7 +102,7 @@ fun PickupScreen(vm: FlowViewModel) {
 fun ProveScreen(vm: FlowViewModel) {
     val d = vm.derived
     if (d != null) {
-        Text("Inputs derived (${d.toml.length} chars of Prover.toml), witness solves")
+        Text("Inputs derived (${d.witness.size} witness values, ${d.proverToml.length} chars of Prover.toml)")
         Text("expected issuer_key_hash ${d.issuerKeyHashHex}", style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace)
         Text("expected nonce ${d.nonceHex}", style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace)
         Text("expiry ${d.expiry}", style = MaterialTheme.typography.bodySmall)
