@@ -105,7 +105,7 @@ say "AttestationRegistry $REGISTRY, NoirPidVerifier $NOIR_VERIFIER (issuer $ISSU
 VERIFIER_BIN="$VERIFIER_REPO/target/debug/verifier-service"
 [ -x "$VERIFIER_BIN" ] || VERIFIER_BIN="$VERIFIER_REPO/target/release/verifier-service"
 [ -x "$VERIFIER_BIN" ] || { (cd "$VERIFIER_REPO" && cargo build -p verifier-service) || die "verifier-service build failed"; VERIFIER_BIN="$VERIFIER_REPO/target/debug/verifier-service"; }
-(cd "$VERIFIER_REPO" && PORT=$VERIFIER_PORT PUBLIC_URL="$VERIFIER_URL/" "$VERIFIER_BIN" > "$RUN_DIR/verifier.log" 2>&1) & echo $! >> "$PIDS"
+(cd "$VERIFIER_REPO" && exec env PORT=$VERIFIER_PORT PUBLIC_URL="$VERIFIER_URL/" "$VERIFIER_BIN" > "$RUN_DIR/verifier.log" 2>&1) & echo $! >> "$PIDS"
 wait_http "$VERIFIER_URL/" 20 || wait_http "$VERIFIER_URL/relay/status/00000000-0000-0000-0000-000000000000" 5 || true
 sleep 0.5
 say "verifier-service (relay) on $VERIFIER_URL"
