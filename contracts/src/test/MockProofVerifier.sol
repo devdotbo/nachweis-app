@@ -19,8 +19,32 @@ contract MockProofVerifier is IProofVerifier {
         return result;
     }
 
-    /// @dev Proof bytes are the nonce (first 32 bytes) when at least 32 bytes long, else no nonce.
+    /// @dev Nonce derivation, unique per distinct proof argument:
+    ///      - proof = abi.encode(bytes a, bytes b) (the shape every real adapter uses: SP1 encodes
+    ///        (publicValues, proofBytes), Noir encodes (honkProof, publicInputs)): keccak256(a), i.e. the
+    ///        hash of the first payload, so the nonce follows the public values / proof and not the
+    ///        constant abi offset word;
+    ///      - anything else: keccak256(proof).
+    ///      An empty proof has no nonce (bytes32(0)), which the registry treats as "no replay protection".
     function nonceOf(bytes calldata proof) external pure returns (bytes32) {
-        return proof.length >= 32 ? bytes32(proof[:32]) : bytes32(0);
+        if (proof.length == 0) return bytes32(0);
+        if (_looksLikeTwoBytes(proof)) {
+            (bytes memory first,) = abi.decode(proof, (bytes, bytes));
+            return keccak256(first);
+        }
+        return keccak256(proof);
+    }
+
+    /// @dev True when `proof` is a well-formed abi.encode(bytes, bytes): two head words with in-bounds
+    ///      offsets, each pointing at a length word followed by that many bytes.
+    function _looksLikeTwoBytes(bytes calldata proof) private pure returns (bool) {
+        if (proof.length < 128) return false;
+        uint256 off0 = uint256(bytes32(proof[0:32]));
+        uint256 off1 = uint256(bytes32(proof[32:64]));
+        if (off0 != 64 || off1 < 96 || off1 + 32 > proof.length) return false;
+        uint256 len0 = uint256(bytes32(proof[64:96]));
+        if (64 + 32 + len0 > off1) return false;
+        uint256 len1 = uint256(bytes32(proof[off1:off1 + 32]));
+        return off1 + 32 + len1 <= proof.length;
     }
 }

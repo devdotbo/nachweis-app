@@ -249,8 +249,8 @@ contract NachweisTest is Test {
         vm.prank(owner);
         registry.setVerifier(POLICY, verifier);
         Decision memory d = _decision(REQUIRED, uint64(block.timestamp + 1 days));
-        bytes32 nonce = keccak256("nonce/1");
-        bytes memory proof = abi.encodePacked(nonce, hex"01");
+        bytes memory proof = abi.encodePacked(keccak256("nonce/1"), hex"01");
+        bytes32 nonce = keccak256(proof); // mock: raw (non abi.encode(bytes,bytes)) proof hashes whole
         registry.attestWithProof(alice, d, proof, _inputs(alice, d));
         assertTrue(registry.nonceConsumed(keccak256(abi.encode(POLICY, nonce))));
 
@@ -275,9 +275,33 @@ contract NachweisTest is Test {
         vm.prank(owner);
         registry.setVerifier(POLICY, verifier);
         Decision memory d = _decision(REQUIRED, uint64(block.timestamp + 1 days));
-        registry.attestWithProof(alice, d, hex"01", _inputs(alice, d));
-        registry.attestWithProof(alice, d, hex"01", _inputs(alice, d));
+        // an empty proof has no nonce in the mock, so it can be submitted twice
+        registry.attestWithProof(alice, d, hex"", _inputs(alice, d));
+        registry.attestWithProof(alice, d, hex"", _inputs(alice, d));
         assertFalse(registry.nonceConsumed(keccak256(abi.encode(POLICY, bytes32(0)))));
+    }
+
+    /// @dev Adapter-shaped proofs, abi.encode(bytes payload, bytes proofBytes): the mock nonce is
+    ///      keccak256(payload), so two different proofs under one policy both attest and the same
+    ///      proof twice is a replay. (The first word of such a proof is always the abi offset 0x40.)
+    function test_attestWithProofAdapterShapedNonces() public {
+        vm.prank(owner);
+        registry.setVerifier(POLICY, verifier);
+        Decision memory d = _decision(REQUIRED, uint64(block.timestamp + 1 days));
+        bytes memory proof1 = abi.encode(bytes("public-values/1"), bytes(hex"aa"));
+        bytes memory proof2 = abi.encode(bytes("public-values/2"), bytes(hex"aa"));
+        assertEq(verifier.nonceOf(proof1), keccak256(bytes("public-values/1")));
+        assertTrue(verifier.nonceOf(proof1) != verifier.nonceOf(proof2));
+
+        registry.attestWithProof(alice, d, proof1, _inputs(alice, d));
+        registry.attestWithProof(bob, d, proof2, _inputs(bob, d));
+        assertTrue(registry.isEligible(alice, POLICY, REQUIRED));
+        assertTrue(registry.isEligible(bob, POLICY, REQUIRED));
+
+        vm.expectRevert(
+            abi.encodeWithSelector(AttestationRegistry.NonceConsumed.selector, POLICY, keccak256(bytes("public-values/1")))
+        );
+        registry.attestWithProof(alice, d, proof1, _inputs(alice, d));
     }
 
     // ------------------------------------------------------------------

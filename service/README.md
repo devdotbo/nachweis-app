@@ -141,10 +141,10 @@ list, freshness window) stay in front of the bridge, which then proves the state
    `attest-operator` with `bits: "0x7"` for the fund token demo.
 4. Replay: the registry consumes `verifier.nonceOf(proof)` once per policy (`NonceConsumed`). With the
    SP1 adapter that is the nonce from the public values, so one proof attests once. With
-   `MockProofVerifier` the nonce is the first 32 bytes of the proof argument, which for
-   `abi.encode(bytes, bytes)` is always the offset word `0x…40`: the second proof-path attest on a
-   policy backed by the mock reverts `NonceConsumed`. Use one policy per mock demo run, or the
-   operator path. `tier` and `statusRef` are unbound by design.
+   `MockProofVerifier` the nonce is `keccak256` of the first payload of an
+   `abi.encode(bytes, bytes)` proof (the public values for the SP1 shape), else `keccak256(proof)`,
+   so distinct proofs attest and the same proof twice reverts `NonceConsumed`. `tier` and
+   `statusRef` are unbound by design.
 
 ## Tests
 
