@@ -77,7 +77,7 @@ export function HandoffCard({ session }: { session?: Session }) {
         {signed && !handoff && !session.handoffError ? <span className="status waiting">fetching handoff</span> : null}
         {handoff && (!state || state === 'created' || state === 'presented') ? <span className="status waiting">waiting for the phone's proof</span> : null}
         {handoff && (state === 'verified' || state === 'proving' || state === 'proved') ? <span className="status waiting">proof received, attesting</span> : null}
-        {state === 'attested' ? <span className="status open">attested from the phone</span> : null}
+        {state === 'attested' ? <span className="status open">{session.bridge?.proofSystem?.startsWith('noir') ? 'attested from the phone' : 'attested without the phone'}</span> : null}
         {state === 'failed' ? <span className="status closed">failed</span> : null}
         {handoff ? (
           <button type="button" className="btn btn-ghost" onClick={() => void copy()}>

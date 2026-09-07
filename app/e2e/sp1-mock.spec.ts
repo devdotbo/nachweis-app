@@ -63,6 +63,7 @@ test.describe('investor proves through the bridge (verifier mode, PROOF_MODE=moc
     await expect(status.locator('.status').first()).toHaveText('permitted')
     await expect(status.locator('.flag.on')).toHaveText(['yes: identity evidence', 'yes: over 18'])
     await expect(status.getByText('attest tx')).toBeVisible()
+    await expect(card(page, 'Prove on your phone').getByText('attested without the phone')).toBeVisible()
     await shot(page, env.mode, '03-attested')
     expect(errors, `browser errors:\n${errors.join('\n')}`).toEqual([])
   })

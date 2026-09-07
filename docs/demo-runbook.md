@@ -334,6 +334,18 @@ The six beats as clicks, and what to watch:
 
 Simulated checks: the issuer screen today has no "simulated" label for sanctions and similar checks (`grep -ri simulat app/src` is empty). The caption in the video must carry it (see `docs/video-shotlist.md`).
 
+## 8b. Browser run (headless, no wallet extension)
+
+`scripts/app-e2e-local.sh` starts the whole local stack for the app (anvil, Deploy.s.sol with the unified policy id, verifier-service, bridge with `REQUIRE_ADDRESS_PROOF=true`, Vite dev server with the dev signer: anvil key 1 as the investor, key 0 as the operator) and `app/e2e` drives the six beats in headless Chromium:
+
+```
+scripts/app-e2e-local.sh --test                    # two-device flow: companion as the phone, about 20 s after the builds
+scripts/app-e2e-local.sh --mode sp1-mock --test    # SP1 path with PROOF_MODE=mock, wallet.ts as the wallet
+scripts/app-e2e-local.sh                           # keep the stack running and click through it yourself (URL printed)
+```
+
+What it proves: the real bridge session, the EIP-191 session signature, the handoff QR and URI, attestation from the phone's proof, Subscribe with a FundToken balance, revoke from the issuer role, both doors closed afterwards. Screenshots per beat in `app/_preview/e2e/<mode>/`. Details and limits: `app/README.md`, "Browser e2e".
+
 ## 9. Sepolia real run (builder, manual)
 
 Not run 2026-09-07. Nothing is deployed to any network as of this file. What the builder must have:

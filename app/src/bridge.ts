@@ -28,6 +28,8 @@ export interface BridgeSession {
   state: BridgeState
   txHash?: Hex
   detail?: string
+  /** "noir-ultrahonk" for a proof posted by the phone, "mock-groth16" / SP1 systems for a proof the bridge made. */
+  proofSystem?: string
 }
 
 export interface BridgeClient {
@@ -59,6 +61,7 @@ export interface BridgeSessionRaw {
   request_uri?: string | null
   public_values?: BridgePublicValues | null
   tx_hash?: string | null
+  proof_system?: string | null
   /** Unix seconds from the bridge. */
   updated_at?: string | number
 }
@@ -137,7 +140,7 @@ const httpClient: BridgeClient = {
     const body = await fetchBridgeSession(sessionId)
     const tx = body.tx_hash ?? undefined
     const detail = body.detail ?? body.error ?? undefined
-    return { state: body.state, txHash: tx && /^0x[0-9a-fA-F]{64}$/.test(tx) ? (tx as Hex) : undefined, detail }
+    return { state: body.state, txHash: tx && /^0x[0-9a-fA-F]{64}$/.test(tx) ? (tx as Hex) : undefined, detail, proofSystem: body.proof_system ?? undefined }
   },
   async requestAttest(sessionId) {
     const res = await fetch(`${BRIDGE_URL}/sessions/${encodeURIComponent(sessionId)}/attest`, {
