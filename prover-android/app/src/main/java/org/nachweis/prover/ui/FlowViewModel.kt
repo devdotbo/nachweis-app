@@ -212,7 +212,7 @@ class FlowViewModel(app: Application) : AndroidViewModel(app) {
         // artifact ABI, issuer key from the x5c leaf, aud = the pinned client_id).
         val d = prover.derive(pres, boundAddress.trim(), challengeHex)
         val expectedNonce = Codec.toHex(Codec.sha256(Codec.hex(boundAddress) + Codec.hex(challengeHex)))
-        if (d.nonceHex != expectedNonce) throw IllegalStateException("derived nonce ${d.nonceHex} != sha256(address||challenge) $expectedNonce")
+        if (d.nonceHex.removePrefix("0x") != expectedNonce) throw IllegalStateException("derived nonce ${d.nonceHex} != sha256(address||challenge) $expectedNonce")
         if (d.over18.toInt() != 1) throw IllegalStateException("derived over18 is not 1")
         withContext(Dispatchers.Main) {
             derived = d; step = Step.PROVE
@@ -231,10 +231,10 @@ class FlowViewModel(app: Application) : AndroidViewModel(app) {
         val r = prover.prove(d.witness, lowMemory)
         val wall = (System.nanoTime() - t0) / 1_000_000
         val decoded = PublicInputs.decode(r.publicInputs)
-        if (decoded.nonceHex != d.nonceHex) throw IllegalStateException("public nonce differs from expected")
-        if (decoded.subjectHex != d.subjectHex) throw IllegalStateException("public subject differs from expected")
+        if (decoded.nonceHex != d.nonceHex.removePrefix("0x")) throw IllegalStateException("public nonce differs from expected")
+        if (decoded.subjectHex != d.subjectHex.removePrefix("0x")) throw IllegalStateException("public subject differs from expected")
         if (decoded.expiry != d.expiry.toLong()) throw IllegalStateException("public expiry differs from expected")
-        if (r.publicInputs.map { Codec.toHex(it) } != d.publicInputsHex) throw IllegalStateException("public inputs differ from the derived expectation")
+        if (r.publicInputs.map { Codec.toHex(it) } != d.publicInputsHex.map { it.removePrefix("0x") }) throw IllegalStateException("public inputs differ from the derived expectation")
         val verified = runCatching { prover.verify(r.proof, r.publicInputs) }.getOrNull()
         val summary = ProofSummary(
             proofHex = Codec.toHex(r.proof),

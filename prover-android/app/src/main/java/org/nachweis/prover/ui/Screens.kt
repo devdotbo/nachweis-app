@@ -113,7 +113,7 @@ fun ProveScreen(vm: FlowViewModel) {
         Spacer(Modifier.height(8.dp))
         Text("Proof ${p.proofHex.length / 2} bytes, ${p.publicInputsHex.size} public inputs", style = MaterialTheme.typography.titleSmall)
         Text("execute ${p.witnessMs} ms, prove ${p.proveMs} ms, wall ${p.wallMs} ms")
-        Text("peak RSS ${p.peakRssBytes / 1_000_000} MB (VmHWM), low memory ${p.lowMemory}")
+        Text("peak RSS ${p.peakRssBytes / 1_000_000} MB (ru_maxrss), low memory ${p.lowMemory}")
         Text("on-device verify: ${p.verifiedOnDevice}")
         Text("over18 ${p.decoded.over18}, expiry ${p.decoded.expiry}", style = MaterialTheme.typography.bodySmall)
         Text("subject ${p.decoded.subjectHex}", style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace)

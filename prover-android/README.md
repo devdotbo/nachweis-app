@@ -108,7 +108,37 @@ realistic vector (`prover-sp1/fixtures/realistic-input.json`, address
 
 ## Measurements
 
-EMULATOR_RESULTS_PLACEHOLDER
+All numbers below are from the ANDROID EMULATOR, not a device: AVD
+`pixel_api35` (Android 15, arm64 system image, 8 cores of an Apple M3 Max, 8
+GB RAM) on 2026-09-07, WP13 circuit (1,038,584 gates, 2^20), realistic test
+vector, `adb shell am start -n org.nachweis.prover/.MainActivity --ez autoprove true`.
+
+| run | execute (witness) | prove (UltraHonk keccak, ZK) | wall (derive + SRS + prove + verify) | peak RSS (ru_maxrss) | on-device verify |
+| --- | --- | --- | --- | --- | --- |
+| 1, cold (assets copied to app storage first) | 760 ms | 6,924 ms | 10,124 ms (+2.6 s asset copy before) | 1,734 MB | true |
+| 2, warm | 755 ms | 6,725 ms | 9,980 ms | 1,752 MB | true |
+| 3, "low memory mode" on | 738 ms | 6,724 ms | 9,976 ms | 1,734 MB | true |
+
+- The proof pulled from the emulator (`adb pull /sdcard/Android/data/org.nachweis.prover/files/{proof,public_inputs}`)
+  verifies on the desktop with the desktop VK:
+  `bb verify -k circuits/pid-sdjwt/out/adapted/vk -p proof -i public_inputs -t evm`
+  -> "Proof verified successfully". `public_inputs` is byte-identical to the
+  desktop `bb prove` output (2,752 bytes); the proof bytes differ (ZK
+  randomness), as expected. Flipping the over18 word makes `bb verify` fail.
+- The wall time above execute + prove is the SRS load (64 MB file, 2^20 + 1
+  points, done inside `prove` again although cached), JNA marshalling of the
+  6,787 witness strings and the on-device verify.
+- Low memory mode is a no-op in this core build (the reconciled core only
+  sets `BB_SLOW_LOW_MEMORY` in the environment after the library is loaded,
+  which Barretenberg reads at startup); memory stays at 1.7 GB. Left in the
+  UI so the Pixel run can tell whether a future core build changes it.
+- Desktop reference for the same artifact (M3 Max, 16 threads): `bb prove`
+  about 5 to 6 s, 2.1 to 2.4 GB RSS. The emulator's 6.7 s comes from 8
+  emulated cores; the Pixel 10 (Tensor G5, 8 cores) is expected in the 10 to
+  20 s band, which the device run will settle.
+
+Pixel 10 results: not yet measured (device arrives later); add a row here.
+
 
 ## Device day checklist (Pixel 10)
 
@@ -118,13 +148,14 @@ EMULATOR_RESULTS_PLACEHOLDER
 2. `adb install -r app/build/outputs/apk/debug/app-debug.apk` (arm64-v8a
    APK, about 90 MB with the SRS). No release signing needed for the demo.
 3. Cold run: open the app, "Load test presentation", "Derive circuit inputs",
-   "Prove on this device". Read witness / prove / wall / peak RSS from the
-   screen or `adb logcat | grep -i nachweis`. Repeat once warm (the second
-   run skips the asset copy and the SRS load is cached in the process).
+   "Prove on this device", or from the Mac
+   `adb shell am start -n org.nachweis.prover/.MainActivity --ez autoprove true`
+   and `adb logcat -s NachweisProver:I`. Repeat once warm (`adb shell am
+   force-stop org.nachweis.prover` first; the second run skips the asset copy).
 4. Record both runs in the table above with the phone's model, Android
    version and whether low memory mode was on.
-5. Byte compatibility: "Copy proof JSON", `adb shell` clipboard or paste into
-   a file on the Mac, split into `proof` and `public_inputs` (hex to bytes),
+5. Byte compatibility: `adb pull /sdcard/Android/data/org.nachweis.prover/files/proof`
+   and `.../public_inputs` (written after every proof), then
    `bb verify -k circuits/pid-sdjwt/out/adapted/vk -p proof -i public_inputs -t evm`.
 6. Wallet path (needs the verifier service with the registrar leaf reachable
    from the phone, see `nachweis-verifier-relay/docs/blind-relay.md`): enter
