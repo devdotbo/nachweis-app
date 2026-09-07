@@ -1,6 +1,7 @@
 //! HTTP surface and the presentation -> proof -> attestation pipeline.
 use crate::chain::{self, Chain};
 use crate::config::Config;
+use crate::noir;
 use crate::prover;
 use crate::session::{new_store, Session, State, Store};
 use crate::statement;
@@ -76,6 +77,7 @@ pub fn router(state: Shared) -> Router {
         .route("/sessions/:id", get(get_session))
         .route("/sessions/:id/presentation", post(post_presentation))
         .route("/sessions/:id/address-proof", post(address_proof))
+        .route("/sessions/:id/noir-proof", post(noir_proof))
         .route("/sessions/:id/attest", post(attest))
         .route("/sessions/:id/attest-operator", post(attest_operator))
         .route("/revoke", post(revoke))
@@ -89,6 +91,7 @@ async fn health(AxState(st): AxState<Shared>) -> Json<Value> {
         "proof_mode": st.cfg.proof_mode.as_str(),
         "mode": if st.verifier.is_some() { "verifier" } else { "local" },
         "chain": st.chain.as_ref().map(|c| json!({ "registry": c.registry, "operator": c.operator })),
+        "noir_verifier": st.cfg.noir_verifier,
         "policy_id": st.cfg.policy_id,
         "require_address_proof": st.cfg.require_address_proof,
     }))
@@ -378,6 +381,107 @@ async fn attest(
         s.set_state(State::Attested);
     })?;
     Ok(Json(json!({ "session_id": id, "status": "attested", "tx_hash": tx, "attested": ev, "call": calldata_summary })))
+}
+
+/// Client-side path: the holder's device decrypted the relayed presentation and proved the
+/// statement with the Noir circuit; the bridge only ever sees proof bytes and the 86 public
+/// inputs. Binds them to the session (subject, nonce), optionally pre-checks the proof with an
+/// eth_call to NoirPidVerifier, then sends attestWithProof. created | proved -> proved -> attested.
+async fn noir_proof(
+    AxState(st): AxState<Shared>,
+    Path(id): Path<String>,
+    Json(body): Json<noir::NoirProofBody>,
+) -> Result<Json<Value>, AppError> {
+    let id = parse_session_id(&id)?;
+    let ch = chain_of(&st)?;
+    let session = with_session(&st, id, |s| s.clone())?;
+    if !matches!(session.state, State::Created | State::Proved) {
+        return Err(conflict(format!("session is {:?}, expected created or proved", session.state).to_lowercase()));
+    }
+    require_address_proof(&st, &session)?;
+
+    let proof = noir::parse_hex(&body.proof_hex, "proof_hex").map_err(|e| bad(e.to_string()))?;
+    let inputs = noir::parse_public_inputs(&body.public_inputs_hex).map_err(|e| bad(e.to_string()))?;
+    let pv = noir::decode_public_inputs(&inputs).map_err(|e| bad(e.to_string()))?;
+    let unprocessable = |m: String| AppError(StatusCode::UNPROCESSABLE_ENTITY, m);
+    if pv.subject != session.bound_address {
+        return Err(unprocessable(format!("proof subject {} is not the session address {}", pv.subject, session.bound_address)));
+    }
+    if pv.nonce.0 != session.nonce {
+        return Err(unprocessable(format!("proof nonce {} is not the session nonce 0x{}", pv.nonce, session.nonce_hex)));
+    }
+    if pv.over18 != 1 {
+        return Err(unprocessable("proof does not assert over18".into()));
+    }
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+    if pv.expiry <= now {
+        return Err(unprocessable(format!("credential expiry {} is in the past", pv.expiry)));
+    }
+
+    let bits = noir::bits_of(&pv);
+    let decision = chain::decision(st.cfg.policy_id, bits, body.tier.unwrap_or(1), pv.expiry, id);
+    let registry_inputs = chain::public_inputs(session.bound_address, st.cfg.policy_id, bits, pv.expiry);
+    let proof_arg = noir::encode_proof_arg(&proof, &inputs);
+    let decoded = crate::session::DecodedPublicValues {
+        issuer_key_hash: format!("{}", pv.issuer_key_hash),
+        vct_hash: format!("0x{}", hex::encode(<sha2::Sha256 as sha2::Digest>::digest(st.cfg.expected_vct.as_bytes()))),
+        over18: pv.over18,
+        subject: pv.subject,
+        expiry: pv.expiry,
+        nonce: format!("{}", pv.nonce),
+    };
+    with_session(&st, id, |s| {
+        s.public_values = Some(noir::public_inputs_bytes(&inputs));
+        s.decoded = Some(decoded);
+        s.proof_system = Some("noir-ultrahonk".into());
+        s.proof_bytes = Some(proof_arg.to_vec());
+        s.vkey = None;
+        s.error = None;
+        s.set_state(State::Proved);
+    })?;
+
+    // Optional dry run against the verifier: a bad proof is a 422 with the typed reason, not a failed tx.
+    if let Some(verifier) = st.cfg.noir_verifier {
+        if let Err(e) = ch.noir_verify(verifier, proof_arg.clone(), registry_inputs.clone()).await {
+            let _ = with_session(&st, id, |s| s.error = Some(e.to_string()));
+            return Err(unprocessable(e.to_string()));
+        }
+    }
+
+    let calldata_summary = json!({
+        "subject": session.bound_address,
+        "decision": { "policyId": decision.policyId, "bits": format!("0x{:x}", decision.bits), "tier": decision.tier,
+                      "expiry": decision.expiry, "statusRef": decision.statusRef, "revoked": false },
+        "proof_len": proof_arg.len(),
+        "honk_proof_len": proof.len(),
+        "honk_public_inputs": inputs.len(),
+        "publicInputs": registry_inputs,
+    });
+    let (tx, ev) = ch
+        .attest_with_proof(session.bound_address, decision, proof_arg, registry_inputs)
+        .await
+        .map_err(|e| {
+            let _ = with_session(&st, id, |s| s.error = Some(e.to_string()));
+            AppError(StatusCode::BAD_GATEWAY, e.to_string())
+        })?;
+    with_session(&st, id, |s| {
+        s.tx_hash = Some(tx);
+        s.attested = Some(ev.clone());
+        s.error = None;
+        s.set_state(State::Attested);
+    })?;
+    Ok(Json(json!({
+        "session_id": id,
+        "status": "attested",
+        "path": "noir",
+        "tx_hash": tx,
+        "attested": ev,
+        "public_values": {
+            "subject": pv.subject, "issuer_key_hash": pv.issuer_key_hash, "over18": pv.over18,
+            "expiry": pv.expiry, "nonce": pv.nonce,
+        },
+        "call": calldata_summary,
+    })))
 }
 
 async fn attest_operator(

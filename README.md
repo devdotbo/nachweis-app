@@ -38,6 +38,7 @@ ETHOnline 2026 submission, Continuity entry. Pre-existing work is listed in [DIS
 - `prover-sp1/`: SP1 guest program and host for the PID statement, Groth16 fixture, measurements in `NOTES.md`.
 - `circuits/`: Noir circuit `pid-sdjwt` for the same statement, adapted from eid-privacy's swiyu circuit (`circuits/pid-sdjwt/ADAPTATION.md`), witness generator, negative tests.
 - `service/`: Rust bridge (axum, alloy, sp1-sdk). Sessions, wallet address proof, native statement check, prover, `attestWithProof` and `revoke` with the operator key. See `service/README.md`.
+- `companion/`: desktop companion prover (bun CLI): picks up the blind-relayed, encrypted wallet response, decrypts and proves the PID statement locally with `circuits/pid-sdjwt`, submits the proof to the bridge (`POST /sessions/:id/noir-proof`) or the chain; the verifier and the bridge never see the presentation. See `companion/README.md`.
 - `app/`: Vite and React front end, investor and issuer screens, mock mode for a chain-free run. See `app/README.md`.
 - `docs/`: `demo-runbook.md` (local sequence and the Sepolia run), `video-shotlist.md` (seven beats).
 - `DISCLOSURE.md`, `FEEDBACK.md` (Uniswap developer feedback), `LICENSE`.
