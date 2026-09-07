@@ -16,13 +16,13 @@ Copied unchanged from `circuits/pid-sdjwt/out/adapted/` after running the comman
 
 | file | bytes | sha256 |
 | --- | --- | --- |
-| proof.bin | 10,304 | ff6ce14bb72d23a03bc4a5884c95d84a29b912bd7a49b02dcf6d651ea56e726b |
-| public_inputs.bin | 2,752 (86 x 32) | f5daf701b996dc75d5a67378d9c1874228f7872971961c571e4cd9cf0aeaf100 |
-| vk_hash.bin | 32 | b6b2f964c0917099314db5c847d50726fe2ca469f370054e48d2e307031cd095 |
+| proof.bin | 10,304 | 413f7f15199afacdf300f87f340e5bac262e132de6d07a14af85c6322676d3ff |
+| public_inputs.bin | 2,752 (86 x 32) | 9101bff93b853218615932f8de311b9e3a878a62d374eec28b429663f706b805 |
+| vk_hash.bin | 32 | c0d55f4d9db7450193c148e65ab8e71e8ba8685ee558e1462c592d0f300e5018 |
 
 `vk_hash.bin` must equal the `VK_HASH` constant in `contracts/src/noir/PidSdJwtUltraHonkVerifier.sol`
-(0x088cdfce...1e47); the test asserts this. Decoded public inputs: subject
-0xcf02ad5376095e285fc88ae8c1fa240791370c17, issuer_key_hash
-0x841e741b14eacdfdeca2e96fd95af5b987b5b872f88f8e359df29f7635556656, over18 1, expiry 1780435560
-(2026-06-02), nonce 0xe6de79975a3b30ad89d7af4e44fcdba843df4b70d4b3307e687e5498bbe0a25d. Any change to
+(0x096a8d35...ee14); the test asserts this. Decoded public inputs: subject
+0xf99edde971f4e9c88715a79ca78963284a2955dc, issuer_key_hash
+0x78cf23963b47d3e393c79ea091c4ed80ebbae4ff78992058dd92fd34e1635183, over18 1, expiry 1819756800
+(issuer credential exp, 2027-09-01), nonce 0x306863157ddb59f4e5a56f41aa8591e68b574c8c3475c43d9bd469220be90762. Any change to
 the circuit changes the VK and invalidates all three files together with the generated verifier.
