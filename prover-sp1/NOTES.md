@@ -35,10 +35,29 @@ supports V5.x.y and V6.1.0).
    bytes exactly as given by the server (32 bytes recommended; the guest input carries
    a [u8; 32]). sha256 was chosen over keccak so the hash stays on the SP1 sha2
    precompile; the hex encoding matches the verifier relay branch and the front end.
-7. expiry := min(issuer exp, KB-JWT exp), 0 if neither present. No wall clock in the
-   guest; the contract compares expiry with block.timestamp.
+7. expiry := issuer credential exp, 0 if absent. No wall clock in the guest; the contract
+   compares expiry with block.timestamp. The KB-JWT exp and iat are parsed but not committed.
 Not in the guest (host or contract side): x5c-to-trust-anchor chain (the contract pins
-issuerKeyHash instead), status list, freshness window.
+issuerKeyHash instead), status list, KB-JWT freshness (below).
+
+## Expiry decision (2026-09-07, wp9b)
+The statement used to commit min(issuer exp, KB-JWT exp). Sandbox and ERICA wallets mint
+KB-JWTs with exp = iat + 300 (the recorded ERICA fixture: iat 1780435065, exp 1780435365,
+issuer exp 2095795065), so the on-chain Decision expired five minutes after the presentation
+and Sp1PidVerifier reverted Expired almost immediately. Now both proofs (this guest and the
+Noir circuit) commit the issuer exp only: the credential's lifetime is what the chain should
+enforce. KB-JWT freshness is a property of the presentation and is enforced off chain by the
+host that sees the presentation: `nachweis_pid_lib::check_kb_freshness(&facts, now, window)`
+requires exp in (now, now + window] and iat in [now - window, now + window], both claims
+present. The bridge (service) runs it after the native statement run with KB_JWT_WINDOW_SECS
+(default 600) and rejects with 422 before proving; this host runs it before --execute/--prove
+(--kb-window, --allow-stale-kb for stored fixtures). The guest has no clock, so the KB-JWT
+exp cannot be enforced inside the proof without a public "now" input, which would have to be
+bound by the contract to block.timestamp anyway. What is lost: a proof generated from a
+presentation is no longer self-limiting in time; a relay that verified freshness and then
+submits the proof later is trusted for that step (the registry consumes the nonce once, so
+the same proof cannot be replayed). The verifier-service's own freshness check stays in front
+of the bridge in verifier mode.
 
 ## Public values (alloy sol!, ABI encoded, 192 bytes = 6 words)
 Solidity binding for the contracts team (abi.decode(publicValues, (PublicValues))):
@@ -48,7 +67,7 @@ Solidity binding for the contracts team (abi.decode(publicValues, (PublicValues)
         bytes32 vctHash;        // word 1: sha256("urn:eudi:pid:de:1")
         uint8   over18;         // word 2: 1 or 0
         address subject;        // word 3: bound Ethereum address
-        uint64  expiry;         // word 4: unix seconds, min(issuer exp, KB exp), 0 if none
+        uint64  expiry;         // word 4: unix seconds, issuer credential exp, 0 if none
         bytes32 nonce;          // word 5: sha256(subject || challenge)
     }
 
@@ -62,13 +81,19 @@ Contract call shape: ISP1Verifier(0x397A5f7f3dBd538f23DE225B51f532c34448dA9B)
   and its nonce is a UUID, so it cannot satisfy checks 3 and 6. The shared lib verifies it
   natively (over18=false), which cross-checks the parser, digests, sd_hash and both
   signatures against a real capture.
-- fixtures/synthetic-over18.sdjwt: minted by `--synth --header-from <erica fixture>`:
-  ERICA issuer header copied verbatim (x5c included, for realistic size: issuer JWT 2929
-  chars, presentation 3482 chars), fresh issuer and holder P-256 keys, top level _sd
-  [given_name, family_name, birthdate], nested age_equal_or_over._sd for 12/14/16/18/21/65,
-  presented disclosures given_name, family_name, 18; KB-JWT nonce = hex(sha256(address || challenge))
-  for a random address and challenge. fixtures/v1-b64nonce/ keeps the earlier vector whose nonce
-  was base64url encoded (the first Groth16 run started on it).
+- fixtures/synthetic-over18.sdjwt: minted by `--synth --header-from <erica fixture>`
+  (re-minted 2026-09-07 for the expiry decision): ERICA issuer header copied verbatim (x5c
+  included, for realistic size: issuer JWT 2929 chars, presentation 3510 chars), fresh issuer
+  and holder P-256 keys, issuer iat = mint time, issuer exp = --issuer-exp (default 1819756800,
+  2027-09-01T00:00:00Z, so tests and demos run at real time), top level _sd [given_name,
+  family_name, birthdate], nested age_equal_or_over._sd for 12/14/16/18/21/65, presented
+  disclosures given_name, family_name, 18; KB-JWT iat = mint time, exp = iat + 300 (as the
+  sandbox wallet does, so the stored fixture's KB-JWT is stale: use --allow-stale-kb here and
+  KB_JWT_WINDOW_SECS=0 in the bridge), nonce = hex(sha256(address || challenge)) for a random
+  address and challenge. Fixture facts: issuerKeyHash
+  0x78cf23963b47d3e393c79ea091c4ed80ebbae4ff78992058dd92fd34e1635183, subject
+  0xF99EDdE971F4e9c88715a79CA78963284A2955dC, expiry 1819756800, nonce
+  0x306863157ddb59f4e5a56f41aa8591e68b574c8c3475c43d9bd469220be90762.
 
 ## Reproduce
     export PATH="$HOME/.sp1/bin:$HOME/.cargo/bin:$PATH:/opt/homebrew/bin"
@@ -78,25 +103,31 @@ Contract call shape: ISP1Verifier(0x397A5f7f3dBd538f23DE225B51f532c34448dA9B)
     cargo build --release -p nachweis-pid-script
     B=target/release/nachweis-pid
     $B --check-fixture /Users/bioharz/git/eudi-wallet-hackathon/verifier/fixtures/oracle/erica-vp-VALID.sdjwt
-    $B --synth --out fixtures --header-from /Users/bioharz/git/eudi-wallet-hackathon/verifier/fixtures/oracle/erica-vp-VALID.sdjwt
-    SP1_PROVER=cpu RUST_LOG=info $B --execute --input fixtures/input.json
-    time SP1_PROVER=cpu RUST_LOG=info $B --prove --system compressed --input fixtures/input.json
-    /usr/bin/time -l env SP1_PROVER=cpu RUST_LOG=info $B --prove --system groth16 --input fixtures/input.json
+    $B --synth --out fixtures --header-from /Users/bioharz/git/eudi-wallet-hackathon/verifier/fixtures/oracle/erica-vp-VALID.sdjwt   # [--issuer-exp <unix>]
+    SP1_PROVER=cpu RUST_LOG=info $B --execute --input fixtures/input.json --allow-stale-kb
+    time SP1_PROVER=cpu RUST_LOG=info $B --prove --system compressed --input fixtures/input.json --allow-stale-kb
+    /usr/bin/time -l env SP1_PROVER=cpu RUST_LOG=info $B --prove --system groth16 --input fixtures/input.json --allow-stale-kb
     $B --verify fixtures/proof-groth16.bin
     cargo run --release --bin vkey
 
-## Measured results (this Mac, M3 Max 16 cores, 128 GB, 2026-09-07)
-- execute: 430,143 cycles, 1,750 syscalls (final hex-nonce vector; 424,513 on the base64 one)
-- compressed, SP1_PROVER=cpu: 59.0 s prove, 70.2 s real incl. setup, 574 s user, peak RSS 28.3 GB
-- groth16 native (sp1-sdk native-gnark, Go 1.27, arm64, no Docker): 263.8 s prove, 274.6 s real,
-  peak RSS 31.4 GB; stages core ~55 s, shrink 4 s, wrap ~145 s, gnark prover 17.4 s
-  (15,972,262 constraints, bn254). First run took 2641.8 s because it downloaded the 6.2 GB
-  v6.1.0 groth16 artifacts to ~/.sp1/circuits/groth16/v6.1.0 (7.8 GB extracted), one time.
+## Measured results (this Mac, M3 Max 16 cores, 128 GB, 2026-09-07, issuer-exp statement)
+- execute: 434,181 cycles, 1,781 syscalls (430,143 / 1,750 with the earlier min-exp statement
+  on the previous vector; 424,513 on the base64 one)
+- compressed, SP1_PROVER=cpu: 50.5 s prove, 60.3 s real incl. setup, 600 s user, peak RSS 26.1 GB
+  (earlier statement: 59.0 s / 70.2 s / 28.3 GB)
+- groth16 native (sp1-sdk native-gnark, Go 1.27, arm64, no Docker): 269.6 s prove, 279.5 s real,
+  2818 s user, peak RSS 32.4 GB (earlier statement: 263.8 s / 274.6 s / 31.4 GB); stages core
+  ~55 s, shrink 4 s, wrap ~145 s, gnark prover ~17 s (15,972,262 constraints, bn254). The first
+  ever run took 2641.8 s because it downloaded the 6.2 GB v6.1.0 groth16 artifacts to
+  ~/.sp1/circuits/groth16/v6.1.0 (7.8 GB extracted), one time.
 - Docker (amd64 sp1-gnark:v6.1.0) was pulled but not needed; not exercised.
-- vkey 0x00b092add2a7d3fffa027c1178c7b0d77155f3c9e078925928fcfce4b39a4cc9 (fixtures/vkey.txt)
+- vkey 0x00cc4d3b31d47abf4e069acd7e90fb0efec8aef32da11c78a2eaf01c5552f71f (fixtures/vkey.txt);
+  the earlier min-exp statement had 0x00b092add2a7d3fffa027c1178c7b0d77155f3c9e078925928fcfce4b39a4cc9
 - proof bytes 356 = 4-byte selector 0x4388a21c + Groth16 proof; publicValues 192 bytes
   (fixtures/calldata-groth16.json). Verified locally with sp1-sdk (`--verify`).
 - Sepolia gateway 0x397A5f7f3dBd538f23DE225B51f532c34448dA9B routes(0x4388a21c) =
   0xb69f2584CBcFf99a58C4e7002E8b89Af54a6f4e2, frozen=false; that verifier reports
   VERSION() "v6.1.0" and VERIFIER_HASH() 0x4388a21c687f...ee696 (read-only eth_call via cast,
-  no transaction sent). No deployment done.
+  no transaction sent). No deployment done. Fork test (contracts/test/Sp1PidVerifier.fork.t.sol,
+  2026-09-07, new proof): gateway.verifyProof 225,880 gas (routed V6.1.0 verifier 219,171),
+  registry.attestWithProof through Sp1PidVerifier 335,633 gas, at the real head without vm.warp.
