@@ -46,10 +46,12 @@ fn artifact(name: &str) -> PathBuf {
 }
 
 fn ensure_artifacts() -> bool {
-    if artifact("AttestationRegistry").is_file() && artifact("MockProofVerifier").is_file() {
-        return true;
-    }
-    let Some(forge) = find_bin("forge") else { return false };
+    // Always rebuild when forge is available: the build is incremental and a stale
+    // contracts/out (e.g. after the Noir verifier was regenerated) makes the
+    // NoirPidVerifier dry run fail with 422 instead of a clear error.
+    let Some(forge) = find_bin("forge") else {
+        return artifact("AttestationRegistry").is_file() && artifact("MockProofVerifier").is_file();
+    };
     let status = Command::new(forge)
         .arg("build")
         .current_dir(repo_root().join("contracts"))
