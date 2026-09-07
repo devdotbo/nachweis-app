@@ -1,91 +1,61 @@
-# SP1 Project Template
+# prover-sp1
 
-This is a template for creating an end-to-end [SP1](https://github.com/succinctlabs/sp1) project
-that can generate a proof of any RISC-V program.
+SP1 6.1.0 guest and host for the Nachweis statement: an SD-JWT PID presentation (German EUDI sandbox, `urn:eudi:pid:de:1`) is valid, its holder proved key binding for one Ethereum address, and the credential asserts `age_equal_or_over.18`. The proof goes on chain through `Sp1PidVerifier` (`/contracts`); the bridge (`/service`) runs the same statement natively before proving.
 
-## Requirements
+## Layout
 
-- [Rust](https://rustup.rs/)
-- [SP1](https://docs.succinct.xyz/docs/sp1/getting-started/install)
+- `lib/`: shared verification, runs natively (bridge, host) and in the guest
+- `program/`: SP1 guest, reads `GuestInput`, calls `prove_statement`, commits the ABI-encoded public values
+- `script/`: host binary `nachweis-pid` (`--check-fixture`, `--synth`, `--execute`, `--prove`, `--verify`) and `vkey`
+- `fixtures/`: synthetic vector, `input.json`, proofs, logs, calldata
 
-## Running the Project
+## What the statement proves
 
-There are 3 main ways to run this project: execute a program, generate a core proof, and
-generate an EVM-compatible proof.
+All checks are asserts in the guest; any failure aborts the proof.
 
-### Build the Program
+1. Issuer JWT: ES256 signature verifies under the private-input issuer key; `vct` matches; `_sd_alg` is sha-256.
+2. Every presented disclosure hashes into a signed `_sd` array (top level or nested through an accepted disclosure).
+3. `over18` is true iff the `age_equal_or_over` object carries a disclosure `"18": true` anchored in its `_sd`.
+4. Holder key from `cnf.jwk` (P-256); KB-JWT ES256 signature verifies, `typ kb+jwt`.
+5. KB-JWT `aud` matches; `sd_hash` equals `base64url(sha256("issuerJwt~d1~...~dN~"))`.
+6. KB-JWT `nonce` equals lowercase hex of `sha256(subject || challenge)`: the presentation is bound to the address.
+7. `expiry` is the issuer credential `exp` (0 if absent). The guest has no clock; the contract compares it with `block.timestamp`.
 
-The program is automatically built through `script/build.rs` when the script is built.
+Not in the guest: x5c chain to a trust anchor (the contract pins `issuerKeyHash`), status list, KB-JWT freshness (checked by the host and the bridge). Full text in `NOTES.md`, "Statement proved".
 
-### Execute the Program
+## Public values
 
-To run the program without generating a proof:
+ABI encoded, 192 bytes, decoded by `Sp1PidVerifier` as
 
-```sh
-cd script
-cargo run --release -- --execute
-```
+    struct PublicValues {
+        bytes32 issuerKeyHash;  // sha256(issuer P-256 key, SEC1 uncompressed, 65 bytes)
+        bytes32 vctHash;        // sha256("urn:eudi:pid:de:1")
+        uint8   over18;         // 1 or 0
+        address subject;        // bound Ethereum address
+        uint64  expiry;         // unix seconds, issuer credential exp, 0 if none
+        bytes32 nonce;          // sha256(subject || challenge)
+    }
 
-This will execute the program and display the output.
+## Commands
 
-### Generate an SP1 Core Proof
+    export PATH="$HOME/.sp1/bin:$HOME/.cargo/bin:$PATH"
+    sp1up -v v6.1.0 && cargo prove --version
+    cd prover-sp1
+    (cd program && cargo prove build)
+    cargo build --release -p nachweis-pid-script
+    B=target/release/nachweis-pid
+    SP1_PROVER=cpu RUST_LOG=info $B --execute --input fixtures/input.json --allow-stale-kb
+    SP1_PROVER=cpu RUST_LOG=info $B --prove --system compressed --input fixtures/input.json --allow-stale-kb
+    SP1_PROVER=cpu RUST_LOG=info $B --prove --system groth16 --input fixtures/input.json --allow-stale-kb
+    $B --verify fixtures/proof-groth16.bin
+    cargo run --release --bin vkey        # programVKey for Sp1PidVerifier, also in fixtures/vkey.txt
 
-To generate an SP1 [core proof](https://docs.succinct.xyz/docs/next/sp1/generating-proofs/proof-types#core-default) for your program:
+`--check-fixture <sdjwt>` runs the statement natively on a presentation; `--synth --out fixtures --header-from <sdjwt> [--issuer-exp <unix>]` mints the synthetic vector. The first Groth16 proof downloads the SP1 circuit artifacts (about 6 GB) to `~/.sp1/circuits/groth16/v6.1.0`.
 
-```sh
-cd script
-cargo run --release -- --prove
-```
+## Fixture caveat
 
-### Generate an EVM-Compatible Proof
+The synthetic fixture in `fixtures/` (`synthetic-over18.sdjwt`, `input.json`) carries ERICA's `x5c` chain in the issuer JWT header but is signed with a fresh issuer key (`issuer_key_sec1_hex` in `input.json`), so the bridge (`service`) must be given that key via `ISSUER_KEY_SEC1_HEX` for the fixture, while a real ERICA credential needs no override because the key is taken from the `x5c` leaf certificate. Its KB-JWT expired five minutes after minting (exp = iat + 300, as the sandbox wallet does): the host needs `--allow-stale-kb` for `--execute`/`--prove` and the bridge `KB_JWT_WINDOW_SECS=0`. The committed `expiry` is the issuer credential `exp` (1819756800, 2027-09-01); see `NOTES.md`, "Expiry decision".
 
-> [!WARNING]
-> You will need at least 16GB RAM to generate a Groth16 or PLONK proof. View the [SP1 docs](https://docs.succinct.xyz/docs/next/sp1/getting-started/hardware-requirements#local-proving) for more information.
+## Measurements
 
-Generating a proof that is cheap to verify on the EVM (e.g. Groth16 or PLONK) is more intensive than generating a core proof.
-
-To generate a Groth16 proof:
-
-```sh
-cd script
-cargo run --release --bin evm -- --system groth16
-```
-
-To generate a PLONK proof:
-
-```sh
-cargo run --release --bin evm -- --system plonk
-```
-
-These commands will also generate fixtures that can be used to test the verification of SP1 proofs
-inside Solidity.
-
-Fixture caveat: the synthetic fixture in `fixtures/` (`synthetic-over18.sdjwt`, `input.json`) carries ERICA's `x5c` chain in the issuer JWT header but is signed with a fresh issuer key (`issuer_key_sec1_hex` in `input.json`), so the bridge (`service`) must be given that key via `ISSUER_KEY_SEC1_HEX` for the fixture, while a real ERICA credential needs no override because the key is taken from the `x5c` leaf certificate. Its KB-JWT expired five minutes after minting (exp = iat + 300, as the sandbox wallet does): the host needs `--allow-stale-kb` for `--execute`/`--prove` and the bridge `KB_JWT_WINDOW_SECS=0`. The committed `expiry` is the issuer credential `exp` (1819756800, 2027-09-01); see `NOTES.md`, "Expiry decision".
-
-### Retrieve the Verification Key
-
-To retrieve your `programVKey` for your on-chain contract, run the following command in `script`:
-
-```sh
-cargo run --release --bin vkey
-```
-
-## Using the Prover Network
-
-We highly recommend using the Succinct Prover Network for any non-trivial programs or benchmarking purposes. For more information, see the [quickstart guide](https://docs.succinct.xyz/docs/next/sp1/prover-network/quickstart).
-
-To get started, copy the example environment file:
-
-```sh
-cp .env.example .env
-```
-
-Then, set the `SP1_PROVER` environment variable to `network` and set the `NETWORK_PRIVATE_KEY`
-environment variable to your whitelisted private key.
-
-For example, to generate an EVM-compatible proof using the prover network, run the following
-command:
-
-```sh
-SP1_PROVER=network NETWORK_PRIVATE_KEY=... cargo run --release --bin evm
-```
+Cycle counts, proving times, memory and the vkey are in `NOTES.md`, "Measured results".

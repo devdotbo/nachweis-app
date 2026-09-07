@@ -10,16 +10,16 @@ supports V5.x.y and V6.1.0).
 - sp1-sdk, sp1-zkvm, sp1-build, sp1-lib, sp1-primitives all pinned "=6.1.0"
   (semver ^6 otherwise pulls 6.7.0 and the guest link fails with undefined `syscall_halt`;
   the host fails in sp1-recursion-machine against sp1-hypercube 6.7.0).
-- Patched crates ([patch.crates-io] in nachweis-pid/Cargo.toml):
+- Patched crates ([patch.crates-io] in prover-sp1/Cargo.toml):
   p256 tag patch-p256-13.2-sp1-6.0.0, sha2 tag patch-sha2-0.10.9-sp1-6.0.0.
 - serde_json (alloc), base64 0.22, alloy-sol-types 1.x compile unchanged in the guest.
 - Host: rustc 1.92, Go 1.27 (for sp1-sdk feature native-gnark), Docker Desktop 29.6.2.
 
 ## Layout
-- nachweis-pid/lib      shared verification (runs natively and in the guest)
-- nachweis-pid/program  SP1 guest: reads GuestInput, calls prove_statement, commits ABI bytes
-- nachweis-pid/script   host: --check-fixture, --synth, --execute, --prove, --verify
-- nachweis-pid/fixtures synthetic vector, input.json, proofs, logs, calldata
+- prover-sp1/lib      shared verification (runs natively and in the guest)
+- prover-sp1/program  SP1 guest: reads GuestInput, calls prove_statement, commits ABI bytes
+- prover-sp1/script   host: --check-fixture, --synth, --execute, --prove, --verify
+- prover-sp1/fixtures synthetic vector, input.json, proofs, logs, calldata
 
 ## Statement proved (guest, all checks are asserts, any failure aborts the proof)
 1. issuer JWT: alg ES256, signature over `header.payload` verifies under the private
@@ -98,7 +98,7 @@ Contract call shape: ISP1Verifier(0x397A5f7f3dBd538f23DE225B51f532c34448dA9B)
 ## Reproduce
     export PATH="$HOME/.sp1/bin:$HOME/.cargo/bin:$PATH:/opt/homebrew/bin"
     sp1up -v v6.1.0 && cargo prove --version
-    cd /Users/bioharz/git/nachweis-sp1-spike/nachweis-pid
+    cd prover-sp1                      # this directory, in the nachweis repository
     (cd program && cargo prove build)
     cargo build --release -p nachweis-pid-script
     B=target/release/nachweis-pid
