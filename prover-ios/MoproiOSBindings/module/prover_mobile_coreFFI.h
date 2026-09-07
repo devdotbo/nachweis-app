@@ -255,7 +255,12 @@ RustBuffer uniffi_prover_mobile_core_fn_func_compute_verification_key(RustBuffer
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_PROVER_MOBILE_CORE_FN_FUNC_DERIVE_INPUTS
 #define UNIFFI_FFIDEF_UNIFFI_PROVER_MOBILE_CORE_FN_FUNC_DERIVE_INPUTS
-RustBuffer uniffi_prover_mobile_core_fn_func_derive_inputs(RustBuffer presentation, RustBuffer issuer_key_sec1_hex, RustBuffer bound_address_hex, RustBuffer challenge_hex, RustCallStatus *_Nonnull out_status
+RustBuffer uniffi_prover_mobile_core_fn_func_derive_inputs(RustBuffer circuit_json_path, RustBuffer presentation, RustBuffer issuer_key_sec1_hex, RustBuffer bound_address_hex, RustBuffer challenge_hex, RustBuffer expected_aud, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_PROVER_MOBILE_CORE_FN_FUNC_DERIVE_PROVER_INPUTS
+#define UNIFFI_FFIDEF_UNIFFI_PROVER_MOBILE_CORE_FN_FUNC_DERIVE_PROVER_INPUTS
+RustBuffer uniffi_prover_mobile_core_fn_func_derive_prover_inputs(RustBuffer presentation, RustBuffer bound_address, RustBuffer challenge_hex, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_PROVER_MOBILE_CORE_FN_FUNC_PROVE
@@ -548,6 +553,12 @@ uint16_t uniffi_prover_mobile_core_checksum_func_compute_verification_key(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_PROVER_MOBILE_CORE_CHECKSUM_FUNC_DERIVE_INPUTS
 #define UNIFFI_FFIDEF_UNIFFI_PROVER_MOBILE_CORE_CHECKSUM_FUNC_DERIVE_INPUTS
 uint16_t uniffi_prover_mobile_core_checksum_func_derive_inputs(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_PROVER_MOBILE_CORE_CHECKSUM_FUNC_DERIVE_PROVER_INPUTS
+#define UNIFFI_FFIDEF_UNIFFI_PROVER_MOBILE_CORE_CHECKSUM_FUNC_DERIVE_PROVER_INPUTS
+uint16_t uniffi_prover_mobile_core_checksum_func_derive_prover_inputs(void
     
 );
 #endif

@@ -58,11 +58,22 @@ branch appears is a rename. Differences from noir-rs main:
 
 ## Verified on the desktop (M3 Max, 2026-09-07)
 
-`cargo test --release --test prove_desktop`: the core solves the fixture
-witness (293 ms), proves with the keccak/ZK settings (3.7 s in bb, 5.1 s
-total, 2.13 GB peak RSS), the 86 public inputs are byte-identical to the
-desktop `bb prove -t evm` output, and `bb verify -k out/adapted/vk ... -t evm`
-accepts the core's proof (10,304 bytes). See `tests/prove_desktop.rs`.
+`cargo test --release --test prove_desktop` on the WP13 circuit
+(realistic vector, circuit_size 1,038,584, VK hash 0x24a16511...): the core
+solves the witness (509 ms), proves with the keccak/ZK settings (3.7 s in bb,
+6.0 s total, 2.43 GB peak RSS), the 86 public inputs are byte-identical to
+the desktop `bb prove -t evm` output, and `bb verify -k out/adapted/vk ...
+-t evm` accepts the core's proof (10,304 bytes). See `tests/prove_desktop.rs`.
+(Pre-WP13 circuit, same day: 293 ms, 5.1 s, 2.13 GB, also verified.)
+
+## Circuit revisions
+
+The derivation (`src/inputs.rs`) is the port of `circuits/tools/gen-prover.ts`
+at WP13 (three age shapes, KB header as input, aud pinned to the registered
+client_id). BoundedVec capacities and the witness order are read from the
+artifact ABI, so bound changes need no code change; a new or renamed input
+parameter fails loudly in `to_flat_witness` and needs a port of the new
+gen-prover.ts logic plus the parity test against the new committed Prover.toml.
 
 ## Versions in one place
 

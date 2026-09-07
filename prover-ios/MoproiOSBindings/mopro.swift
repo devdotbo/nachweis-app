@@ -613,6 +613,10 @@ public struct DerivedInputs: Equatable, Hashable {
     public var nonceHex: String
     public var subjectHex: String
     /**
+     * The issuer key actually used (SEC1 hex), for display when it came from x5c.
+     */
+    public var issuerKeySec1Hex: String
+    /**
      * 86 public inputs, 32-byte big-endian each, hex without 0x.
      */
     public var publicInputsHex: [String]
@@ -620,6 +624,9 @@ public struct DerivedInputs: Equatable, Hashable {
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
     public init(proverToml: String, witness: [String], issuerKeyHashHex: String, over18: UInt8, expiry: UInt64, nonceHex: String, subjectHex: String, 
+        /**
+         * The issuer key actually used (SEC1 hex), for display when it came from x5c.
+         */issuerKeySec1Hex: String, 
         /**
          * 86 public inputs, 32-byte big-endian each, hex without 0x.
          */publicInputsHex: [String]) {
@@ -630,6 +637,7 @@ public struct DerivedInputs: Equatable, Hashable {
         self.expiry = expiry
         self.nonceHex = nonceHex
         self.subjectHex = subjectHex
+        self.issuerKeySec1Hex = issuerKeySec1Hex
         self.publicInputsHex = publicInputsHex
     }
 
@@ -656,6 +664,7 @@ public struct FfiConverterTypeDerivedInputs: FfiConverterRustBuffer {
                 expiry: FfiConverterUInt64.read(from: &buf), 
                 nonceHex: FfiConverterString.read(from: &buf), 
                 subjectHex: FfiConverterString.read(from: &buf), 
+                issuerKeySec1Hex: FfiConverterString.read(from: &buf), 
                 publicInputsHex: FfiConverterSequenceString.read(from: &buf)
         )
     }
@@ -668,6 +677,7 @@ public struct FfiConverterTypeDerivedInputs: FfiConverterRustBuffer {
         FfiConverterUInt64.write(value.expiry, into: &buf)
         FfiConverterString.write(value.nonceHex, into: &buf)
         FfiConverterString.write(value.subjectHex, into: &buf)
+        FfiConverterString.write(value.issuerKeySec1Hex, into: &buf)
         FfiConverterSequenceString.write(value.publicInputsHex, into: &buf)
     }
 }
@@ -930,13 +940,36 @@ public func computeVerificationKey(circuitJsonPath: String, srsPath: String, onC
     )
 })
 }
-public func deriveInputs(presentation: String, issuerKeySec1Hex: String, boundAddressHex: String, challengeHex: String)throws  -> DerivedInputs  {
+/**
+ * `circuit_json_path`: the bundled artifact; its ABI gives the BoundedVec
+ * capacities and the witness order. `issuer_key_sec1_hex` empty: from the
+ * x5c leaf. `expected_aud` empty: `PINNED_AUD`.
+ */
+public func deriveInputs(circuitJsonPath: String, presentation: String, issuerKeySec1Hex: String, boundAddressHex: String, challengeHex: String, expectedAud: String)throws  -> DerivedInputs  {
     return try  FfiConverterTypeDerivedInputs_lift(try rustCallWithError(FfiConverterTypeCoreError_lift) {
         uniffiCallStatus in
     uniffi_prover_mobile_core_fn_func_derive_inputs(
+        FfiConverterString.lower(circuitJsonPath),
         FfiConverterString.lower(presentation),
         FfiConverterString.lower(issuerKeySec1Hex),
         FfiConverterString.lower(boundAddressHex),
+        FfiConverterString.lower(challengeHex),
+        FfiConverterString.lower(expectedAud),uniffiCallStatus
+    )
+})
+}
+/**
+ * Prover.toml text for the presentation, as `circuits/tools/gen-prover.ts`
+ * writes it (issuer key from the x5c leaf, aud = the pinned client_id,
+ * bounds = the WP13 circuit). The minimal entry point agreed with the
+ * Android side; `derive_inputs` below returns the witness as well.
+ */
+public func deriveProverInputs(presentation: String, boundAddress: String, challengeHex: String)throws  -> String  {
+    return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeCoreError_lift) {
+        uniffiCallStatus in
+    uniffi_prover_mobile_core_fn_func_derive_prover_inputs(
+        FfiConverterString.lower(presentation),
+        FfiConverterString.lower(boundAddress),
         FfiConverterString.lower(challengeHex),uniffiCallStatus
     )
 })
@@ -1003,7 +1036,10 @@ private let initializationResult: InitializationResult = {
     if (uniffi_prover_mobile_core_checksum_func_compute_verification_key() != 62059) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_prover_mobile_core_checksum_func_derive_inputs() != 32658) {
+    if (uniffi_prover_mobile_core_checksum_func_derive_inputs() != 30855) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_prover_mobile_core_checksum_func_derive_prover_inputs() != 26710) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_prover_mobile_core_checksum_func_prove() != 63186) {

@@ -24,7 +24,7 @@ fn core_proof_matches_bb_evm_target() {
     }
     let circuit = root().join("circuits/pid-sdjwt/target/pid_sdjwt.json");
     let input: ProverInput =
-        serde_json::from_str(&std::fs::read_to_string(root().join("prover-sp1/fixtures/input.json")).unwrap()).unwrap();
+        serde_json::from_str(&std::fs::read_to_string(root().join("prover-sp1/fixtures/realistic-input.json")).unwrap()).unwrap();
     let ci = derive(&input).unwrap();
     let vk = std::fs::read(&vk_path).unwrap();
 

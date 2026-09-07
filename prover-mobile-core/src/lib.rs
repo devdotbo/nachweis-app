@@ -5,7 +5,7 @@ pub mod inputs;
 #[cfg(feature = "noir")]
 pub mod noir;
 
-pub use inputs::{derive, derive_with_bounds, issuer_key_from_x5c, Bounds, CircuitInputs, ExpectedOutputs, ProverInput};
+pub use inputs::{derive, derive_with_bounds, issuer_key_from_x5c, AgeShape, Bounds, CircuitInputs, ExpectedOutputs, ProverInput, PINNED_AUD};
 
 #[derive(Debug, thiserror::Error)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Error))]
@@ -60,9 +60,25 @@ pub struct DerivedInputs {
     pub public_inputs_hex: Vec<String>,
 }
 
+/// Prover.toml text for the presentation, as `circuits/tools/gen-prover.ts`
+/// writes it (issuer key from the x5c leaf, aud = the pinned client_id,
+/// bounds = the WP13 circuit). The minimal entry point agreed with the
+/// Android side; `derive_inputs` below returns the witness as well.
+#[cfg_attr(feature = "uniffi", uniffi::export)]
+pub fn derive_prover_inputs(presentation: String, bound_address: String, challenge_hex: String) -> Result<String, CoreError> {
+    let ci = derive(&ProverInput {
+        presentation,
+        issuer_key_sec1_hex: String::new(),
+        bound_address_hex: bound_address,
+        challenge_hex,
+        expected_aud: None,
+    })?;
+    Ok(ci.to_prover_toml())
+}
+
 /// `circuit_json_path`: the bundled artifact; its ABI gives the BoundedVec
 /// capacities and the witness order. `issuer_key_sec1_hex` empty: from the
-/// x5c leaf. `expected_aud` empty: the circuit default.
+/// x5c leaf. `expected_aud` empty: `PINNED_AUD`.
 #[cfg_attr(feature = "uniffi", uniffi::export)]
 pub fn derive_inputs(
     circuit_json_path: String,

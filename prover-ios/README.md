@@ -21,9 +21,9 @@ NachweisProver/                 the app
   Bridge/BridgeClient.swift     POST /sessions, GET /sessions/:id, POST /sessions/:id/noir-proof
   Prover/ProverEngine.swift     calls the core, timing, phys_footprint sampling
   Views/ContentView.swift       the five screens, QR code, log
-  Resources/pid_sdjwt.json      nargo artifact (beta.21), 2.2 MB
-  Resources/vk_keccak.bin       desktop `bb write_vk -t evm` output, 1,888 B
-  Resources/test_input.json     prover-sp1/fixtures/input.json (synthetic PID, test issuer key)
+  Resources/pid_sdjwt.json      nargo artifact (beta.21, WP13 circuit), 3.9 MB
+  Resources/vk_keccak.bin       desktop `bb write_vk -t evm` output, 1,888 B (VK hash 0x24a16511...)
+  Resources/test_input.json     prover-sp1/fixtures/realistic-input.json (23-claim PID, test issuer x5c)
   Resources/bn254_g1.dat        SRS, 2^20 + 1 points, 64 MB (gitignored; scripts/fetch-srs.sh)
 NachweisProverTests/            input derivation parity with gen-prover.ts, JWE tests
 MoproiOSBindings/               mopro.swift + module shim (committed), xcframework (gitignored)
