@@ -106,21 +106,20 @@ trap cleanup EXIT
 stop_previous
 RPC_URL=""; VERIFIER_URL=""; BRIDGE_URL=""; REGISTRY=""; TOKEN=""; SUBSCRIPTION=""; VERIFIER_CONTRACT=""
 
-# ---------------------------------------------------------------- builds (only what is missing)
-if [ ! -x "$VERIFIER_BIN" ]; then
-  [ -d "$VERIFIER_REPO" ] || die "verifier repo not found at $VERIFIER_REPO (set VERIFIER_REPO)"
-  mark build "verifier-service (cargo build --release)"
-  (cd "$VERIFIER_REPO" && cargo build --release -p verifier-service >"$RUN_DIR/build-verifier.log" 2>&1) || die "verifier build failed, see $RUN_DIR/build-verifier.log"
-fi
+# ---------------------------------------------------------------- builds
+# The bridge and the verifier are always built: cargo is incremental, so an up-to-date binary costs
+# a second, and a stale release binary silently runs yesterday's code (seen 2026-09-08 after WP16).
+# The guest ELF and the contracts are built only when missing (slow, and rarely touched).
+[ -d "$VERIFIER_REPO" ] || die "verifier repo not found at $VERIFIER_REPO (set VERIFIER_REPO)"
+mark build "verifier-service (cargo build --release)"
+(cd "$VERIFIER_REPO" && cargo build --release -p verifier-service >"$RUN_DIR/build-verifier.log" 2>&1) || die "verifier build failed, see $RUN_DIR/build-verifier.log"
 if [ ! -f "$GUEST_ELF" ]; then
   command -v cargo-prove >/dev/null || die "cargo-prove missing (sp1up), cannot build the guest ELF"
   mark build "guest ELF (cargo prove build)"
   (cd "$ROOT/prover-sp1/program" && cargo prove build >"$RUN_DIR/build-elf.log" 2>&1) || die "guest build failed, see $RUN_DIR/build-elf.log"
 fi
-if [ ! -x "$BRIDGE_BIN" ]; then
-  mark build "bridge (cargo build --release)"
-  (cd "$ROOT/service" && cargo build --release >"$RUN_DIR/build-bridge.log" 2>&1) || die "bridge build failed, see $RUN_DIR/build-bridge.log"
-fi
+mark build "bridge (cargo build --release)"
+(cd "$ROOT/service" && cargo build --release >"$RUN_DIR/build-bridge.log" 2>&1) || die "bridge build failed, see $RUN_DIR/build-bridge.log"
 if [ ! -d "$ROOT/contracts/out" ]; then
   mark build "contracts (forge build)"
   (cd "$ROOT/contracts" && forge build >"$RUN_DIR/build-forge.log" 2>&1) || die "forge build failed, see $RUN_DIR/build-forge.log"

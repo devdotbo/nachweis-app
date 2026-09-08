@@ -106,7 +106,8 @@ say "AttestationRegistry $REGISTRY, NoirPidVerifier $NOIR_VERIFIER (issuer $ISSU
 # ------------------------------------------------------------------ 3. verifier-service (blind relay)
 VERIFIER_BIN="$VERIFIER_REPO/target/debug/verifier-service"
 [ -x "$VERIFIER_BIN" ] || VERIFIER_BIN="$VERIFIER_REPO/target/release/verifier-service"
-[ -x "$VERIFIER_BIN" ] || { (cd "$VERIFIER_REPO" && cargo build -p verifier-service) || die "verifier-service build failed"; VERIFIER_BIN="$VERIFIER_REPO/target/debug/verifier-service"; }
+# Always build: cargo is incremental, and a stale binary silently runs old code (seen 2026-09-08).
+(cd "$VERIFIER_REPO" && cargo build --release -p verifier-service) || die "verifier-service build failed"; VERIFIER_BIN="$VERIFIER_REPO/target/release/verifier-service"
 (cd "$VERIFIER_REPO" && exec env PORT=$VERIFIER_PORT PUBLIC_URL="$VERIFIER_URL/" "$VERIFIER_BIN" > "$RUN_DIR/verifier.log" 2>&1) & echo $! >> "$PIDS"
 wait_http "$VERIFIER_URL/" 20 || wait_http "$VERIFIER_URL/relay/status/00000000-0000-0000-0000-000000000000" 5 || true
 sleep 0.5
@@ -114,8 +115,7 @@ say "verifier-service (relay) on $VERIFIER_URL"
 
 # ------------------------------------------------------------------ 4. bridge
 BRIDGE_BIN="$ROOT/service/target/release/nachweis-bridge"
-[ -x "$BRIDGE_BIN" ] || BRIDGE_BIN="$ROOT/service/target/debug/nachweis-bridge"
-[ -x "$BRIDGE_BIN" ] || { (cd "$ROOT/service" && cargo build) || die "bridge build failed"; BRIDGE_BIN="$ROOT/service/target/debug/nachweis-bridge"; }
+(cd "$ROOT/service" && cargo build --release) || die "bridge build failed"
 BRIDGE_PID=""
 start_bridge() { # require_address_proof, noir verifier, handoff verifier url, handoff bridge url
   [ -n "$BRIDGE_PID" ] && { kill "$BRIDGE_PID" 2>/dev/null || true; sleep 0.3; }

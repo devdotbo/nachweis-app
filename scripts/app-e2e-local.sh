@@ -120,7 +120,8 @@ fi
 # ------------------------------------------------------------------ 3. verifier-service
 VERIFIER_BIN="$VERIFIER_REPO/target/release/verifier-service"
 [ -x "$VERIFIER_BIN" ] || VERIFIER_BIN="$VERIFIER_REPO/target/debug/verifier-service"
-[ -x "$VERIFIER_BIN" ] || { (cd "$VERIFIER_REPO" && cargo build --release -p verifier-service) || die "verifier-service build failed"; VERIFIER_BIN="$VERIFIER_REPO/target/release/verifier-service"; }
+# Always build: cargo is incremental, and a stale release binary silently runs old code (seen 2026-09-08).
+(cd "$VERIFIER_REPO" && cargo build --release -p verifier-service) || die "verifier-service build failed"; VERIFIER_BIN="$VERIFIER_REPO/target/release/verifier-service"
 (cd "$VERIFIER_REPO" && exec env PORT=$VERIFIER_PORT HOST=127.0.0.1 PUBLIC_URL="$VERIFIER_URL/" RESULT_INCLUDES_PRESENTATION=true "$VERIFIER_BIN" > "$RUN_DIR/verifier.log" 2>&1) & echo $! >> "$PIDS"
 wait_http "$VERIFIER_URL/" 30 || die "verifier-service did not come up ($RUN_DIR/verifier.log)"
 CLIENT_ID=$(grep -m1 'client_id' "$RUN_DIR/verifier.log" | awk '{print $NF}' || true)
@@ -128,8 +129,7 @@ say "verifier-service on $VERIFIER_URL (client_id ${CLIENT_ID:-?})"
 
 # ------------------------------------------------------------------ 4. bridge
 BRIDGE_BIN="$ROOT/service/target/release/nachweis-bridge"
-[ -x "$BRIDGE_BIN" ] || BRIDGE_BIN="$ROOT/service/target/debug/nachweis-bridge"
-[ -x "$BRIDGE_BIN" ] || { (cd "$ROOT/service" && cargo build --release) || die "bridge build failed"; BRIDGE_BIN="$ROOT/service/target/release/nachweis-bridge"; }
+(cd "$ROOT/service" && cargo build --release) || die "bridge build failed"
 BRIDGE_ENV=(BIND="127.0.0.1:$BRIDGE_PORT" RPC_URL="$RPC" OPERATOR_PRIVATE_KEY=$K0 REGISTRY=$REGISTRY POLICY_ID=nachweis.pid.over18.v1
   REQUIRE_ADDRESS_PROOF=true BRIDGE_ISSUER_TOKEN="$ISSUER_TOKEN" RUST_LOG="${RUST_LOG:-info}")
 if [ "$MODE" = noir ]; then
