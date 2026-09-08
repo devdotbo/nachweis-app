@@ -124,3 +124,9 @@ pre.raw{margin:0;padding:14px;background:var(--ink-2);border:1px solid var(--lin
 .step.current{border-color:var(--yellow);color:var(--yellow);box-shadow:0 0 0 3px rgba(255,204,0,.15)}
 .step.failed{border-color:var(--coral);color:var(--coral)}
 .sub{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:.88rem;color:var(--paper-dim)}
+
+/* card 2b: where to prove (browser, phone, companion) */
+.paths{margin-bottom:12px}
+.paths .btn{padding:8px 14px}
+.paths .btn.selected{border-color:var(--yellow);color:var(--yellow);box-shadow:0 0 0 3px rgba(255,204,0,.15)}
+.browser-log{max-height:220px;overflow:auto;font-family:var(--mono);font-size:.72rem;color:var(--paper-dim);background:var(--ink-2);border:1px solid var(--line);border-radius:8px;padding:10px;white-space:pre-wrap;word-break:break-all}

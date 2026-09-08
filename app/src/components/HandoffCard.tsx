@@ -1,16 +1,18 @@
 import QRCode from 'qrcode'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { bridge } from '../bridge'
 import { handoffJson, handoffUri } from '../lib/handoff'
 import { updateSession, type Session } from '../lib/sessions'
 
+export type HandoffVariant = 'phone' | 'companion'
+
 /**
- * Two-device flow. The wallet signed the session in this browser; the phone prover joins the
- * same bridge session and proves there. The QR carries the compact handoff JSON; the URI below
- * it is the same for pasting into the phone app. The phone shows the wallet QR itself; this
- * browser only waits for GET /sessions/:id to flip to attested.
+ * Two-device flow. The wallet signed the session in this browser; the phone prover (or the
+ * desktop companion, `companion handoff`) joins the same bridge session and proves there. The QR
+ * carries the compact handoff JSON; the URI below it is the same for pasting. The other device
+ * shows the wallet QR itself; this browser only waits for GET /sessions/:id to flip to attested.
  */
-export function HandoffCard({ session }: { session?: Session }) {
+export function HandoffCard({ session, variant = 'phone', picker, children }: { session?: Session; variant?: HandoffVariant; picker?: ReactNode; children?: ReactNode }) {
   const [qr, setQr] = useState<string>()
   const [copied, setCopied] = useState(false)
   const handoff = session?.handoff
@@ -66,19 +68,23 @@ export function HandoffCard({ session }: { session?: Session }) {
   return (
     <section className={`card${signed ? '' : ' locked'}`}>
       <h2>
-        <span className="n">2b</span>Prove on your phone
+        <span className="n">2b</span>
+        {variant === 'phone' ? 'Prove on your phone' : 'Prove with the desktop companion'}
       </h2>
+      {picker}
+      {children}
       <p className="lead">
-        Alternative to the QR on the left: the phone app (Nachweis Prover) scans this handoff, requests the presentation from the wallet with the same challenge, proves on the phone and
-        posts only the proof to this session. Your wallet signature above already binds the session to your address; the phone holds no key.
+        {variant === 'phone'
+          ? 'The phone app (Nachweis Prover) scans this handoff, requests the presentation from the wallet with the same challenge, proves on the phone and posts only the proof to this session. Your wallet signature above already binds the session to your address; the phone holds no key.'
+          : 'Paste the handoff URI into the desktop companion (`companion handoff <uri>`): it requests the presentation from the wallet with the same challenge, proves with native bb and posts only the proof to this session. Your wallet signature above already binds the session to your address; the companion holds no Ethereum key.'}
       </p>
       <div className="row">
         {!signed ? <span className="status idle">sign the session first</span> : null}
         {signed && !handoff && !session.handoffError ? <span className="status waiting">fetching handoff</span> : null}
-        {handoff && (!state || state === 'created' || state === 'presented') ? <span className="status waiting">waiting for the phone's proof</span> : null}
+        {handoff && (!state || state === 'created' || state === 'presented') ? <span className="status waiting">{variant === 'phone' ? "waiting for the phone's proof" : "waiting for the companion's proof"}</span> : null}
         {handoff && (state === 'verified' || state === 'proving' || state === 'proved') ? <span className="status waiting">proof received, attesting</span> : null}
         {state === 'attested' || state === 'approved' || state === 'revoked' ? (
-          <span className="status open">{session.bridge?.proofSystem?.startsWith('noir') ? 'attested from the phone' : 'attested without the phone'}</span>
+          <span className="status open">{session.bridge?.proofSystem?.startsWith('noir') ? (variant === 'phone' ? 'attested from the phone' : 'attested from the companion') : 'attested without the phone'}</span>
         ) : null}
         {state === 'failed' ? <span className="status closed">failed</span> : null}
         {handoff ? (
@@ -92,7 +98,7 @@ export function HandoffCard({ session }: { session?: Session }) {
         <div className="qr">
           {qr ? <img src={qr} alt="QR code with the session handoff for the phone prover" /> : <div className="empty">rendering QR</div>}
           <div>
-            <p className="muted">handoff URI (paste into the phone app)</p>
+            <p className="muted">{variant === 'phone' ? 'handoff URI (paste into the phone app)' : 'handoff URI (argument of `companion handoff`)'}</p>
             <code className="link" style={{ display: 'block' }}>
               {uri}
             </code>
