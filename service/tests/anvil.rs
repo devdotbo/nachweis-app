@@ -4,9 +4,10 @@
 //! Skips (passes with a message) when `anvil` is not on PATH or the contracts are not built and
 //! `forge` is unavailable. Never touches a network other than the anvil it starts.
 use alloy::primitives::{keccak256, Address, U256};
+use alloy::providers::Provider;
 use alloy::signers::{local::PrivateKeySigner, Signer};
 use alloy::sol_types::SolValue;
-use nachweis_bridge::chain::{address_proof_message, creation_code_from_artifact, creation_code_linked, status_ref, Chain};
+use nachweis_bridge::chain::{address_proof_message, creation_code_from_artifact, creation_code_linked, decision, decision_bits, status_ref, Chain};
 use nachweis_bridge::prover::ProofMode;
 use nachweis_bridge::{router, AppState, Config};
 use std::net::TcpListener;
@@ -694,4 +695,61 @@ async fn noir_proof_attests_through_noir_pid_verifier_on_anvil() {
     assert_eq!(r.status(), 409);
     let err: serde_json::Value = r.json().await.unwrap();
     assert!(err["error"].as_str().unwrap().contains("address proof required"), "{err}");
+}
+
+/// A send that reverts must not leave the operator's nonce ahead of the chain. With alloy's cached
+/// nonce manager (the `ProviderBuilder::new()` default) the nonce is incremented while the transaction
+/// is prepared, so a revert at gas estimation (here `approve` on a subject without a decision,
+/// `NoDecision`) leaves the cache one ahead; the next transaction is then queued with a nonce gap and
+/// its receipt never arrives (WP24, 2026-09-08: chain nonce 14, revoke queued at 15). The bridge uses
+/// the simple nonce manager, which asks the chain before every send, so both sends below land.
+#[tokio::test(flavor = "multi_thread")]
+async fn reverted_send_does_not_block_the_next_transaction_on_anvil() {
+    let Some(anvil) = find_bin("anvil") else {
+        eprintln!("SKIP: anvil not found on PATH");
+        return;
+    };
+    if !ensure_artifacts() {
+        eprintln!("SKIP: contracts/out artifacts missing and forge unavailable");
+        return;
+    }
+    let port = free_port();
+    let rpc = format!("http://127.0.0.1:{port}");
+    let child = Command::new(anvil)
+        .args(["--port", &port.to_string(), "--silent"])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("spawn anvil");
+    let _guard = AnvilGuard(child);
+    wait_rpc(&rpc).await;
+
+    let policy_id = keccak256(b"nachweis.pid.over18.v1");
+    let mut chain = Chain::connect(&rpc, ANVIL_KEY0, Address::ZERO).await.unwrap();
+    let owner = chain.operator;
+    let reg_code = creation_code_from_artifact(&std::fs::read_to_string(artifact("AttestationRegistry")).unwrap()).unwrap();
+    chain.registry = chain.deploy(&reg_code, &owner.abi_encode()).await.unwrap();
+    chain.set_operator(policy_id, owner, true).await.unwrap();
+    let nonce_before = chain.provider.get_transaction_count(owner).await.unwrap();
+
+    // 1. a send that reverts at gas estimation: the typed error comes back, nothing is mined.
+    let subject = Address::from([0x11; 20]);
+    let err = chain.approve(subject, policy_id).await.unwrap_err();
+    assert!(format!("{err:#}").contains("NoDecision"), "{err:#}");
+    assert_eq!(chain.provider.get_transaction_count(owner).await.unwrap(), nonce_before);
+
+    // 2. the next two sends must land within a few seconds (attest, then revoke, as in the WP24 run).
+    let expiry = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() + 3600;
+    let dec = decision(policy_id, decision_bits(true), 1, expiry, uuid::Uuid::new_v4());
+    let (_, ev) = tokio::time::timeout(Duration::from_secs(10), chain.attest_by_operator(subject, dec))
+        .await
+        .expect("attestByOperator receipt within 10 s after a reverted send")
+        .unwrap();
+    assert_eq!(ev.subject, subject);
+    tokio::time::timeout(Duration::from_secs(10), chain.revoke(subject, policy_id))
+        .await
+        .expect("revoke receipt within 10 s")
+        .unwrap();
+    assert_eq!(chain.provider.get_transaction_count(owner).await.unwrap(), nonce_before + 2);
+    assert!(chain.status_of(subject, policy_id).await.unwrap().revoked);
 }
