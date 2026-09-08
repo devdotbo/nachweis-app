@@ -17,16 +17,17 @@ ETHOnline 2026 submission, Continuity entry. Pre-existing work, event changes to
 3. Her crypto wallet signs a session challenge; the presentation is bound to that address through the KB-JWT nonce.
 4. The names stay with the issuer. A zero-knowledge proof is made of the statement "a PID signed by the pinned issuer key, with holder binding, says over 18, bound to this address".
 5. The proof is submitted to the `AttestationRegistry`; the on-chain verifier checks it.
-6. The registry now holds one record for (address, policy): policy id, predicate bits, tier, expiry, status reference. No name, no document, no string.
-7. Door one: the `FundToken` transfer hook reads that record; she subscribes to the demo fund.
-8. Door two: the Uniswap v4 permissioned pool's allowlist checker reads the same record; she swaps without a second presentation.
-9. The issuer revokes. Both doors refuse the same address in the same block.
-10. What the chain learned: an address holds a decision under a policy, and when it expires. Nothing that finds her.
+6. The registry now holds one record for (address, policy): policy id, predicate bits, tier, expiry, status reference. No name, no document, no string. The doors stay closed: evidence alone is not eligibility.
+7. The issuer approves in a separate step with its operator key (`approve`); `isEligible` requires the evidence and the approval (`docs/spec-issuer-approval.md`).
+8. Door one: the `FundToken` transfer hook reads that record; she subscribes to the demo fund.
+9. Door two: the Uniswap v4 permissioned pool's allowlist checker reads the same record; she swaps without a second presentation.
+10. The issuer revokes. Both doors refuse the same address in the same block.
+11. What the chain learned: an address holds a decision under a policy, and when it expires. Nothing that finds her.
 
 ## Honesty box
 
 - Wallet: the official German EUDI test wallet from the SPRIND sandbox with a sample identity. Not a real state-issued identity. The synthetic fixture used in the tests carries the sandbox issuer's certificate chain but is signed with a fresh issuer key (see `prover-sp1/README.md`).
-- Checks: sanctions, residency and every other issuer check are simulated in this build and labelled as such. The issuer's approval is a separate manual action.
+- Checks: sanctions, residency and every other issuer check are simulated in this build and labelled as such. The issuer's approval is a separate manual action, enforced on chain since 2026-09-08 (`approve` by an operator; a proof alone opens no door).
 - Proof route 1 (SP1 Groth16): the statement runs inside the SP1 zkVM on the issuer's server (`prover-sp1`, driven by `service`), wrapped as Groth16, verified through `Sp1PidVerifier` by the SP1 verifier gateway deployed on Sepolia, exercised so far on a local Sepolia fork (anvil), not on Sepolia itself. The chain does not trust the server, but the server did see the presentation.
 - Proof route 2 (Noir UltraHonk): the same statement as a Noir circuit (`circuits/pid-sdjwt`), proved client-side on a desktop today, verified fully on chain by a bb-generated verifier through `NoirPidVerifier`. On-phone provers exist for Android (emulator) and iOS (simulator) on the same core; physical-device runs are optional and not part of the main path.
 - What neither proof checks: the x5c chain from the issuer certificate to a trust anchor (the contracts pin the issuer key hash instead), the credential status list, and the freshness window of the challenge. Who checks them differs per route. SP1 route in verifier mode: the pre-existing verifier performs trust chain (when anchored), status list (when enabled) and KB-JWT freshness in front of the bridge, and the bridge repeats the freshness check (`KB_JWT_WINDOW_SECS`); both see the plaintext presentation. Noir route: the verifier only relays ciphertext, the bridge receives proof and public inputs and checks no freshness, and the companion's `--kb-window` is the only freshness check; nobody checks trust chain or status list on that route. Local mode: nothing checks them. The proof covers the statement subset only. The route-specific contract is in `docs/trust-boundaries.md`.
