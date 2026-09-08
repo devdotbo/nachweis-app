@@ -8,10 +8,12 @@ import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 export interface StackEnv {
-  mode: 'noir' | 'sp1-mock'
+  mode: 'noir' | 'browser' | 'sp1-mock'
   appUrl: string
   rpcUrl: string
   verifierUrl: string
+  /** The verifier's PUBLIC_URL host when it differs from verifierUrl (scripts/browser-real-wallet-up.sh: the tab posts the relay request locally, request_uri, status and pickup are on the tunnel host). */
+  verifierPublicUrl?: string
   bridgeUrl: string
   registry: string
   fundToken: string
