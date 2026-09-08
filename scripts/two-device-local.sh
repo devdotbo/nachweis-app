@@ -22,9 +22,11 @@
 #             session until attested (--phone-timeout, default 600). In the app: "Load test presentation",
 #             "Derive circuit inputs", "Prove on this device", "Continue to submit", "Submit to bridge".
 # Env: VERIFIER_REPO (default ../nachweis-verifier-relay next to this repo), RUN_DIR (default .e2e/two-device),
-#      ANVIL_PORT 8545, VERIFIER_PORT 8091, BRIDGE_PORT 8788, ANDROID_SERIAL for adb.
+#      ANVIL_PORT 8545, VERIFIER_PORT 8091, BRIDGE_PORT 8788, BRIDGE_ISSUER_TOKEN (default local-issuer-token),
+#      ANDROID_SERIAL for adb.
+# A fresh checkout needs `bun install` in companion/; the script runs it when node_modules is missing.
 # Nothing touches a public chain: every transaction goes to the local anvil.
-set -euo pipefail
+set -eEuo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VERIFIER_REPO="${VERIFIER_REPO:-$(cd "$ROOT/.." && pwd)/nachweis-verifier-relay}"
@@ -38,7 +40,7 @@ while [ $# -gt 0 ]; do
     --keep) KEEP=1; shift ;;
     --phone) PHONE=1; shift ;;
     --phone-timeout) PHONE_TIMEOUT="$2"; shift 2 ;;
-    -h|--help) sed -n '2,26p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,28p' "$0"; exit 0 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
 done
@@ -72,7 +74,15 @@ stop_all() {
 }
 # A previous run of this script (only pids this script wrote).
 stop_all
-trap '[ $KEEP -eq 1 ] || stop_all' EXIT
+# Every non-zero exit names its reason: set -e alone would end the script silently (seen 2026-09-08,
+# when the companion failed without node_modules and its stderr went to /dev/null).
+trap 'echo "FAIL: exit $? at line $LINENO: $BASH_COMMAND" >&2' ERR
+trap 'rc=$?; [ $KEEP -eq 1 ] || stop_all; [ $rc -eq 0 ] || echo "exit $rc; logs in $RUN_DIR" >&2' EXIT
+ensure_bun_deps() { # dir, marker package
+  [ -d "$1/node_modules/$2" ] && return 0
+  say "bun install in $1 (node_modules/$2 missing)"
+  (cd "$1" && bun install --silent) || die "bun install failed in $1; run it by hand and retry"
+}
 
 wait_http() { # url, seconds
   for _ in $(seq 1 $(( $2 * 5 ))); do curl -fs "$1" >/dev/null 2>&1 && return 0; sleep 0.2; done
@@ -88,8 +98,11 @@ for _ in $(seq 1 50); do curl -fs -X POST -H 'content-type: application/json' --
 say "anvil on $RPC"
 
 # ------------------------------------------------------------------ 2. issuer key, contracts
-ISSUER_JSON=$(cd "$ROOT/companion" && bun run src/cli.ts issuer-key "$RUN_DIR/issuer.json" 2>/dev/null)
+ensure_bun_deps "$ROOT/companion" qrcode
+ISSUER_JSON=$(cd "$ROOT/companion" && bun run src/cli.ts issuer-key "$RUN_DIR/issuer.json" 2>"$RUN_DIR/issuer-key.log") \
+  || { tail -20 "$RUN_DIR/issuer-key.log"; die "companion issuer-key failed (see $RUN_DIR/issuer-key.log; bun install in companion/?)"; }
 ISSUER_HASH=$(echo "$ISSUER_JSON" | jq -r .issuer_key_hash)
+[ -n "$ISSUER_HASH" ] && [ "$ISSUER_HASH" != null ] || die "companion issuer-key printed no issuer_key_hash: $ISSUER_JSON"
 say "test issuer key $RUN_DIR/issuer.json, hash $ISSUER_HASH"
 DEPLOY_OUT=$(cd "$ROOT/contracts" && DEPLOYER_PRIVATE_KEY=$K0 POLICY_ID=$POLICY forge script script/Deploy.s.sol:Deploy --rpc-url "$RPC" --broadcast 2>&1) || { echo "$DEPLOY_OUT" | tail -20; die "Deploy.s.sol failed"; }
 REGISTRY=$(echo "$DEPLOY_OUT" | awk '/AttestationRegistry:/ {print $2}' | head -1)
@@ -104,10 +117,10 @@ NOIR_VERIFIER=$(deploy_noir "$ISSUER_HASH")
 say "AttestationRegistry $REGISTRY, NoirPidVerifier $NOIR_VERIFIER (issuer $ISSUER_HASH)"
 
 # ------------------------------------------------------------------ 3. verifier-service (blind relay)
-VERIFIER_BIN="$VERIFIER_REPO/target/debug/verifier-service"
-[ -x "$VERIFIER_BIN" ] || VERIFIER_BIN="$VERIFIER_REPO/target/release/verifier-service"
 # Always build: cargo is incremental, and a stale binary silently runs old code (seen 2026-09-08).
-(cd "$VERIFIER_REPO" && cargo build --release -p verifier-service) || die "verifier-service build failed"; VERIFIER_BIN="$VERIFIER_REPO/target/release/verifier-service"
+[ -d "$VERIFIER_REPO" ] || die "verifier repo not found at $VERIFIER_REPO (set VERIFIER_REPO)"
+VERIFIER_BIN="$VERIFIER_REPO/target/release/verifier-service"
+(cd "$VERIFIER_REPO" && cargo build --release -p verifier-service >"$RUN_DIR/build-verifier.log" 2>&1) || die "verifier-service build failed, see $RUN_DIR/build-verifier.log"
 (cd "$VERIFIER_REPO" && exec env PORT=$VERIFIER_PORT PUBLIC_URL="$VERIFIER_URL/" "$VERIFIER_BIN" > "$RUN_DIR/verifier.log" 2>&1) & echo $! >> "$PIDS"
 wait_http "$VERIFIER_URL/" 20 || wait_http "$VERIFIER_URL/relay/status/00000000-0000-0000-0000-000000000000" 5 || true
 sleep 0.5
@@ -115,7 +128,7 @@ say "verifier-service (relay) on $VERIFIER_URL"
 
 # ------------------------------------------------------------------ 4. bridge
 BRIDGE_BIN="$ROOT/service/target/release/nachweis-bridge"
-(cd "$ROOT/service" && cargo build --release) || die "bridge build failed"
+(cd "$ROOT/service" && cargo build --release >"$RUN_DIR/build-bridge.log" 2>&1) || die "bridge build failed, see $RUN_DIR/build-bridge.log"
 BRIDGE_PID=""
 start_bridge() { # require_address_proof, noir verifier, handoff verifier url, handoff bridge url
   [ -n "$BRIDGE_PID" ] && { kill "$BRIDGE_PID" 2>/dev/null || true; sleep 0.3; }

@@ -59,7 +59,10 @@ answer 409 to the proof unless it runs with `REQUIRE_ADDRESS_PROOF=false`).
     scripts/two-device-local.sh            # companion as the phone
     scripts/two-device-local.sh --phone    # plus the Android emulator (app installed, adb attached)
 
-The script starts anvil (8545), deploys `AttestationRegistry` and a `NoirPidVerifier` pinned to a
+The script builds verifier-service and the bridge (release, every run), runs `bun install` in
+`companion/` when `node_modules` is missing (a fresh checkout), and exits with a `FAIL:` line
+naming the command and line whenever a step fails. It starts anvil (8545; `FAIL` if the port is
+taken, set `ANVIL_PORT`), deploys `AttestationRegistry` and a `NoirPidVerifier` pinned to a
 fresh companion test issuer, starts verifier-service (relay, 8091) and the bridge (8788,
 `REQUIRE_ADDRESS_PROOF=true`, `HANDOFF_VERIFIER_URL`), then plays the browser with curl and
 `cast wallet sign` (anvil key 1 is the investor) and the phone with

@@ -20,9 +20,12 @@ and per-run summaries live in `.e2e/` (gitignored): `anvil.log`, `verifier.log`,
 
 ## What the script does
 
-1. Builds what is missing: `verifier-service` (release, from the relay worktree, `VERIFIER_REPO`,
-   default `../nachweis-verifier-relay`), the guest ELF (`cargo prove build`), the bridge
-   (release), `forge build`, `bun install` for the wallet helper.
+1. Builds `verifier-service` (release, from the relay worktree, `VERIFIER_REPO`, default
+   `../nachweis-verifier-relay`), the bridge (release) and the guest ELF (`cargo prove build`)
+   on every run (cargo is incremental; a stale binary silently runs old code, and a guest ELF
+   from an older `lib.rs` fails execute mode with "guest public values differ from the native
+   run"), and what is missing of `forge build` and `bun install` in `scripts/e2e/` for the
+   wallet helper. A fresh checkout therefore needs no manual install step for this script.
 2. Generates a fresh P-256 issuer key and a self-signed certificate (openssl) and computes
    `sha256(SEC1 uncompressed)` of the key.
 3. Starts `anvil --fork-url <Sepolia>` on a free port with the deterministic default accounts:
@@ -34,9 +37,12 @@ and per-run summaries live in `.e2e/` (gitignored): `anvil.log`, `verifier.log`,
    and `PID_ISSUER_KEY_HASH` = the hash from step 2 (in mock mode a `MockProofVerifier` is
    deployed instead and registered with `setVerifier`).
 5. Starts verifier-service with `PUBLIC_URL=http://127.0.0.1:<port>/`, ephemeral certificate,
-   no trust anchor, and reads its `client_id` from the startup log.
+   no trust anchor, `RESULT_INCLUDES_PRESENTATION=true` and a `RESULT_TOKEN` generated for the
+   run (`openssl rand -hex 16`, never printed; `RESULT_TOKEN` in the environment overrides it),
+   and reads its `client_id` from the startup log.
 6. Starts the bridge in verifier mode (`VERIFIER_URL`, `PROOF_MODE` from `--mode`,
-   `EXPECTED_AUD` = the verifier's `client_id`, `PROVER_ELF`, `SP1_PROVER=cpu` for groth16).
+   `EXPECTED_AUD` = the verifier's `client_id`, `PROVER_ELF`, `SP1_PROVER=cpu` for groth16,
+   `VERIFIER_RESULT_TOKEN` = the same token, `BRIDGE_ISSUER_TOKEN`).
 7. Drives the flow: `POST /sessions` for the investor, `cast wallet sign` of
    `nachweis:session:<id>` and `POST /sessions/:id/address-proof`, then
    `scripts/e2e/wallet.ts` (bun, `jose`) reads the signed request object from the verifier,
@@ -197,6 +203,11 @@ Two attempts before this one did not reach the gateway; neither was a pipeline d
   and approves in one transaction, so the "awaiting approval" assertions are skipped there.
 - The issuer routes (`approve`, `revoke`, `attest-operator`) need `BRIDGE_ISSUER_TOKEN`; the
   scripts pass `local-issuer-token` unless the variable is set.
+- The verifier serves the raw presentation on `GET /result/:id` only behind `RESULT_TOKEN`
+  (`X-Result-Token`); with `RESULT_INCLUDES_PRESENTATION=true` and no token it answers 503 and
+  the bridge fails the session with that message. `scripts/e2e-local.sh` and
+  `scripts/app-e2e-local.sh --mode sp1-mock` generate one token per run and pass it to both
+  processes.
 - `touch ~/.sp1/circuits/groth16/v6.1.0/.complete` once on a machine whose artifacts were
   downloaded by an sp1-prover 6.1.0 host (see the groth16 section).
 - Nothing in the verifier repo was modified; only built and run.
