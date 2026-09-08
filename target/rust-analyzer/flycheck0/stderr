@@ -1,4 +1,0 @@
-    Blocking waiting for file lock on package cache
-warning: nachweis-pid-script@0.1.0: rustc +succinct --version: "rustc 1.93.0-dev\n"
-warning: nachweis-pid-script@0.1.0: nachweis-pid-program built at 2026-09-07 20:53:06
-    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.36s

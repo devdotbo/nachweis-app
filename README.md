@@ -8,7 +8,7 @@ Attestat helps token issuers accept EUDI identity evidence and apply their appro
 
 Spoken line: "Your ID wallet should work where you invest."
 
-ETHOnline 2026 submission, Continuity entry. Pre-existing work is listed in [DISCLOSURE.md](DISCLOSURE.md).
+ETHOnline 2026 submission, Continuity entry. Pre-existing work, event changes to it, adapted third-party code and new code are listed in [DISCLOSURE.md](DISCLOSURE.md). How the project is run (wiki as specification and decision record, work packages with acceptance tests, evidence labels) is in [docs/process.md](docs/process.md); the human and AI contributions are in [docs/ai-attribution.md](docs/ai-attribution.md).
 
 ## What happens
 
@@ -28,8 +28,8 @@ ETHOnline 2026 submission, Continuity entry. Pre-existing work is listed in [DIS
 - Wallet: the official German EUDI test wallet from the SPRIND sandbox with a sample identity. Not a real state-issued identity. The synthetic fixture used in the tests carries the sandbox issuer's certificate chain but is signed with a fresh issuer key (see `prover-sp1/README.md`).
 - Checks: sanctions, residency and every other issuer check are simulated in this build and labelled as such. The issuer's approval is a separate manual action.
 - Proof route 1 (SP1 Groth16): the statement runs inside the SP1 zkVM on the issuer's server (`prover-sp1`, driven by `service`), wrapped as Groth16, verified through `Sp1PidVerifier` by the SP1 verifier gateway deployed on Sepolia, exercised so far on a local Sepolia fork (anvil), not on Sepolia itself. The chain does not trust the server, but the server did see the presentation.
-- Proof route 2 (Noir UltraHonk): the same statement as a Noir circuit (`circuits/pid-sdjwt`), proved client-side on a desktop today, verified fully on chain by a bb-generated verifier through `NoirPidVerifier`. Packaging for the phone is in progress and is not part of this submission.
-- What neither proof checks: the x5c chain from the issuer certificate to a trust anchor (the contracts pin the issuer key hash instead), the credential status list, and the freshness window of the challenge. The pre-existing verifier performs those checks in front of the bridge once its verifier mode is wired (two endpoints pending, see `service/README.md`); in the local mode used for the demo nothing checks them. The proof covers the statement subset only.
+- Proof route 2 (Noir UltraHonk): the same statement as a Noir circuit (`circuits/pid-sdjwt`), proved client-side on a desktop today, verified fully on chain by a bb-generated verifier through `NoirPidVerifier`. On-phone provers exist for Android (emulator) and iOS (simulator) on the same core; physical-device runs are optional and not part of the main path.
+- What neither proof checks: the x5c chain from the issuer certificate to a trust anchor (the contracts pin the issuer key hash instead), the credential status list, and the freshness window of the challenge. The pre-existing verifier performs those checks in front of the bridge in verifier mode (endpoints on the relay branch, see `service/README.md` and `docs/trust-boundaries.md` once merged); in the local mode used for tests nothing checks them. The proof covers the statement subset only.
 - Revocation is manual: the issuer's operator key calls `revoke`.
 - Deployment status on 2026-09-07: nothing is deployed to any network. All Sepolia interaction so far is fork tests and dry runs. Addresses will be added here after the Sepolia run in `docs/demo-runbook.md`.
 - Numbers (cycle counts, proving times, gas, verification keys) live in `prover-sp1/NOTES.md` and `circuits/README.md` and are being regenerated; this file does not repeat them.
@@ -42,7 +42,8 @@ ETHOnline 2026 submission, Continuity entry. Pre-existing work is listed in [DIS
 - `service/`: Rust bridge (axum, alloy, sp1-sdk). Sessions, wallet address proof, native statement check, prover, `attestWithProof` and `revoke` with the operator key. See `service/README.md`.
 - `companion/`: desktop companion prover (bun CLI): picks up the blind-relayed, encrypted wallet response, decrypts and proves the PID statement locally with `circuits/pid-sdjwt`, submits the proof to the bridge (`POST /sessions/:id/noir-proof`) or the chain; the verifier and the bridge never see the presentation. See `companion/README.md`.
 - `app/`: Vite and React front end, investor and issuer screens, mock mode for a chain-free run. See `app/README.md`.
-- `docs/`: `demo-runbook.md` (local sequence and the Sepolia run), `video-shotlist.md` (seven beats).
+- `docs/`: `demo-runbook.md` (local sequence and the Sepolia run), `video-shotlist.md` (seven beats), `g0-runbook.md` and `spec-g0.md` (official-wallet run), `e2e-local.md`, `two-device.md`, `process.md`, `ai-attribution.md`, `evidence/` (sanitized run records).
+- `vendor/verifier-relay-patches/`: the event changes to the pre-existing verifier as a patch series with base commit and licence (`vendor/verifier-relay-patches/README.md`), exported by `scripts/export-relay-patches.sh`.
 - `DISCLOSURE.md`, `FEEDBACK.md` (Uniswap developer feedback), `LICENSE`.
 
 ## Run it locally
@@ -64,7 +65,7 @@ Builder TODO before submission: run the three scripts with `--broadcast` (order 
 
 ## Pre-existing work
 
-Everything in this repository was written during the event. The pre-existing components it builds on (the builder's Rust EUDI verifier, used as an external dependency and not modified; third-party circuits and tooling) are listed in [DISCLOSURE.md](DISCLOSURE.md). The verifier's blind-relay branch (`klartext-verifier`, branch `nachweis-relay`) lives in a separate repository and is not yet pushed; the bridge's verifier mode needs two endpoints from that branch (`service/README.md`, "How the presentation reaches the bridge").
+Everything in this repository was written during the event, except the adapted third-party code named in [DISCLOSURE.md](DISCLOSURE.md). The builder's pre-existing Rust EUDI verifier was modified during the event on branch `nachweis-relay` (blind relay, bridge mode, result minimization); those changes are exported as the patch series in `vendor/verifier-relay-patches/` with their base commit, so the event work on the verifier is reviewable here even before that branch is pushed.
 
 ## Name
 
