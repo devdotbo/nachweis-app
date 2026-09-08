@@ -22,7 +22,10 @@ export default defineConfig({
   outputDir: '_preview/e2e/test-results',
   use: {
     baseURL: appUrl,
-    headless: true,
+    // PW_CHANNEL=chrome runs the specs in the installed Google Chrome (the browser prover's manual
+    // measurement, docs/spec-browser-prover.md); PW_HEADED=1 shows the window.
+    channel: process.env.PW_CHANNEL || undefined,
+    headless: process.env.PW_HEADED !== '1',
     viewport: { width: 1280, height: 1000 },
     screenshot: 'only-on-failure',
     trace: 'retain-on-failure',

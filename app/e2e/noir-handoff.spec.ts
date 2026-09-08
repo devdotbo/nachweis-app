@@ -55,7 +55,9 @@ test.describe('investor proves on the phone, issuer approves, subscribes, issuer
     expect(bridgeSession.address_verified).toBe(true)
     expect(String(bridgeSession.bound_address).toLowerCase()).toBe(env.investor.toLowerCase())
 
-    // 4. the handoff card: QR plus URI for the phone
+    // 4. the handoff card: QR plus URI for the phone. Card 2b defaults to "Prove in this browser" on an
+    //    isolated page (WP29); the phone path is one click away.
+    await card(page, 'Prove in this browser').getByRole('button', { name: 'On your phone' }).click()
     const handoff = card(page, 'Prove on your phone')
     await expect(handoff.getByText("waiting for the phone's proof")).toBeVisible()
     await expect(handoff.getByAltText('QR code with the session handoff for the phone prover')).toBeVisible()

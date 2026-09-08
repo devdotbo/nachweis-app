@@ -13,10 +13,13 @@
 #   noir      default. verifier-service in blind-relay mode, bridge in local mode with a
 #             NoirPidVerifier pinned to the companion's test issuer. The test feeds the "Prove on your
 #             phone" handoff to `companion handoff … --stub-wallet` (app/e2e/noir-handoff.spec.ts).
+#   browser   the same stack as noir; the test takes the "Prove in this browser" path: the tab creates
+#             the relay request, `companion mint-test-presentation` answers it as the wallet, the tab
+#             decrypts, proves with bb.js and posts the proof (app/e2e/browser-prover.spec.ts).
 #   sp1-mock  bridge in verifier mode with PROOF_MODE=mock and a MockProofVerifier on the registry.
 #             The test posts the presentation with scripts/e2e/wallet.ts (app/e2e/sp1-mock.spec.ts).
 #
-# Usage: scripts/app-e2e-local.sh [--mode noir|sp1-mock] [--test] [--stop]
+# Usage: scripts/app-e2e-local.sh [--mode noir|browser|sp1-mock] [--test] [--stop]
 #   --test    run `bunx playwright test` in app/ against the stack, then stop it (exit code = test result)
 #   --stop    stop a stack started earlier (pids in RUN_DIR/pids) and exit
 # Env: VERIFIER_REPO (default ../nachweis-verifier-relay), RUN_DIR (default .e2e/app),
@@ -36,11 +39,13 @@ while [ $# -gt 0 ]; do
     --mode) MODE="$2"; shift 2 ;;
     --test) TEST=1; shift ;;
     --stop) STOP=1; shift ;;
-    -h|--help) sed -n '2,27p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,30p' "$0"; exit 0 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
 done
-case "$MODE" in noir|sp1-mock) ;; *) echo "unknown mode: $MODE (noir, sp1-mock)" >&2; exit 2 ;; esac
+case "$MODE" in noir|browser|sp1-mock) ;; *) echo "unknown mode: $MODE (noir, browser, sp1-mock)" >&2; exit 2 ;; esac
+# noir and browser share the stack (relay verifier, local bridge, NoirPidVerifier); only the prover differs.
+NOIR_STACK=0; if [ "$MODE" = noir ] || [ "$MODE" = browser ]; then NOIR_STACK=1; fi
 
 export PATH="$HOME/.nargo/bin:$HOME/.bb:$HOME/.foundry/bin:$HOME/.cargo/bin:$HOME/.bun/bin:$PATH"
 mkdir -p "$RUN_DIR"
@@ -111,7 +116,7 @@ SUBSCRIPTION=$(echo "$DEPLOY_OUT" | awk '/Subscription:/ {print $2}' | head -1)
 say "AttestationRegistry $REGISTRY, FundToken $TOKEN, Subscription $SUBSCRIPTION (operator $OPERATOR)"
 
 NOIR_VERIFIER=""; ISSUER_JSON=""; ISSUER_KEY_PEM=""; ISSUER_CERT_PEM=""
-if [ "$MODE" = noir ]; then
+if [ $NOIR_STACK -eq 1 ]; then
   ISSUER_JSON="$RUN_DIR/issuer.json"
   ensure_bun_deps "$ROOT/companion" qrcode
   ISSUER_OUT=$(cd "$ROOT/companion" && bun run src/cli.ts issuer-key "$ISSUER_JSON" 2>"$RUN_DIR/issuer-key.log") \
@@ -155,7 +160,7 @@ BRIDGE_BIN="$ROOT/service/target/release/nachweis-bridge"
 (cd "$ROOT/service" && cargo build --release >"$RUN_DIR/build-bridge.log" 2>&1) || die "bridge build failed, see $RUN_DIR/build-bridge.log"
 BRIDGE_ENV=(BIND="127.0.0.1:$BRIDGE_PORT" RPC_URL="$RPC" OPERATOR_PRIVATE_KEY=$K0 REGISTRY=$REGISTRY POLICY_ID=nachweis.pid.over18.v1
   REQUIRE_ADDRESS_PROOF=true BRIDGE_ISSUER_TOKEN="$ISSUER_TOKEN" RUST_LOG="${RUST_LOG:-info}")
-if [ "$MODE" = noir ]; then
+if [ $NOIR_STACK -eq 1 ]; then
   BRIDGE_ENV+=(NOIR_VERIFIER=$NOIR_VERIFIER HANDOFF_VERIFIER_URL="$VERIFIER_URL" HANDOFF_BRIDGE_URL="$BRIDGE_URL")
 else
   [ -n "$CLIENT_ID" ] || die "verifier-service did not print its client_id (needed as EXPECTED_AUD)"
