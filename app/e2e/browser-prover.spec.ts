@@ -68,7 +68,8 @@ test.describe('investor proves in the browser, issuer approves, subscribes', () 
     await expect(prove.getByAltText('QR code for the openid4vp request from this browser')).toBeVisible()
     const requestUri = (await prove.getByTestId('browser-request-uri').textContent())?.trim() ?? ''
     expect(requestUri).toMatch(/^https?:\/\//)
-    expect(requestUri.startsWith(env.verifierUrl)).toBe(true)
+    const relayHost = env.verifierPublicUrl || env.verifierUrl
+    expect(requestUri.startsWith(relayHost), `request_uri ${requestUri} is not under ${relayHost}`).toBe(true)
     await shot(page, env.mode, '02-wallet-qr')
 
     // 5. the stub wallet answers the relay request (mints a presentation for the request's nonce, encrypts to the tab's key)
@@ -121,7 +122,7 @@ test.describe('investor proves in the browser, issuer approves, subscribes', () 
     const appOrigin = new URL(env.appUrl).origin
     const allow = [
       { name: 'relay request', re: new RegExp(`^${env.verifierUrl}/relay/request$`), methods: ['POST'] },
-      { name: 'request object', re: new RegExp(`^${env.verifierUrl}/`), methods: ['GET'] },
+      { name: 'request object, status, pickup', re: new RegExp(`^${relayHost}/`), methods: ['GET'] },
       { name: 'bridge session', re: new RegExp(`^${env.bridgeUrl}/sessions/${sessionId}$`), methods: ['GET'] },
       { name: 'noir-proof', re: new RegExp(`^${env.bridgeUrl}/sessions/${sessionId}/noir-proof$`), methods: ['POST'] },
       { name: 'rpc', re: new RegExp(`^${env.rpcUrl}/?$`), methods: ['POST'] },
