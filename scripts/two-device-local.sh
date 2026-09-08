@@ -17,7 +17,7 @@
 #   --phone   second part for the Android app: deploys a NoirPidVerifier pinned to the bundled test
 #             vector's issuer (its private key is not in the repo), points the registry at it, restarts the
 #             bridge with REQUIRE_ADDRESS_PROOF=false (the vector's address 0xf99e...55dc has no known key)
-#             and handoff URLs the emulator reaches (10.0.2.2), creates the session bound to the vector's
+#             and handoff URLs the phone reaches (emulator: 10.0.2.2; USB device: 127.0.0.1 via adb reverse), creates the session bound to the vector's
 #             address and challenge, prints the handoff, starts the app with it over adb, then polls the
 #             session until attested (--phone-timeout, default 600). In the app: "Load test presentation",
 #             "Derive circuit inputs", "Prove on this device", "Continue to submit", "Submit to bridge".
@@ -209,7 +209,15 @@ if [ $PHONE -eq 1 ]; then
   say "phone (emulator): NoirPidVerifier pinned to the test vector's issuer $FIXTURE_ISSUER_HASH"
   NOIR_VERIFIER_PHONE=$(deploy_noir "$FIXTURE_ISSUER_HASH")
   say "phone (emulator): NoirPidVerifier $NOIR_VERIFIER_PHONE registered for the policy"
-  start_bridge false "$NOIR_VERIFIER_PHONE" "http://10.0.2.2:$VERIFIER_PORT" "http://10.0.2.2:$BRIDGE_PORT"
+  # Emulator: the host is 10.0.2.2. USB or network device (serial not emulator-*): adb reverse maps
+  # the phone's 127.0.0.1 ports onto the Mac, so the handoff URLs use 127.0.0.1 (no LAN IP needed).
+  PHONE_HOST=10.0.2.2
+  case "$(adb get-serialno 2>/dev/null)" in
+    emulator-*) ;;
+    *) adb reverse "tcp:$VERIFIER_PORT" "tcp:$VERIFIER_PORT" >/dev/null && adb reverse "tcp:$BRIDGE_PORT" "tcp:$BRIDGE_PORT" >/dev/null || die "adb reverse failed"
+       PHONE_HOST=127.0.0.1; say "phone (device $(adb get-serialno)): adb reverse for ports $VERIFIER_PORT and $BRIDGE_PORT" ;;
+  esac
+  start_bridge false "$NOIR_VERIFIER_PHONE" "http://$PHONE_HOST:$VERIFIER_PORT" "http://$PHONE_HOST:$BRIDGE_PORT"
   say "phone (emulator): bridge restarted with REQUIRE_ADDRESS_PROOF=false (the vector's address $VEC_ADDR has no known key)"
   CREATED2=$(curl -fs -X POST -H 'content-type: application/json' --data "{\"bound_address\":\"$VEC_ADDR\",\"challenge_hex\":\"$VEC_CH\"}" "$BRIDGE_URL/sessions")
   SID2=$(echo "$CREATED2" | jq -r .session_id)
