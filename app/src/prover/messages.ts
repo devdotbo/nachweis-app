@@ -36,7 +36,5 @@ export type WorkerMessage =
       timingsMs: Record<string, number>
       threads: number
       crossOriginIsolated: boolean
-      /** Names of the disclosed claims (never values), for the log line. */
-      disclosedClaimNames: string[]
     }
   | { type: 'error'; message: string; phase?: WorkerPhase }

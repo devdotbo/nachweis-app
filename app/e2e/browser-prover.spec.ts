@@ -51,7 +51,7 @@ test.describe('investor proves in the browser, issuer approves, subscribes', () 
     // 3. card 2b: the browser path is the default on an isolated page
     const prove = card(page, 'Prove in this browser')
     await expect(prove).toBeVisible()
-    await expect(prove.getByRole('button', { name: 'In this browser' })).toHaveAttribute('aria-pressed', 'true')
+    await expect(prove.getByRole('button', { name: 'In this browser', exact: true })).toHaveAttribute('aria-pressed', 'true')
     await expect(prove.getByRole('button', { name: 'On your phone' })).toBeEnabled()
     await expect(prove.getByRole('button', { name: 'Desktop companion' })).toBeEnabled()
     await shot(page, env.mode, '01-ready')
@@ -85,7 +85,7 @@ test.describe('investor proves in the browser, issuer approves, subscribes', () 
     expect(timings.cross_origin_isolated).toBe(true)
     expect(Number(timings.prove)).toBeGreaterThan(0)
     expect(proofMs, 'K1: click to submitted').toBeLessThan(PROOF_TIMEOUT_MS + 30_000)
-    await expect(prove.getByText(/verified in tab true/)).toBeVisible()
+    await expect(prove.locator('dl.kv dd', { hasText: 'verified in tab true' })).toBeVisible()
     const txHash = (await prove.getByTestId('browser-tx').textContent())?.trim() ?? ''
     expect(txHash).toMatch(/^0x[0-9a-f]{64}$/)
     // the log holds phase names, sizes and milliseconds, never a claim value

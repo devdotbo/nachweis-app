@@ -58,7 +58,7 @@ async function prove(req: ProveRequest): Promise<void> {
     if (verified.expiry === 0) throw new Error('issuer credential has no exp; the circuit requires one')
     if (verified.nonce !== req.nonce.toLowerCase()) throw new Error('KB-JWT nonce differs from the bridge session nonce')
     mark('precheck', t0)
-    log(`statement holds: over18, expiry ${verified.expiry}, nonce bound to ${req.boundAddress}; disclosed claims: ${verified.disclosedClaimNames.join(', ')}`)
+    log(`statement holds: over18, expiry ${verified.expiry}, nonce bound to ${req.boundAddress}; ${verified.disclosedClaimNames.length} disclosures anchored (names and values stay in the worker)`)
 
     // 3. circuit inputs (the same derivation as circuits/tools/gen-prover.ts)
     t0 = performance.now()
@@ -132,7 +132,6 @@ async function prove(req: ProveRequest): Promise<void> {
       timingsMs: t,
       threads: req.threads,
       crossOriginIsolated: self.crossOriginIsolated,
-      disclosedClaimNames: verified.disclosedClaimNames,
     })
   } catch (e) {
     post({ type: 'error', message: e instanceof Error ? e.message : String(e), phase })
