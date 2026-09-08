@@ -168,6 +168,44 @@ The phone's proof carried the bridge session's nonce because the handoff's chall
 vector's, which is the whole point: the KB-JWT nonce binds the proof to the session the browser
 signed.
 
+## Recorded timeline, ChromeOS ARC device as the phone (2026-09-08)
+
+Same script, `ANDROID_SERIAL=192.168.0.35:5555 scripts/two-device-local.sh --phone --phone-timeout 900`,
+with the Android container of a Lenovo IdeaPad Duet 3 Chromebook (`strongbad`, Android 13, 3.2 GB,
+Snapdragon 7c Gen 2) attached over Wi-Fi (`adb connect 192.168.0.35:5555`). `adb reverse` works on
+ARC, so the handoff URLs stayed at `127.0.0.1` and the device reached the Mac's relay and bridge
+through the adb connection; no LAN IP and no bind change were needed. Device numbers in
+`prover-android/README.md`, "Measured on device".
+
+    [  12.78 s] phone (device 192.168.0.35:5555): adb reverse for ports 8091 and 8788
+    [  13.11 s] phone (emulator): bridge restarted with REQUIRE_ADDRESS_PROOF=false
+    [  13.14 s] browser: session 72eb3db9-1998-4e30-967e-3b2be065a21f bound to 0xf99e...55dc (vector challenge);
+                handoff URI nachweis://handoff?v=1&s=72eb3db9-...&a=0xf99e...55dc&c=7426bd0e...9df2&b=http%3A%2F%2F127.0.0.1%3A8788&r=http%3A%2F%2F127.0.0.1%3A8091
+    [  13.56 s] phone: app started with the handoff
+    23:21:35  app: handoff: bridge session 72eb3db9-... bound to 0xf99e...55dc, address proof missing, nonce 306863157ddb59f4...
+    23:22:23  operator: adb shell am force-stop, then am start ... --ez autoprove true --es handoff '<uri>'
+              (autoprove and the handoff in one intent: load vector, derive, prove; the handoff joins the session in parallel)
+    23:22:24  app: handoff applied again (same session), inputs derived, copying assets / loading SRS
+    23:22:31  app: SRS ready: 1048577 points; proving
+    23:23:23  app: proof 10304 B, 86 public inputs, execute 2112 ms, prove 41352 ms, wall 51725 ms, peak RSS 1696 MB, on-device verify true
+    23:23:48  operator: input tap "Continue to submit" (bounds from uiautomator dump), 23:23:53 "Submit to bridge"
+    23:23:53  app: noir-proof accepted: {"attested":{"attester":"0xf39f...2266","bits":"0x3","expiry":1819756800,...}
+    23:23:53  app: bridge state: attested attested in 0x49204192f8ca6c5aa914c3f71a00953a62ad27c6e41ebd84a9c53b6226610246, awaiting issuer approval
+    [ 153.66 s] assert: phone session 72eb3db9-... attested in 0x49204192..., gas 4,583,016; isEligible(0xf99e...55dc) false before and true after the issuer approved
+    TWO-DEVICE (emulator) OK
+
+Of the 140 s phone phase, 52 s is the proof on the device, 8 s SRS load, under 1 s the submit
+(tap to `attested`), and the rest is the operator (relaunch, uiautomator dump, taps). The bridge
+attested from the device's proof: the same `POST /sessions/:id/noir-proof` body the emulator
+sent, dry-run through `NoirPidVerifier.verify` and mined by `attestWithProof`.
+
+Before this run the companion phase failed once with `bb verify` "verification failed at pairing
+check": the worktree's gitignored `circuits/pid-sdjwt/out/adapted/vk` was the WP13 file while
+`nargo compile` had produced the WP22 circuit. `bb write_vk -b target/pid_sdjwt.json -o out/adapted
+-t evm` in `circuits/pid-sdjwt` fixed it (the result equals the committed
+`prover-android/app/src/main/assets/pid_sdjwt_evm.vk`). The companion writes the VK only when the
+file is missing, so a stale one survives a circuit change.
+
 ## What the iOS app mirrors
 
 - Parse the same two forms (compact JSON `{v,s,a,c,r,b}` and `nachweis://handoff?…`), plus the
