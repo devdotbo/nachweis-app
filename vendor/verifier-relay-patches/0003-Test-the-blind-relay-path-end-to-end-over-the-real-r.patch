@@ -1,0 +1,385 @@
+From e53b000b599283121d506c7d36bbc65c59926cf7 Mon Sep 17 00:00:00 2001
+From: devbotbo <7118.eth@proton.me>
+Date: Mon, 7 Sep 2026 20:24:14 +0200
+Subject: [PATCH] Test the blind-relay path end to end over the real router
+
+Covers: the signed request object carries the client key and the bound
+nonce with the registered ask unchanged; a fixture JWE is stored
+unopened and returned byte for byte; second pickup is 410; repeatable
+pickup when configured; plaintext responses are refused and not stored;
+same-device redirect carries the response_code; input validation; and
+the default landing-page request still advertises the service's own key.
+---
+ verifier-service/tests/relay_http.rs | 363 +++++++++++++++++++++++++++
+ 1 file changed, 363 insertions(+)
+ create mode 100644 verifier-service/tests/relay_http.rs
+
+diff --git a/verifier-service/tests/relay_http.rs b/verifier-service/tests/relay_http.rs
+new file mode 100644
+index 0000000..783aad7
+--- /dev/null
++++ b/verifier-service/tests/relay_http.rs
+@@ -0,0 +1,363 @@
++//! End-to-end HTTP tests for the blind-relay path.
++//!
++//! These drive the real router with no ZK path configured: create a relay
++//! request with a client-held key, read the signed request object back the way
++//! a wallet would and check WHICH key it advertises, post a JWE the way the
++//! wallet does, pick it up, and check that the second pickup is 410.
++//!
++//! The JWE is a fixture string, not a real encryption to the test key. That is
++//! the point: the server must store it without opening it, so a test that
++//! encrypted for real would only prove something about the client. What the
++//! server sees is asserted byte-for-byte on the way out.
++
++use std::sync::Arc;
++
++use axum::body::Body;
++use axum::http::{Request, StatusCode};
++use base64::prelude::*;
++use serde_json::Value;
++use sha2::{Digest, Sha256};
++use tower::ServiceExt;
++
++use verifier_service::handlers;
++use verifier_service::state::{AppState, CertSource};
++
++// A real P-256 public point (the private scalar was discarded).
++const CLIENT_X: &str = "RbFwxbDib5s9Q9u7oFFkV5NNxJK7dyHgug8JMgbj9dY";
++const CLIENT_Y: &str = "2BJYVUDsqw2xoD4tB3o7QeIIdd89wQ82oTTrDy8H8Bs";
++const ADDRESS: &str = "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045";
++const CHALLENGE: &str = "0x00112233445566778899aabbccddeeff";
++/// Five base64url segments with a dot between them: compact JWE serialisation.
++/// The content is meaningless on purpose.
++const FIXTURE_JWE: &str =
++    "eyJhbGciOiJFQ0RILUVTIiwiZW5jIjoiQTEyOEdDTSJ9..AAAAAAAAAAAAAAAA.Y2lwaGVydGV4dA.dGFn";
++
++async fn app(pickup_once: bool) -> axum::Router {
++    let mut state = AppState::new(
++        "http://127.0.0.1:0/".parse().unwrap(),
++        CertSource::Ephemeral,
++        "event_checkin",
++        None,
++        false,
++        None,
++        None,
++    )
++    .await
++    .expect("build offline app state");
++    state.relay.pickup_once = pickup_once;
++    handlers::router(Arc::new(state))
++}
++
++async fn send(router: &axum::Router, req: Request<Body>) -> (StatusCode, Vec<u8>) {
++    let response = router.clone().oneshot(req).await.unwrap();
++    let status = response.status();
++    let bytes = axum::body::to_bytes(response.into_body(), 4 * 1024 * 1024)
++        .await
++        .unwrap();
++    (status, bytes.to_vec())
++}
++
++async fn get_json(router: &axum::Router, uri: &str) -> (StatusCode, Value) {
++    let (status, bytes) = send(
++        router,
++        Request::builder().uri(uri).body(Body::empty()).unwrap(),
++    )
++    .await;
++    (
++        status,
++        serde_json::from_slice(&bytes).unwrap_or(Value::Null),
++    )
++}
++
++async fn post_json(router: &axum::Router, uri: &str, body: Value) -> (StatusCode, Value) {
++    let (status, bytes) = send(
++        router,
++        Request::builder()
++            .method("POST")
++            .uri(uri)
++            .header("content-type", "application/json")
++            .body(Body::from(body.to_string()))
++            .unwrap(),
++    )
++    .await;
++    (
++        status,
++        serde_json::from_slice(&bytes).unwrap_or(Value::Null),
++    )
++}
++
++async fn post_form(router: &axum::Router, uri: &str, body: String) -> (StatusCode, Value) {
++    let (status, bytes) = send(
++        router,
++        Request::builder()
++            .method("POST")
++            .uri(uri)
++            .header("content-type", "application/x-www-form-urlencoded")
++            .body(Body::from(body))
++            .unwrap(),
++    )
++    .await;
++    (
++        status,
++        serde_json::from_slice(&bytes).unwrap_or(Value::Null),
++    )
++}
++
++async fn pickup(router: &axum::Router, session: &str, token: &str) -> (StatusCode, Value) {
++    let (status, bytes) = send(
++        router,
++        Request::builder()
++            .uri(format!("/relay/response/{session}"))
++            .header("x-pickup-token", token)
++            .body(Body::empty())
++            .unwrap(),
++    )
++    .await;
++    (
++        status,
++        serde_json::from_slice(&bytes).unwrap_or(Value::Null),
++    )
++}
++
++fn relay_body() -> Value {
++    serde_json::json!({
++        "client_jwk": { "kty": "EC", "crv": "P-256", "x": CLIENT_X, "y": CLIENT_Y, "alg": "ECDH-ES", "use": "enc" },
++        "bound_address": ADDRESS,
++        "challenge": CHALLENGE,
++    })
++}
++
++/// The payload of the signed request object, the way a wallet reads it.
++async fn request_object_payload(router: &axum::Router, session: &str) -> Value {
++    let (status, bytes) = send(
++        router,
++        Request::builder()
++            .uri(format!("/request/{session}"))
++            .body(Body::empty())
++            .unwrap(),
++    )
++    .await;
++    assert_eq!(status, StatusCode::OK);
++    let jwt = String::from_utf8(bytes).unwrap();
++    let payload = jwt.split('.').nth(1).expect("compact JWS has a payload");
++    serde_json::from_slice(&BASE64_URL_SAFE_NO_PAD.decode(payload).unwrap()).unwrap()
++}
++
++fn expected_nonce() -> String {
++    let addr = hex::decode(&ADDRESS[2..]).unwrap();
++    let challenge = hex::decode(&CHALLENGE[2..]).unwrap();
++    hex::encode(Sha256::digest([addr, challenge].concat()))
++}
++
++#[tokio::test]
++async fn relay_request_is_signed_with_the_client_key_and_the_bound_nonce() {
++    let router = app(true).await;
++    let (status, created) = post_json(&router, "/relay/request", relay_body()).await;
++    assert_eq!(status, StatusCode::CREATED, "{created}");
++    let session = created["session_id"].as_str().unwrap();
++    assert_eq!(created["nonce"], expected_nonce());
++    assert_eq!(created["bound_address"], ADDRESS.to_lowercase());
++    assert!(created["pickup_token"].as_str().unwrap().len() >= 32);
++    assert!(created["request_uri"]
++        .as_str()
++        .unwrap()
++        .ends_with(&format!("request/{session}")));
++    assert!(created["openid4vp_uri"]
++        .as_str()
++        .unwrap()
++        .starts_with("openid4vp://"));
++
++    let payload = request_object_payload(&router, session).await;
++    assert_eq!(payload["nonce"], expected_nonce());
++    assert_eq!(payload["response_mode"], "direct_post.jwt");
++    let keys = payload["client_metadata"]["jwks"]["keys"]
++        .as_array()
++        .expect("client_metadata.jwks.keys");
++    assert_eq!(keys.len(), 1, "exactly one encryption key: {payload}");
++    assert_eq!(keys[0]["x"], CLIENT_X);
++    assert_eq!(keys[0]["y"], CLIENT_Y);
++    assert_eq!(keys[0]["alg"], "ECDH-ES");
++    assert_eq!(keys[0]["use"], "enc");
++    assert!(keys[0].get("d").is_none());
++    // The registered minimal ask is unchanged.
++    let query = payload["dcql_query"].to_string();
++    for claim in ["given_name", "family_name", "age_equal_or_over"] {
++        assert!(query.contains(claim), "dcql_query lost {claim}: {query}");
++    }
++
++    let (status, st) = get_json(&router, &format!("/relay/status/{session}")).await;
++    assert_eq!(status, StatusCode::OK);
++    assert_eq!(st["status"], "pending");
++}
++
++#[tokio::test]
++async fn relay_response_is_stored_unopened_and_picked_up_exactly_once() {
++    let router = app(true).await;
++    let (_, created) = post_json(&router, "/relay/request", relay_body()).await;
++    let session = created["session_id"].as_str().unwrap().to_string();
++    let token = created["pickup_token"].as_str().unwrap().to_string();
++
++    // Too early: nothing to pick up yet.
++    let (status, _) = pickup(&router, &session, &token).await;
++    assert_eq!(status, StatusCode::NOT_FOUND);
++
++    // The wallet posts. The server would fail to decrypt this if it tried;
++    // it must not try.
++    let form = format!("response={}", urlencoding(FIXTURE_JWE));
++    let (status, body) = post_form(&router, &format!("/response/{session}"), form.clone()).await;
++    assert_eq!(status, StatusCode::OK, "{body}");
++    assert_eq!(body["status"], "received");
++    assert!(
++        body.get("redirect_uri").is_none(),
++        "no redirect_uri unless asked"
++    );
++
++    let (_, st) = get_json(&router, &format!("/relay/status/{session}")).await;
++    assert_eq!(st["status"], "responded");
++
++    // A second wallet post cannot overwrite the first.
++    let (status, _) = post_form(&router, &format!("/response/{session}"), form).await;
++    assert_eq!(status, StatusCode::CONFLICT);
++
++    // Wrong or missing token: nothing.
++    let (status, _) = pickup(&router, &session, "not-the-token").await;
++    assert_eq!(status, StatusCode::FORBIDDEN);
++    let (status, _) = get_json(&router, &format!("/relay/response/{session}")).await;
++    assert_eq!(status, StatusCode::FORBIDDEN);
++
++    // Pickup via the query parameter form works too, and hands back the exact bytes.
++    let (status, got) = get_json(
++        &router,
++        &format!("/relay/response/{session}?pickup_token={token}"),
++    )
++    .await;
++    assert_eq!(status, StatusCode::OK, "{got}");
++    assert_eq!(got["jwe"], FIXTURE_JWE);
++    assert_eq!(got["nonce"], expected_nonce());
++    assert_eq!(got["bound_address"], ADDRESS.to_lowercase());
++    assert!(got["received_at"].as_i64().unwrap() > 0);
++
++    let (_, st) = get_json(&router, &format!("/relay/status/{session}")).await;
++    assert_eq!(st["status"], "picked_up");
++
++    // Second pickup: gone.
++    let (status, body) = pickup(&router, &session, &token).await;
++    assert_eq!(status, StatusCode::GONE, "{body}");
++}
++
++#[tokio::test]
++async fn repeatable_pickup_can_be_configured() {
++    let router = app(false).await;
++    let (_, created) = post_json(&router, "/relay/request", relay_body()).await;
++    let session = created["session_id"].as_str().unwrap().to_string();
++    let token = created["pickup_token"].as_str().unwrap().to_string();
++    let form = format!("response={}", urlencoding(FIXTURE_JWE));
++    let (status, _) = post_form(&router, &format!("/response/{session}"), form).await;
++    assert_eq!(status, StatusCode::OK);
++    for _ in 0..2 {
++        let (status, got) = pickup(&router, &session, &token).await;
++        assert_eq!(status, StatusCode::OK);
++        assert_eq!(got["jwe"], FIXTURE_JWE);
++    }
++    let (_, st) = get_json(&router, &format!("/relay/status/{session}")).await;
++    assert_eq!(st["pickup_once"], false);
++}
++
++#[tokio::test]
++async fn a_plaintext_response_to_a_relay_session_is_refused_and_not_stored() {
++    let router = app(true).await;
++    let (_, created) = post_json(&router, "/relay/request", relay_body()).await;
++    let session = created["session_id"].as_str().unwrap().to_string();
++    let token = created["pickup_token"].as_str().unwrap().to_string();
++    let form = "vp_token=%7B%22pid%22%3A%5B%22a.b.c%22%5D%7D".to_string();
++    let (status, body) = post_form(&router, &format!("/response/{session}"), form).await;
++    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
++    let (_, st) = get_json(&router, &format!("/relay/status/{session}")).await;
++    assert_eq!(st["status"], "pending");
++    let (status, _) = pickup(&router, &session, &token).await;
++    assert_eq!(status, StatusCode::NOT_FOUND);
++}
++
++#[tokio::test]
++async fn same_device_redirect_carries_the_response_code() {
++    let router = app(true).await;
++    let mut body = relay_body();
++    body["redirect_uri"] = Value::from("nachweis://return");
++    let (status, created) = post_json(&router, "/relay/request", body).await;
++    assert_eq!(status, StatusCode::CREATED, "{created}");
++    let session = created["session_id"].as_str().unwrap().to_string();
++    let code = created["response_code"].as_str().unwrap().to_string();
++    let form = format!("response={}", urlencoding(FIXTURE_JWE));
++    let (status, answer) = post_form(&router, &format!("/response/{session}"), form).await;
++    assert_eq!(status, StatusCode::OK);
++    assert_eq!(
++        answer["redirect_uri"],
++        format!("nachweis://return?response_code={code}")
++    );
++}
++
++#[tokio::test]
++async fn relay_request_rejects_a_private_key_a_bad_address_and_a_short_challenge() {
++    let router = app(true).await;
++
++    let mut with_d = relay_body();
++    with_d["client_jwk"]["d"] = Value::from("S0xcjqZy-wk3aKYuODl1vNIJ7Kev6YSpaCphVEtjGxc");
++    let (status, body) = post_json(&router, "/relay/request", with_d).await;
++    assert_eq!(status, StatusCode::BAD_REQUEST);
++    assert!(body["error"].as_str().unwrap().contains("private"));
++
++    let mut bad_addr = relay_body();
++    bad_addr["bound_address"] = Value::from("d8da6bf26964af9d7eed9e03e53415d37aa96045");
++    let (status, _) = post_json(&router, "/relay/request", bad_addr).await;
++    assert_eq!(status, StatusCode::BAD_REQUEST);
++
++    let mut short = relay_body();
++    short["challenge"] = Value::from("0x0011");
++    let (status, _) = post_json(&router, "/relay/request", short).await;
++    assert_eq!(status, StatusCode::BAD_REQUEST);
++
++    let (status, _) = get_json(&router, "/relay/status/not-a-uuid").await;
++    assert_eq!(status, StatusCode::BAD_REQUEST);
++    let (status, _) = get_json(
++        &router,
++        "/relay/status/00000000-0000-0000-0000-000000000000",
++    )
++    .await;
++    assert_eq!(status, StatusCode::NOT_FOUND);
++}
++
++#[tokio::test]
++async fn the_default_path_still_advertises_the_servers_own_key() {
++    let router = app(true).await;
++    // A relay request must not change what the default landing page signs.
++    let _ = post_json(&router, "/relay/request", relay_body()).await;
++    let (status, bytes) = send(
++        &router,
++        Request::builder().uri("/").body(Body::empty()).unwrap(),
++    )
++    .await;
++    assert_eq!(status, StatusCode::OK);
++    let html = String::from_utf8(bytes).unwrap();
++    let session = html
++        .split("request/")
++        .nth(1)
++        .and_then(|rest| rest.get(..36))
++        .expect("landing page links its request_uri");
++    let payload = request_object_payload(&router, session).await;
++    let keys = payload["client_metadata"]["jwks"]["keys"]
++        .as_array()
++        .unwrap();
++    assert_eq!(keys.len(), 1);
++    assert_eq!(keys[0]["kid"], "enc-key-1", "the service's own key");
++    assert_ne!(keys[0]["x"], CLIENT_X);
++    // ...and a default session is not a relay session.
++    let (status, _) = get_json(&router, &format!("/relay/status/{session}")).await;
++    assert_eq!(status, StatusCode::NOT_FOUND);
++}
++
++/// Minimal form encoding for the characters a compact JWE can contain.
++fn urlencoding(s: &str) -> String {
++    s.replace('+', "%2B")
++        .replace('/', "%2F")
++        .replace('=', "%3D")
++}

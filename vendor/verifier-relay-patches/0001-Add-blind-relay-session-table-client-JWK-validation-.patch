@@ -1,0 +1,645 @@
+From cbbd2f8b760ff2b6ec15ef381849f3d8c87398e1 Mon Sep 17 00:00:00 2001
+From: devbotbo <7118.eth@proton.me>
+Date: Mon, 7 Sep 2026 20:24:14 +0200
+Subject: [PATCH] Add blind-relay session table, client JWK validation and
+ address-bound nonce
+
+A relay session is one whose direct_post.jwt response is encrypted to a
+key the client generated, so the service can only store the JWE, never
+open it. This adds the module that owns the session table, the P-256
+public JWK validation (no d, on-curve point, ECDH-ES/enc only), the
+nonce formula hex(sha256(address20 || challenge)) with pinned vectors,
+and one-time pickup semantics. build_client_metadata is opened to the
+crate so a relay request advertises the same client_metadata shape as
+the default path with only the key swapped.
+---
+ verifier-service/src/lib.rs   |   1 +
+ verifier-service/src/relay.rs | 568 ++++++++++++++++++++++++++++++++++
+ verifier-service/src/state.rs |  13 +-
+ 3 files changed, 581 insertions(+), 1 deletion(-)
+ create mode 100644 verifier-service/src/relay.rs
+
+diff --git a/verifier-service/src/lib.rs b/verifier-service/src/lib.rs
+index 82c5489..29ea69f 100644
+--- a/verifier-service/src/lib.rs
++++ b/verifier-service/src/lib.rs
+@@ -7,6 +7,7 @@
+ //! only visible when the real router handles a real request.
+ 
+ pub mod handlers;
++pub mod relay;
+ pub mod state;
+ pub mod view;
+ pub mod zk;
+diff --git a/verifier-service/src/relay.rs b/verifier-service/src/relay.rs
+new file mode 100644
+index 0000000..4817688
+--- /dev/null
++++ b/verifier-service/src/relay.rs
+@@ -0,0 +1,568 @@
++//! Blind relay: a presentation request whose response the server cannot read.
++//!
++//! In the default flow the service owns the ECDH-ES key that the wallet
++//! encrypts its `direct_post.jwt` response to, so the service decrypts and
++//! verifies the presentation itself. In relay mode the CLIENT (the investor's
++//! browser, or a companion prover app) generates the ephemeral P-256 key pair
++//! and sends only the PUBLIC JWK. The service signs the OpenID4VP request with
++//! that key in `client_metadata.jwks`, receives the wallet's JWE, stores it
++//! unopened, and hands it to the client on pickup. The service never holds the
++//! private key, so it cannot decrypt the presentation. See
++//! `docs/blind-relay.md`.
++//!
++//! What this module owns: JWK validation, the nonce formula, and the relay
++//! session table. The HTTP handlers live in `handlers.rs`, beside the default
++//! path, and dispatch here when a session id is found in this table.
++
++use std::collections::HashMap;
++
++use base64::prelude::*;
++use serde_json::{Map, Value};
++use sha2::{Digest, Sha256};
++use tokio::sync::Mutex;
++use uuid::Uuid;
++
++/// The nonce that binds a presentation to an EVM address.
++///
++/// Formula (byte-exact, and the ZK circuit and the contracts MUST use the same
++/// one):
++///
++/// ```text
++/// nonce = hex( sha256( bound_address_bytes || challenge_bytes ) )
++/// ```
++///
++/// - `bound_address_bytes`: the 20 raw bytes of the EVM address (NOT the ASCII
++///   hex, NOT checksummed, no `0x`).
++/// - `challenge_bytes`: the raw bytes of the client's random challenge, exactly
++///   as decoded from the request body (see [`parse_challenge`]).
++/// - `||`: plain concatenation, address first.
++/// - `hex`: lowercase, no `0x`, 64 characters.
++///
++/// The string goes into the signed request object as the OpenID4VP `nonce`, and
++/// the wallet copies it into the KB-JWT `nonce` claim of the presentation. On
++/// the ZK side the public inputs are laid out as `[subject, policyId, bits,
++/// expiry]` plus this nonce; a contract that recomputes `sha256(address ||
++/// challenge)` from `msg.sender` (or the bound subject) and the challenge it
++/// issued can therefore check that the presentation was made for THAT address
++/// and no other. A presentation obtained for a different address, or replayed
++/// with a stale challenge, yields a different nonce and fails the check.
++pub fn compute_nonce(bound_address: &[u8; 20], challenge: &[u8]) -> String {
++    let mut hasher = Sha256::new();
++    hasher.update(bound_address);
++    hasher.update(challenge);
++    hex::encode(hasher.finalize())
++}
++
++/// Parse a 20-byte EVM address from `0x` + 40 hex characters. Case-insensitive;
++/// the EIP-55 checksum is NOT verified (the bytes are what enters the nonce).
++pub fn parse_bound_address(s: &str) -> Result<[u8; 20], String> {
++    let body = s
++        .strip_prefix("0x")
++        .or_else(|| s.strip_prefix("0X"))
++        .ok_or("bound_address must start with 0x")?;
++    if body.len() != 40 {
++        return Err(format!(
++            "bound_address must be 0x followed by 40 hex characters, got {} characters",
++            body.len()
++        ));
++    }
++    let bytes = hex::decode(body).map_err(|e| format!("bound_address is not hex: {e}"))?;
++    let mut out = [0u8; 20];
++    out.copy_from_slice(&bytes);
++    Ok(out)
++}
++
++/// Smallest challenge accepted, in bytes. The challenge is the client's replay
++/// protection; 16 random bytes is the floor for that to mean anything.
++pub const MIN_CHALLENGE_BYTES: usize = 16;
++
++/// Decode the client's challenge to raw bytes.
++///
++/// Two encodings are accepted, and the canonical one is hex: a `0x` prefix, or
++/// an even-length string of hex digits only, is decoded as hex. Anything else
++/// is decoded as base64url without padding. Clients SHOULD send `0x`-prefixed
++/// hex so the choice is never ambiguous (an unprefixed hex string is also a
++/// valid base64url string; the hex rule wins in that case, and that rule is
++/// what a contract or circuit must assume).
++pub fn parse_challenge(s: &str) -> Result<Vec<u8>, String> {
++    let bytes = if let Some(body) = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")) {
++        hex::decode(body).map_err(|e| format!("challenge is not hex: {e}"))?
++    } else if s.len().is_multiple_of(2) && !s.is_empty() && s.bytes().all(|b| b.is_ascii_hexdigit())
++    {
++        hex::decode(s).map_err(|e| format!("challenge is not hex: {e}"))?
++    } else {
++        BASE64_URL_SAFE_NO_PAD
++            .decode(s)
++            .map_err(|e| format!("challenge is neither hex nor base64url: {e}"))?
++    };
++    if bytes.len() < MIN_CHALLENGE_BYTES {
++        return Err(format!(
++            "challenge must be at least {MIN_CHALLENGE_BYTES} bytes, got {}",
++            bytes.len()
++        ));
++    }
++    Ok(bytes)
++}
++
++/// Validate the client's encryption JWK and normalise it for
++/// `client_metadata.jwks`.
++///
++/// Accepted: `kty` EC, `crv` P-256, `x` and `y` present and a valid point on
++/// the curve, no private component (`d`), `alg` absent or `ECDH-ES`, `use`
++/// absent or `enc`. The returned map is what goes on the wire: the caller's
++/// `x`/`y`, with `use`, `alg` and `kid` filled in so the wallet sees the same
++/// shape the default flow advertises.
++///
++/// A `d` is refused rather than stripped. A client that sends its private key
++/// has misunderstood the mode, and silently accepting the public half would
++/// let it believe the server never saw the secret.
++pub fn validate_client_jwk(jwk: &Value) -> Result<Map<String, Value>, String> {
++    let obj = jwk.as_object().ok_or("client_jwk must be a JSON object")?;
++
++    let str_field = |k: &str| -> Option<&str> { obj.get(k).and_then(Value::as_str) };
++
++    if obj.contains_key("d") {
++        return Err("client_jwk carries a private component (d); send the public JWK only".into());
++    }
++    match str_field("kty") {
++        Some("EC") => {}
++        other => return Err(format!("client_jwk.kty must be EC, got {other:?}")),
++    }
++    match str_field("crv") {
++        Some("P-256") => {}
++        other => return Err(format!("client_jwk.crv must be P-256, got {other:?}")),
++    }
++    let x = str_field("x").ok_or("client_jwk.x is missing")?;
++    let y = str_field("y").ok_or("client_jwk.y is missing")?;
++    match str_field("alg") {
++        None | Some("ECDH-ES") => {}
++        Some(other) => return Err(format!("client_jwk.alg must be ECDH-ES, got {other:?}")),
++    }
++    match str_field("use") {
++        None | Some("enc") => {}
++        Some(other) => return Err(format!("client_jwk.use must be enc, got {other:?}")),
++    }
++
++    // The point must be on the curve. `p256` parses the JWK itself, which also
++    // enforces the 32-byte coordinate length and the base64url alphabet.
++    let minimal = serde_json::json!({ "kty": "EC", "crv": "P-256", "x": x, "y": y });
++    p256::PublicKey::from_jwk_str(&minimal.to_string())
++        .map_err(|e| format!("client_jwk is not a valid P-256 public key: {e}"))?;
++
++    let mut out = Map::new();
++    out.insert("kty".into(), Value::from("EC"));
++    out.insert("crv".into(), Value::from("P-256"));
++    out.insert("x".into(), Value::from(x));
++    out.insert("y".into(), Value::from(y));
++    out.insert("use".into(), Value::from("enc"));
++    out.insert("alg".into(), Value::from("ECDH-ES"));
++    let kid = str_field("kid").unwrap_or("relay-enc-key");
++    out.insert("kid".into(), Value::from(kid));
++    Ok(out)
++}
++
++/// A random URL-safe token (32 bytes of OS entropy, base64url, no padding).
++pub fn random_token() -> String {
++    use rand::RngCore;
++    let mut bytes = [0u8; 32];
++    rand::rngs::OsRng.fill_bytes(&mut bytes);
++    BASE64_URL_SAFE_NO_PAD.encode(bytes)
++}
++
++/// Constant-time equality for tokens of equal length; unequal lengths are
++/// unequal without leaking where they differ.
++fn tokens_match(a: &str, b: &str) -> bool {
++    let (a, b) = (a.as_bytes(), b.as_bytes());
++    if a.len() != b.len() {
++        return false;
++    }
++    a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
++}
++
++/// Where a relay session is in its life.
++#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
++#[serde(rename_all = "snake_case")]
++pub enum RelayStatus {
++    /// Request created, the wallet has not posted yet.
++    Pending,
++    /// The wallet's JWE is stored and nobody has picked it up.
++    Responded,
++    /// The JWE has been handed to the client at least once.
++    PickedUp,
++}
++
++/// One relay session. The JWE is kept as the exact string the wallet sent in
++/// the `response` form field. It is never parsed here.
++#[derive(Debug, Clone)]
++pub struct RelaySession {
++    pub nonce: String,
++    pub bound_address: String,
++    pub client_jwk: Map<String, Value>,
++    pub pickup_token: String,
++    /// Where the wallet should send the user afterwards (same-device flow), if
++    /// the client asked for one. `response_code` is appended on the way out.
++    pub redirect_uri: Option<String>,
++    pub response_code: String,
++    pub created_at: i64,
++    pub status: RelayStatus,
++    pub jwe: Option<String>,
++    pub received_at: Option<i64>,
++}
++
++/// What a successful pickup hands over.
++#[derive(Debug, Clone, serde::Serialize)]
++pub struct Pickup {
++    pub jwe: String,
++    pub nonce: String,
++    pub bound_address: String,
++    pub received_at: i64,
++}
++
++/// Why a pickup was refused. Mapped to HTTP in `handlers.rs`.
++#[derive(Debug, Clone, PartialEq, Eq)]
++pub enum PickupError {
++    UnknownSession,
++    BadToken,
++    /// The wallet has not posted yet.
++    NotYetResponded,
++    /// One-time pickup is on and the JWE was already handed out.
++    Gone,
++}
++
++/// Why a wallet response was refused at the relay layer.
++#[derive(Debug, Clone, PartialEq, Eq)]
++pub enum RecordError {
++    UnknownSession,
++    /// The session already holds a response; the first one stands.
++    AlreadyResponded,
++}
++
++/// The relay session table.
++#[derive(Debug, Default)]
++pub struct RelayState {
++    sessions: Mutex<HashMap<Uuid, RelaySession>>,
++    /// When true (the default), `GET /relay/response/:id` answers 410 after
++    /// the first successful pickup and the stored JWE is dropped from memory.
++    /// When false, the JWE can be fetched repeatedly with the token.
++    pub pickup_once: bool,
++}
++
++impl RelayState {
++    pub fn new(pickup_once: bool) -> Self {
++        Self {
++            sessions: Mutex::new(HashMap::new()),
++            pickup_once,
++        }
++    }
++
++    pub async fn insert(&self, id: Uuid, session: RelaySession) {
++        self.sessions.lock().await.insert(id, session);
++    }
++
++    pub async fn is_relay_session(&self, id: Uuid) -> bool {
++        self.sessions.lock().await.contains_key(&id)
++    }
++
++    pub async fn status(&self, id: Uuid) -> Option<RelayStatus> {
++        self.sessions
++            .lock()
++            .await
++            .get(&id)
++            .map(|s| s.status.clone())
++    }
++
++    pub async fn get(&self, id: Uuid) -> Option<RelaySession> {
++        self.sessions.lock().await.get(&id).cloned()
++    }
++
++    /// Store the wallet's JWE for a pending session. Returns the session's
++    /// redirect target (with `response_code` appended) if one was registered.
++    pub async fn record_response(
++        &self,
++        id: Uuid,
++        jwe: String,
++        now: i64,
++    ) -> Result<Option<String>, RecordError> {
++        let mut sessions = self.sessions.lock().await;
++        let session = sessions.get_mut(&id).ok_or(RecordError::UnknownSession)?;
++        if session.status != RelayStatus::Pending {
++            return Err(RecordError::AlreadyResponded);
++        }
++        session.jwe = Some(jwe);
++        session.received_at = Some(now);
++        session.status = RelayStatus::Responded;
++        Ok(session.redirect_uri.as_ref().map(|uri| {
++            let sep = if uri.contains('?') { '&' } else { '?' };
++            format!("{uri}{sep}response_code={}", session.response_code)
++        }))
++    }
++
++    /// Hand the JWE to the holder of the pickup token.
++    pub async fn pickup(&self, id: Uuid, token: &str) -> Result<Pickup, PickupError> {
++        let mut sessions = self.sessions.lock().await;
++        let session = sessions.get_mut(&id).ok_or(PickupError::UnknownSession)?;
++        if !tokens_match(&session.pickup_token, token) {
++            return Err(PickupError::BadToken);
++        }
++        match session.status {
++            RelayStatus::Pending => return Err(PickupError::NotYetResponded),
++            RelayStatus::PickedUp if self.pickup_once => return Err(PickupError::Gone),
++            RelayStatus::Responded | RelayStatus::PickedUp => {}
++        }
++        let jwe = if self.pickup_once {
++            // Drop the ciphertext from memory on hand-over: the server has no
++            // use for it, and keeping it only widens what a memory dump shows.
++            session.jwe.take()
++        } else {
++            session.jwe.clone()
++        };
++        let jwe = jwe.ok_or(PickupError::Gone)?;
++        session.status = RelayStatus::PickedUp;
++        Ok(Pickup {
++            jwe,
++            nonce: session.nonce.clone(),
++            bound_address: session.bound_address.clone(),
++            received_at: session.received_at.unwrap_or(0),
++        })
++    }
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++
++    // A real P-256 public point (generated once; the matching private scalar was
++    // discarded). Any point on the curve would do for these tests.
++    const X: &str = "RbFwxbDib5s9Q9u7oFFkV5NNxJK7dyHgug8JMgbj9dY";
++    const Y: &str = "2BJYVUDsqw2xoD4tB3o7QeIIdd89wQ82oTTrDy8H8Bs";
++
++    fn good_jwk() -> Value {
++        serde_json::json!({ "kty": "EC", "crv": "P-256", "x": X, "y": Y, "alg": "ECDH-ES", "use": "enc" })
++    }
++
++    #[test]
++    fn nonce_is_sha256_of_address_bytes_then_challenge_bytes() {
++        // Vectors computed independently with Python hashlib:
++        // sha256(bytes.fromhex('11'*20) + bytes.fromhex('deadbeef'*8)).
++        let addr = parse_bound_address("0x1111111111111111111111111111111111111111").unwrap();
++        let challenge =
++            parse_challenge("0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef")
++                .unwrap();
++        assert_eq!(
++            compute_nonce(&addr, &challenge),
++            "1acae0a2ea4cb86477660574adedbf294b130b0eecb1e903e29e4bae19614be5"
++        );
++        // sha256(bytes.fromhex('d8da6bf26964af9d7eed9e03e53415d37aa96045') + b'\x01'*16).
++        let addr = parse_bound_address("0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045").unwrap();
++        assert_eq!(
++            compute_nonce(&addr, &[1u8; 16]),
++            "538cc3ecfb6325d0f4adb5c784a8caac93bbac1cd69b10701b210ff8e66f84ab"
++        );
++    }
++
++    #[test]
++    fn nonce_is_not_the_hash_of_the_ascii_address() {
++        // The formula hashes the 20 raw bytes. A client that hashes the "0x…"
++        // string instead gets a different nonce, and this test pins which one
++        // the server means.
++        let addr = parse_bound_address("0x1111111111111111111111111111111111111111").unwrap();
++        let challenge = [0xabu8; 16];
++        let ascii = Sha256::digest(
++            [
++                b"0x1111111111111111111111111111111111111111".as_slice(),
++                &challenge,
++            ]
++            .concat(),
++        );
++        assert_ne!(compute_nonce(&addr, &challenge), hex::encode(ascii));
++    }
++
++    #[test]
++    fn bound_address_must_be_0x_and_20_bytes() {
++        assert!(parse_bound_address("d8da6bf26964af9d7eed9e03e53415d37aa96045").is_err());
++        assert!(parse_bound_address("0xd8da6bf26964af9d7eed9e03e53415d37aa960").is_err());
++        assert!(parse_bound_address("0xzzda6bf26964af9d7eed9e03e53415d37aa96045").is_err());
++        assert_eq!(
++            parse_bound_address("0xD8DA6BF26964AF9D7EED9E03E53415D37AA96045").unwrap(),
++            parse_bound_address("0xd8da6bf26964af9d7eed9e03e53415d37aa96045").unwrap()
++        );
++    }
++
++    #[test]
++    fn challenge_accepts_hex_and_base64url_and_prefers_hex() {
++        let raw = [0x0fu8; 16];
++        assert_eq!(
++            parse_challenge("0x0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f").unwrap(),
++            raw
++        );
++        assert_eq!(
++            parse_challenge("0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f").unwrap(),
++            raw
++        );
++        assert_eq!(
++            parse_challenge(&BASE64_URL_SAFE_NO_PAD.encode(raw)).unwrap(),
++            raw
++        );
++        // An unprefixed all-hex string is hex even though it is also base64url.
++        let ambiguous = "abcdefabcdefabcdefabcdefabcdefabcdef";
++        assert_eq!(
++            parse_challenge(ambiguous).unwrap(),
++            hex::decode(ambiguous).unwrap()
++        );
++        assert!(parse_challenge("0x0011").is_err(), "too short");
++        assert!(parse_challenge("").is_err());
++        assert!(parse_challenge("not base64url!!").is_err());
++    }
++
++    #[test]
++    fn client_jwk_accepts_a_p256_public_key_and_normalises_it() {
++        let out = validate_client_jwk(&good_jwk()).unwrap();
++        assert_eq!(out["kty"], "EC");
++        assert_eq!(out["crv"], "P-256");
++        assert_eq!(out["x"], X);
++        assert_eq!(out["y"], Y);
++        assert_eq!(out["use"], "enc");
++        assert_eq!(out["alg"], "ECDH-ES");
++        assert_eq!(out["kid"], "relay-enc-key");
++        assert!(!out.contains_key("d"));
++
++        let bare = serde_json::json!({ "kty": "EC", "crv": "P-256", "x": X, "y": Y, "kid": "k1" });
++        let out = validate_client_jwk(&bare).unwrap();
++        assert_eq!(out["kid"], "k1");
++        assert_eq!(out["alg"], "ECDH-ES");
++    }
++
++    #[test]
++    fn client_jwk_rejects_private_wrong_curve_wrong_alg_and_off_curve() {
++        let mut with_d = good_jwk();
++        with_d["d"] = Value::from("S0xcjqZy-wk3aKYuODl1vNIJ7Kev6YSpaCphVEtjGxc");
++        assert!(validate_client_jwk(&with_d)
++            .unwrap_err()
++            .contains("private"));
++
++        let mut p384 = good_jwk();
++        p384["crv"] = Value::from("P-384");
++        assert!(validate_client_jwk(&p384).unwrap_err().contains("P-256"));
++
++        let mut rsa = good_jwk();
++        rsa["kty"] = Value::from("RSA");
++        assert!(validate_client_jwk(&rsa).unwrap_err().contains("EC"));
++
++        let mut alg = good_jwk();
++        alg["alg"] = Value::from("RSA-OAEP");
++        assert!(validate_client_jwk(&alg).unwrap_err().contains("ECDH-ES"));
++
++        let mut sig = good_jwk();
++        sig["use"] = Value::from("sig");
++        assert!(validate_client_jwk(&sig).unwrap_err().contains("enc"));
++
++        let mut no_y = good_jwk();
++        no_y.as_object_mut().unwrap().remove("y");
++        assert!(validate_client_jwk(&no_y)
++            .unwrap_err()
++            .contains("y is missing"));
++
++        let mut off_curve = good_jwk();
++        off_curve["y"] = Value::from(X);
++        assert!(validate_client_jwk(&off_curve)
++            .unwrap_err()
++            .contains("not a valid P-256 public key"));
++
++        let mut short = good_jwk();
++        short["x"] = Value::from("AAAA");
++        assert!(validate_client_jwk(&short).is_err());
++
++        assert!(validate_client_jwk(&Value::from("not an object")).is_err());
++    }
++
++    fn session(pickup_token: &str) -> RelaySession {
++        RelaySession {
++            nonce: "n".into(),
++            bound_address: "0x1111111111111111111111111111111111111111".into(),
++            client_jwk: Map::new(),
++            pickup_token: pickup_token.into(),
++            redirect_uri: None,
++            response_code: "rc".into(),
++            created_at: 0,
++            status: RelayStatus::Pending,
++            jwe: None,
++            received_at: None,
++        }
++    }
++
++    #[tokio::test]
++    async fn one_time_pickup_drops_the_jwe_and_then_answers_gone() {
++        let relay = RelayState::new(true);
++        let id = Uuid::new_v4();
++        relay.insert(id, session("tok")).await;
++
++        assert_eq!(
++            relay.pickup(id, "tok").await.unwrap_err(),
++            PickupError::NotYetResponded
++        );
++        relay
++            .record_response(id, "a.b.c.d.e".into(), 42)
++            .await
++            .unwrap();
++        assert_eq!(
++            relay
++                .record_response(id, "x.y.z.w.v".into(), 43)
++                .await
++                .unwrap_err(),
++            RecordError::AlreadyResponded
++        );
++        assert_eq!(
++            relay.pickup(id, "wrong").await.unwrap_err(),
++            PickupError::BadToken
++        );
++        assert_eq!(relay.status(id).await, Some(RelayStatus::Responded));
++
++        let got = relay.pickup(id, "tok").await.unwrap();
++        assert_eq!(got.jwe, "a.b.c.d.e");
++        assert_eq!(got.received_at, 42);
++        assert_eq!(relay.status(id).await, Some(RelayStatus::PickedUp));
++        assert_eq!(
++            relay.pickup(id, "tok").await.unwrap_err(),
++            PickupError::Gone
++        );
++        assert!(
++            relay.get(id).await.unwrap().jwe.is_none(),
++            "ciphertext dropped on hand-over"
++        );
++        assert_eq!(
++            relay.pickup(Uuid::new_v4(), "tok").await.unwrap_err(),
++            PickupError::UnknownSession
++        );
++    }
++
++    #[tokio::test]
++    async fn repeatable_pickup_keeps_the_jwe() {
++        let relay = RelayState::new(false);
++        let id = Uuid::new_v4();
++        relay.insert(id, session("tok")).await;
++        relay
++            .record_response(id, "a.b.c.d.e".into(), 1)
++            .await
++            .unwrap();
++        assert_eq!(relay.pickup(id, "tok").await.unwrap().jwe, "a.b.c.d.e");
++        assert_eq!(relay.pickup(id, "tok").await.unwrap().jwe, "a.b.c.d.e");
++        assert_eq!(relay.status(id).await, Some(RelayStatus::PickedUp));
++    }
++
++    #[tokio::test]
++    async fn redirect_uri_gets_the_response_code_appended() {
++        let relay = RelayState::new(true);
++        let id = Uuid::new_v4();
++        let mut s = session("tok");
++        s.redirect_uri = Some("https://app.example/return?x=1".into());
++        relay.insert(id, s).await;
++        let redirect = relay
++            .record_response(id, "a.b.c.d.e".into(), 1)
++            .await
++            .unwrap();
++        assert_eq!(
++            redirect.as_deref(),
++            Some("https://app.example/return?x=1&response_code=rc")
++        );
++    }
++}
+diff --git a/verifier-service/src/state.rs b/verifier-service/src/state.rs
+index 26f4e27..a896e86 100644
+--- a/verifier-service/src/state.rs
++++ b/verifier-service/src/state.rs
+@@ -98,6 +98,10 @@ pub struct AppState {
+     /// The `mso_mdoc_zk` path. `None` when it is not configured, in which case
+     /// the ZK endpoints answer 503 and nothing falls through to the SD-JWT path.
+     pub zk: Option<crate::zk::ZkState>,
++    /// Blind-relay sessions: requests encrypted to a CLIENT-held key, whose
++    /// response the service stores unopened. Always available; a session is a
++    /// relay session only if it was created through `POST /relay/request`.
++    pub relay: crate::relay::RelayState,
+ }
+ 
+ pub(crate) enum StatusFetcher {
+@@ -234,6 +238,7 @@ impl AppState {
+             status_fetcher: StatusFetcher::Http,
+             encryption_public_jwk: public_jwk,
+             zk,
++            relay: crate::relay::RelayState::new(true),
+         })
+     }
+ }
+@@ -393,7 +398,13 @@ pub fn client_metadata_for_zk_jwt(
+     ClientMetadata(inner)
+ }
+ 
+-fn build_client_metadata(
++/// `client_metadata` for the SD-JWT PID path: `dc+sd-jwt`, exactly one `enc`
++/// JWK, both HAIP content encryptions.
++///
++/// Shared by the service-wide default (our own key) and the blind-relay path
++/// (the client's key), so a relay request advertises exactly the shape the
++/// default one does, with only the key swapped.
++pub(crate) fn build_client_metadata(
+     encryption_public_jwk: &serde_json::Map<String, serde_json::Value>,
+ ) -> ClientMetadata {
+     let mut vp_formats = ClaimFormatMap::new();
