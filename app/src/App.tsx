@@ -56,7 +56,11 @@ function useSessionPolling() {
           if (next) patch.state = next
           updateSession(s.request.sessionId, patch)
           // The bridge's verifier mode stops at proved; the attest transaction is asked for explicitly.
-          if (b.state === 'proved' && !attestRequested.has(s.request.sessionId)) {
+          // A proof from the phone (noir-ultrahonk) is attested by the bridge's noir-proof route in the
+          // same request; a poll can catch that session at proved while the transaction is in flight,
+          // and an attest request for it would only be refused (409).
+          const provedOnPhone = b.proofSystem?.startsWith('noir') === true
+          if (b.state === 'proved' && !provedOnPhone && !attestRequested.has(s.request.sessionId)) {
             attestRequested.add(s.request.sessionId)
             updateSession(s.request.sessionId, { bridge: { ...b, detail: 'proof ready, asking the bridge to attest' } })
             try {
