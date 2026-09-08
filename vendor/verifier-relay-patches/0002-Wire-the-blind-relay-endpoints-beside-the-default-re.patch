@@ -1,0 +1,384 @@
+From 3f688a91905f967d854ffbcef107497543971bc3 Mon Sep 17 00:00:00 2001
+From: devbotbo <7118.eth@proton.me>
+Date: Mon, 7 Sep 2026 20:24:14 +0200
+Subject: [PATCH] Wire the blind-relay endpoints beside the default response
+ path
+
+POST /relay/request builds the registered minimal request with the
+client's public JWK in client_metadata.jwks and the address-bound nonce;
+POST /response/:id stores the JWE for a relay session before any parsing
+or decryption and answers with the optional redirect_uri/response_code
+shape; GET /relay/status/:id polls; GET /relay/response/:id hands the
+JWE to the pickup-token holder once (410 afterwards, RELAY_PICKUP_ONCE
+to make it repeatable). Non-relay sessions are untouched.
+---
+ verifier-service/src/handlers.rs | 260 +++++++++++++++++++++++++++++++
+ verifier-service/src/main.rs     |  38 +++--
+ 2 files changed, 286 insertions(+), 12 deletions(-)
+
+diff --git a/verifier-service/src/handlers.rs b/verifier-service/src/handlers.rs
+index 42d75a1..dfa407f 100644
+--- a/verifier-service/src/handlers.rs
++++ b/verifier-service/src/handlers.rs
+@@ -21,6 +21,15 @@
+ //! separate routes rather than content negotiation on `/zk/` and
+ //! `/zk/result/:id`, so a machine consumer that forgets an `Accept` header can
+ //! never be served a web page instead of the data it asked for.
++//!
++//! The blind-relay path (`crate::relay`) is wired the same way: its own
++//! request-creation endpoint, responses on the SAME `POST /response/:id`, and a
++//! pickup endpoint instead of a verification outcome, because the service holds
++//! no key that could open the response.
++//!
++//! - `POST /relay/request`         create a request encrypted to the CLIENT's key
++//! - `GET  /relay/status/:id`      pending | responded | picked_up
++//! - `GET  /relay/response/:id`    the stored JWE, once, to the pickup-token holder
+ 
+ use std::sync::Arc;
+ 
+@@ -63,6 +72,9 @@ pub fn router(state: Arc<AppState>) -> Router {
+         .route("/zk/result/:id", get(zk_result))
+         .route("/zk/demo", get(zk_demo))
+         .route("/zk/demo/:id", get(zk_demo_result))
++        .route("/relay/request", post(relay_request))
++        .route("/relay/status/:id", get(relay_status))
++        .route("/relay/response/:id", get(relay_pickup))
+         .with_state(state)
+         .layer(CorsLayer::permissive())
+         .layer(TraceLayer::new_for_http())
+@@ -125,6 +137,12 @@ async fn receive_response(
+         .parse()
+         .map_err(|_| AppError::bad("invalid session id"))?;
+ 
++    // A relay session never reaches the decrypt-and-verify code below: the
++    // service has no key for it. Decided first, before any parsing.
++    if state.relay.is_relay_session(uuid).await {
++        return receive_relay_response(&state, uuid, &body).await;
++    }
++
+     // Ownership is decided before parsing, so a ZK session's transport-layer
+     // failures get ZK codes (D7) instead of a bare 400.
+     let owns_zk = match state.zk.as_ref() {
+@@ -784,10 +802,249 @@ async fn zk_outcome(
+     }
+ }
+ 
++// ---------------------------------------------------------------------------
++// the blind-relay path
++// ---------------------------------------------------------------------------
++
++/// Body of `POST /relay/request`.
++#[derive(serde::Deserialize)]
++pub struct RelayRequestBody {
++    /// The client's ephemeral P-256 PUBLIC JWK (`alg` ECDH-ES, `use` enc).
++    pub client_jwk: Value,
++    /// `0x` + 40 hex characters: the EVM address the presentation is bound to.
++    pub bound_address: String,
++    /// Client-chosen random bytes, hex (`0x…`, preferred) or base64url; at
++    /// least 16 bytes. See `relay::parse_challenge`.
++    pub challenge: String,
++    /// Optional same-device return target. When set, the wallet's POST is
++    /// answered with `{"redirect_uri": "<this>?response_code=<code>"}`.
++    #[serde(default)]
++    pub redirect_uri: Option<String>,
++}
++
++/// Create a presentation request whose response only the caller can open.
++///
++/// The request is the registered minimal one (`pid_dcql_minimal`, unchanged);
++/// only the encryption key in `client_metadata.jwks` and the nonce differ from
++/// the default path. The nonce is `relay::compute_nonce`, so the presentation
++/// is bound to `bound_address` for anyone who later checks the KB-JWT.
++async fn relay_request(
++    State(state): State<Arc<AppState>>,
++    Json(body): Json<RelayRequestBody>,
++) -> Result<(StatusCode, Json<Value>), AppError> {
++    let client_jwk = crate::relay::validate_client_jwk(&body.client_jwk).map_err(AppError::bad)?;
++    let address = crate::relay::parse_bound_address(&body.bound_address).map_err(AppError::bad)?;
++    let challenge = crate::relay::parse_challenge(&body.challenge).map_err(AppError::bad)?;
++    if let Some(uri) = body.redirect_uri.as_deref() {
++        // Any absolute URL, including a custom app scheme: that is how a
++        // companion app comes back to the foreground on the same device.
++        url::Url::parse(uri)
++            .map_err(|e| AppError::bad(format!("redirect_uri must be an absolute URL: {e}")))?;
++    }
++    let nonce = crate::relay::compute_nonce(&address, &challenge);
++
++    // Same request shape as `create_request`, with the client's key in place of
++    // ours. `ResponseMode` is restated so a relay request can never be built
++    // as `direct_post`, which would make the wallet send plaintext to us.
++    let (session_id, url) = state
++        .verifier
++        .build_authorization_request()
++        .with_dcql_query(pid::pid_dcql_minimal())
++        .with_request_parameter(Nonce::from(nonce.clone()))
++        .with_request_parameter(
++            openid4vp::core::authorization_request::parameters::ResponseMode::DirectPostJwt,
++        )
++        .with_request_parameter(crate::state::build_client_metadata(&client_jwk))
++        .build(state.wallet_metadata.clone())
++        .await
++        .map_err(|e| AppError::internal(format!("failed to build relay request: {e}")))?;
++
++    let pickup_token = crate::relay::random_token();
++    let response_code = crate::relay::random_token();
++    state
++        .relay
++        .insert(
++            session_id,
++            crate::relay::RelaySession {
++                nonce: nonce.clone(),
++                bound_address: format!("0x{}", hex::encode(address)),
++                client_jwk,
++                pickup_token: pickup_token.clone(),
++                redirect_uri: body.redirect_uri,
++                response_code: response_code.clone(),
++                created_at: now_unix(),
++                status: crate::relay::RelayStatus::Pending,
++                jwe: None,
++                received_at: None,
++            },
++        )
++        .await;
++
++    Ok((
++        StatusCode::CREATED,
++        Json(serde_json::json!({
++            "session_id": session_id,
++            "request_uri": format!("{}request/{}", state.public_url, session_id),
++            "openid4vp_uri": url.to_string(),
++            "nonce": nonce,
++            "bound_address": format!("0x{}", hex::encode(address)),
++            "pickup_url": format!("{}relay/response/{}", state.public_url, session_id),
++            "pickup_token": pickup_token,
++            "status_url": format!("{}relay/status/{}", state.public_url, session_id),
++            "response_code": response_code,
++        })),
++    ))
++}
++
++/// The wallet's `direct_post.jwt` POST for a relay session: store, do not open.
++///
++/// The `response` form field is kept byte-for-byte. It is not parsed as a JWE
++/// here, not even structurally, because nothing on this path needs to know
++/// what is inside. The openid4vp session store is still advanced to `Complete`
++/// so the session cannot be answered twice at that layer either.
++async fn receive_relay_response(
++    state: &Arc<AppState>,
++    uuid: Uuid,
++    body: &str,
++) -> Result<(StatusCode, Json<Value>), AppError> {
++    let response = AuthorizationResponse::from_x_www_form_urlencoded(body.as_bytes())
++        .map_err(|e| AppError::bad(format!("invalid authorization response: {e}")))?;
++    let jwe = match &response {
++        AuthorizationResponse::Jwt(jwt) => jwt.response.clone(),
++        AuthorizationResponse::Unencoded(_) => {
++            return Err(AppError::bad(
++                "relay sessions require an encrypted direct_post.jwt response; a plaintext \
++                 response was refused and not stored",
++            ));
++        }
++    };
++    if jwe.is_empty() {
++        return Err(AppError::bad("the response field is empty"));
++    }
++
++    let redirect = state
++        .relay
++        .record_response(uuid, jwe, now_unix())
++        .await
++        .map_err(|e| match e {
++            crate::relay::RecordError::UnknownSession => AppError::not_found("session not found"),
++            crate::relay::RecordError::AlreadyResponded => {
++                AppError::Conflict("this session already holds a response".into())
++            }
++        })?;
++
++    // Advance the openid4vp session so its status reads Complete. The callback
++    // is handed the response and does nothing with it.
++    state
++        .verifier
++        .verify_response(uuid, response, move |_session, _response| {
++            Box::pin(async move {
++                Outcome::Success {
++                    info: serde_json::json!({ "relay": true, "opened_by_server": false }),
++                }
++            })
++        })
++        .await
++        .map_err(|e| AppError::internal(format!("relay session bookkeeping: {e}")))?;
++
++    tracing::info!(session = %uuid, "relay: stored the wallet's encrypted response unopened");
++    let mut out = serde_json::json!({ "status": "received", "session_id": uuid });
++    if let Some(redirect_uri) = redirect {
++        // OpenID4VP 1.0, section 8.2: the verifier MAY answer the POST with a
++        // redirect_uri, which the wallet opens to return the user to the client.
++        out["redirect_uri"] = Value::from(redirect_uri);
++    }
++    Ok((StatusCode::OK, Json(out)))
++}
++
++/// Poll a relay session: `pending`, `responded` or `picked_up`. No token needed;
++/// the status reveals nothing about the presentation.
++async fn relay_status(
++    State(state): State<Arc<AppState>>,
++    Path(id): Path<String>,
++) -> Result<Json<Value>, AppError> {
++    let uuid: Uuid = id
++        .parse()
++        .map_err(|_| AppError::bad("invalid session id"))?;
++    let status = state
++        .relay
++        .status(uuid)
++        .await
++        .ok_or_else(|| AppError::not_found("relay session not found"))?;
++    Ok(Json(serde_json::json!({
++        "session_id": uuid,
++        "status": status,
++        "pickup_once": state.relay.pickup_once,
++    })))
++}
++
++#[derive(serde::Deserialize)]
++pub struct PickupQuery {
++    pickup_token: Option<String>,
++}
++
++/// Hand the stored JWE to the pickup-token holder.
++///
++/// The token comes from the `X-Pickup-Token` header or the `pickup_token`
++/// query parameter. With one-time pickup (the default) the second call is
++/// 410 Gone and the ciphertext is no longer in memory.
++async fn relay_pickup(
++    State(state): State<Arc<AppState>>,
++    Path(id): Path<String>,
++    Query(q): Query<PickupQuery>,
++    headers: axum::http::HeaderMap,
++) -> Result<Json<Value>, AppError> {
++    let uuid: Uuid = id
++        .parse()
++        .map_err(|_| AppError::bad("invalid session id"))?;
++    let token = headers
++        .get("x-pickup-token")
++        .and_then(|v| v.to_str().ok())
++        .map(str::to_string)
++        .or(q.pickup_token)
++        .ok_or_else(|| {
++            AppError::Forbidden(
++                "pickup_token missing (X-Pickup-Token header or ?pickup_token=)".into(),
++            )
++        })?;
++    let pickup = state
++        .relay
++        .pickup(uuid, &token)
++        .await
++        .map_err(|e| match e {
++            crate::relay::PickupError::UnknownSession => {
++                AppError::not_found("relay session not found")
++            }
++            crate::relay::PickupError::BadToken => {
++                AppError::Forbidden("pickup_token does not match".into())
++            }
++            crate::relay::PickupError::NotYetResponded => {
++                AppError::not_found("no response stored yet; poll /relay/status/:id")
++            }
++            crate::relay::PickupError::Gone => {
++                AppError::Gone("the response was already picked up (one-time pickup)".into())
++            }
++        })?;
++    Ok(Json(serde_json::json!({
++        "session_id": uuid,
++        "jwe": pickup.jwe,
++        "nonce": pickup.nonce,
++        "bound_address": pickup.bound_address,
++        "received_at": pickup.received_at,
++    })))
++}
++
+ pub enum AppError {
+     Bad(String),
+     NotFound(String),
+     Internal(String),
++    /// The caller is known but not allowed (a wrong or missing pickup token).
++    Forbidden(String),
++    /// The resource existed and was consumed (one-time pickup).
++    Gone(String),
++    /// The action would overwrite state that must stand (a second wallet
++    /// response for one relay session).
++    Conflict(String),
+     /// A path that exists but is not configured. Distinct from 404 and from 500:
+     /// the ZK endpoints must say "not configured", never fall back to something
+     /// that happens to work.
+@@ -813,6 +1070,9 @@ impl IntoResponse for AppError {
+             AppError::NotFound(m) => (StatusCode::NOT_FOUND, m),
+             AppError::Internal(m) => (StatusCode::INTERNAL_SERVER_ERROR, m),
+             AppError::Unavailable(m) => (StatusCode::SERVICE_UNAVAILABLE, m),
++            AppError::Forbidden(m) => (StatusCode::FORBIDDEN, m),
++            AppError::Gone(m) => (StatusCode::GONE, m),
++            AppError::Conflict(m) => (StatusCode::CONFLICT, m),
+         };
+         (status, Json(serde_json::json!({ "error": msg }))).into_response()
+     }
+diff --git a/verifier-service/src/main.rs b/verifier-service/src/main.rs
+index 46885b5..598c06a 100644
+--- a/verifier-service/src/main.rs
++++ b/verifier-service/src/main.rs
+@@ -63,6 +63,11 @@ struct Args {
+     /// is refused at startup. Set per ZK request, so the SD-JWT path is unaffected.
+     #[arg(long, env = "ZK_RESPONSE_MODE", default_value = "direct_post.jwt")]
+     zk_response_mode: String,
++    /// Blind relay: hand a stored response out exactly once (`GET
++    /// /relay/response/:id` answers 410 afterwards and the ciphertext is
++    /// dropped). Set to `false` to allow repeated pickups with the same token.
++    #[arg(long, env = "RELAY_PICKUP_ONCE", default_value = "true")]
++    relay_pickup_once: bool,
+ }
+ 
+ #[tokio::main]
+@@ -123,18 +128,18 @@ async fn main() -> Result<()> {
+         ),
+     };
+ 
+-    let state = std::sync::Arc::new(
+-        AppState::new(
+-            args.public_url.clone(),
+-            source,
+-            &args.purpose,
+-            trust_anchors,
+-            args.live_status,
+-            anchor_pem,
+-            zk_config,
+-        )
+-        .await?,
+-    );
++    let mut state = AppState::new(
++        args.public_url.clone(),
++        source,
++        &args.purpose,
++        trust_anchors,
++        args.live_status,
++        anchor_pem,
++        zk_config,
++    )
++    .await?;
++    state.relay.pickup_once = args.relay_pickup_once;
++    let state = std::sync::Arc::new(state);
+ 
+     eprintln!("verifier-service");
+     eprintln!("  public url : {}", state.public_url);
+@@ -177,6 +182,15 @@ async fn main() -> Result<()> {
+         }
+     );
+ 
++    eprintln!(
++        "  blind relay: enabled (POST /relay/request; pickup {})",
++        if args.relay_pickup_once {
++            "once"
++        } else {
++            "repeatable"
++        }
++    );
++
+     let app = handlers::router(state);
+     let listener = TcpListener::bind((args.host.as_str(), args.port))
+         .await

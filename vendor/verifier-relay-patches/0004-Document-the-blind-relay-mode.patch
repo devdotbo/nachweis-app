@@ -1,0 +1,342 @@
+From 971373c5db6ec6f8565b040cf0d12824c3bf45e5 Mon Sep 17 00:00:00 2001
+From: devbotbo <7118.eth@proton.me>
+Date: Mon, 7 Sep 2026 20:24:15 +0200
+Subject: [PATCH] Document the blind-relay mode
+
+Sequence, trust statement (what the service can and cannot see, and how
+a client detects a swapped key), the nonce formula with a test vector,
+the HTTP shapes, how the client decrypts, and the open question for the
+phone run.
+---
+ README.md           |   6 +
+ docs/blind-relay.md | 304 ++++++++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 310 insertions(+)
+ create mode 100644 docs/blind-relay.md
+
+diff --git a/README.md b/README.md
+index 51d5ccf..4343877 100644
+--- a/README.md
++++ b/README.md
+@@ -133,6 +133,12 @@ RP_KEY_PATH=../secrets/rp.key RP_LEAF_PATH=fixtures/live/access-leaf.pem \
+   PORT=8090 PUBLIC_URL=https://verifier.example/ cargo run -p verifier-service
+ ```
+ 
++Blind relay (`POST /relay/request`): the same request, but encrypted to a
++key the CLIENT generated, so the service stores the wallet's response unopened
++and hands it to the client for pickup; the service cannot read the
++presentation. Request and response shapes, the address-binding nonce formula,
++and the trust statement are in `docs/blind-relay.md`.
++
+ The real RP private key lives outside this repo, in the sibling `../secrets`
+ directory, and is never committed. The leaf certificate is public
+ (`fixtures/live/access-leaf.pem`). For live work against the local interop
+diff --git a/docs/blind-relay.md b/docs/blind-relay.md
+new file mode 100644
+index 0000000..7cc3916
+--- /dev/null
++++ b/docs/blind-relay.md
+@@ -0,0 +1,304 @@
++# Blind relay: a presentation the verifier cannot read
++
++Status: implemented and tested offline (`verifier-service/src/relay.rs`,
++`verifier-service/tests/relay_http.rs`). Not yet run against a phone wallet;
++see "Open question for the live test" below.
++
++## What it is
++
++In the default flow (`GET /`) the service generates the ECDH-ES key pair that
++the wallet encrypts its `direct_post.jwt` response to, decrypts the response,
++verifies the SD-JWT presentation, and renders the inspector. The service sees
++the plaintext PID claims.
++
++In blind-relay mode the CLIENT (the investor's browser, or a companion prover
++app) generates the ephemeral P-256 key pair and sends the service only the
++PUBLIC JWK. The service:
++
++1. signs the OpenID4VP request (JAR, registered `x509_hash` client_id, the
++   registered minimal DCQL ask, all unchanged) with that public key in
++   `client_metadata.jwks`,
++2. serves the JAR to the wallet on `GET /request/:id` as usual,
++3. receives the wallet's JWE on `POST /response/:id`, stores the string exactly
++   as received, and never attempts to open it,
++4. hands the JWE to the holder of the pickup token, once.
++
++The client decrypts with its private key, and then either verifies the
++presentation locally or hands the plaintext to the prover.
++
++## Sequence
++
++```text
++client (browser / prover app)      verifier-service                  wallet (phone)
++-------------------------------    ------------------------------    --------------------
++generate P-256 key pair (sk, pk)
++pick challenge (>= 16 random bytes)
++POST /relay/request
++  { client_jwk: pk, bound_address,
++    challenge [, redirect_uri] }  ->
++                                   nonce = hex(sha256(addr20 || challenge))
++                                   build JAR:
++                                     nonce, response_mode direct_post.jwt,
++                                     client_metadata.jwks = [pk],
++                                     dcql_query = registered minimal ask
++                                   sign with the registrar leaf (x509_hash)
++                                   store relay session {pending, pickup_token}
++                                <- 201 { session_id, request_uri, openid4vp_uri,
++                                         nonce, pickup_url, pickup_token, ... }
++render QR / open openid4vp_uri  - - - - - - - - - - - - - - - - - - - ->  scan / open
++                                   GET /request/:id                  <-
++                                   -> JAR (application/oauth-authz-req+jwt)
++                                                                     verify JAR signature,
++                                                                     consent,
++                                                                     build vp_token + KB-JWT
++                                                                       (nonce copied in),
++                                                                     JWE to pk (ECDH-ES, A128GCM)
++                                   POST /response/:id                <-
++                                     response=<JWE>
++                                   session is relay: store JWE unopened,
++                                   status = responded
++                                   -> 200 { status: received [, redirect_uri] }
++poll GET /relay/status/:id      ->
++                                <- { status: pending | responded | picked_up }
++GET /relay/response/:id
++  X-Pickup-Token: <token>       ->
++                                <- 200 { jwe, nonce, bound_address, received_at }
++                                   (one-time: the JWE is dropped from memory,
++                                    the next call answers 410 Gone)
++decrypt JWE with sk
++  -> { vp_token: { <id>: [<sd-jwt+kb>] } }
++verify locally, or hand to the prover
++```
++
++## Trust statement
++
++What the service sees, and can prove it saw:
++
++- the client's public key `pk`, the bound address, the challenge, the nonce;
++- the signed request it produced (it is the signer);
++- that a wallet posted SOMETHING for the session, when, and its byte length;
++- the JWE header (`alg`, `enc`, `epk`), which is plaintext by construction of
++  JWE, and which is the same on every response and carries no claim.
++
++What the service cannot see:
++
++- the `vp_token`, the SD-JWT, any disclosed claim, the KB-JWT, the holder's
++  key: all of it is under A128GCM with a key derived from `pk` and the wallet's
++  ephemeral `epk`, and the service never had `sk`.
++
++What the service could still do, and what stops it:
++
++- Swap `pk` for its own key before signing. Then it could decrypt. The client
++  can detect this: fetch `request_uri` itself (it is a public GET), verify the
++  JAR signature against the registered leaf, and check that
++  `client_metadata.jwks.keys[0]` has its own `x` and `y`. The integration test
++  `relay_request_is_signed_with_the_client_key_and_the_bound_nonce` does
++  exactly this check; a client should too before it shows the QR.
++- Keep the ciphertext. With one-time pickup on (the default) the JWE is
++  dropped from the session on hand-over; a compromised server could of course
++  copy it first, but a copy without `sk` is useless.
++- Hand the JWE to someone else. Pickup requires the 32-byte random token that
++  only the creator of the session received. The status endpoint needs no token
++  and reveals only `pending | responded | picked_up`.
++
++What this mode does NOT change: the wallet still sees the registered
++verifier identity and consent screen, the request is still the registered
++minimal ask, and the service still cannot present anything on its own.
++
++## Nonce formula
++
++```text
++nonce = hex( sha256( bound_address_bytes || challenge_bytes ) )
++```
++
++- `bound_address_bytes`: the 20 raw bytes of the EVM address. Not the ASCII
++  `0x…` string, not checksummed. `0xD8DA…` and `0xd8da…` give the same bytes.
++- `challenge_bytes`: the client's random bytes, at least 16, exactly as
++  decoded from the request. Send them as `0x`-prefixed hex; base64url (no
++  padding) is also accepted, but an unprefixed string of hex digits is decoded
++  as hex, so the `0x` form is the one that is never ambiguous.
++- `||`: concatenation, address first.
++- `hex`: lowercase, no `0x`, 64 characters.
++
++Test vector (`relay::tests::nonce_is_sha256_of_address_bytes_then_challenge_bytes`):
++
++```text
++address   0x1111111111111111111111111111111111111111
++challenge 0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef
++nonce     1acae0a2ea4cb86477660574adedbf294b130b0eecb1e903e29e4bae19614be5
++```
++
++Where it lives:
++
++- the JAR `nonce` claim (signed by the verifier),
++- the KB-JWT `nonce` claim of the wallet's presentation (signed by the holder
++  key that the PID is bound to),
++- the ZK side: the public inputs are laid out as `[subject, policyId, bits,
++  expiry]` plus this nonce. The circuit takes the nonce as a public input and
++  proves the KB-JWT it checked carries the same value; the contract recomputes
++  `sha256(address || challenge)` from the address it is about to credit and
++  the challenge it issued, and compares.
++
++Why it binds: the nonce is fixed before the wallet signs, and the wallet signs
++it with the holder key. A presentation made for a different address, or for a
++stale challenge, carries a different nonce and cannot be re-used for this
++one. Two things follow for the client: the challenge MUST be fresh per
++request, and the address in `bound_address` MUST be the one the contract will
++later check (`msg.sender`, or the subject the proof names).
++
++## HTTP surface
++
++### `POST /relay/request`
++
++Request:
++
++```json
++{
++  "client_jwk": { "kty": "EC", "crv": "P-256", "x": "…", "y": "…", "alg": "ECDH-ES", "use": "enc" },
++  "bound_address": "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
++  "challenge": "0x00112233445566778899aabbccddeeff",
++  "redirect_uri": "nachweis://return"
++}
++```
++
++`redirect_uri` is optional (same-device flow, see below). `kid` is optional and
++kept if present. The JWK is refused if it carries `d`, is not `EC`/`P-256`, has
++an `alg` other than `ECDH-ES` or a `use` other than `enc`, or is not a point
++on the curve.
++
++Response, `201 Created`:
++
++```json
++{
++  "session_id": "e1a7…",
++  "request_uri": "https://verifier.example/request/e1a7…",
++  "openid4vp_uri": "openid4vp://?client_id=x509_hash%3A…&request_uri=…",
++  "nonce": "538cc3…",
++  "bound_address": "0xd8da6bf26964af9d7eed9e03e53415d37aa96045",
++  "pickup_url": "https://verifier.example/relay/response/e1a7…",
++  "pickup_token": "<43 chars base64url>",
++  "status_url": "https://verifier.example/relay/status/e1a7…",
++  "response_code": "<43 chars base64url>"
++}
++```
++
++`openid4vp_uri` is what goes into the QR (cross-device) or is opened directly
++(same-device). Keep `pickup_token` on the client; it is the only credential for
++the pickup.
++
++### `POST /response/:id` (the wallet's `direct_post.jwt`)
++
++Unchanged URL and content type. For a relay session the service stores the
++`response` form field and answers:
++
++```json
++{ "status": "received", "session_id": "e1a7…" }
++```
++
++or, when the request carried a `redirect_uri`,
++
++```json
++{ "status": "received", "session_id": "e1a7…",
++  "redirect_uri": "nachweis://return?response_code=<response_code>" }
++```
++
++which is the OpenID4VP 1.0 section 8.2 shape: the wallet opens `redirect_uri`
++and the client app comes back to the foreground with a `response_code` it can
++match against the one it received at creation. Non-relay sessions keep the
++existing `{ status: verified | rejected, inspect }` answer byte for byte.
++
++A plaintext (`vp_token=…`) response to a relay session is refused with 400 and
++not stored. A second response for the same session is refused with 409; the
++first one stands.
++
++### `GET /relay/status/:id`
++
++```json
++{ "session_id": "e1a7…", "status": "pending" | "responded" | "picked_up", "pickup_once": true }
++```
++
++No token needed. Poll this until `responded`, then pick up.
++
++### `GET /relay/response/:id`
++
++Token in the `X-Pickup-Token` header or as `?pickup_token=`.
++
++- `200` `{ "session_id", "jwe", "nonce", "bound_address", "received_at" }`
++- `403` missing or wrong token
++- `404` unknown session, or nothing stored yet
++- `410` already picked up (one-time pickup, the default)
++
++One-time pickup is the default: the JWE leaves the process on hand-over and
++the next call answers 410 Gone. `RELAY_PICKUP_ONCE=false` (or
++`--relay-pickup-once false`) makes pickup repeatable with the same token, for
++debugging a client. `status` says which mode is on.
++
++## How the client decrypts, and what it does next
++
++The JWE is compact serialisation, `alg` ECDH-ES (direct key agreement, no key
++wrapping), `enc` A128GCM (the wallet may pick A256GCM; both are advertised,
++as in the default flow), with the wallet's ephemeral public key in the
++protected header as `epk`. With WebCrypto:
++
++1. `deriveBits(ECDH, epk, sk)` gives the shared secret Z.
++2. Concat KDF (SHA-256, one round) over Z with `AlgorithmID = enc`,
++   `PartyUInfo = apu`, `PartyVInfo = apv` (both usually empty), `SuppPubInfo =
++   keydatalen` (128 or 256) gives the content key.
++3. AES-GCM decrypt with `iv`, the ciphertext, the tag, and the protected header
++   (base64url, ASCII bytes) as additional data.
++
++Any JOSE library does the three steps (`jose` on the web:
++`compactDecrypt(jwe, privateKey)`). The plaintext is the OpenID4VP response
++object:
++
++```json
++{ "vp_token": { "<credential id>": ["<sd-jwt>~<disclosure>~…~<kb-jwt>"] } }
++```
++
++Then either:
++
++- verify locally: the same checks `verifier-core` does (issuer signature
++  against the sandbox anchor, disclosures against the `_sd` digests, KB-JWT
++  signature against `cnf`, `aud` = the registered client_id, `nonce` = the
++  nonce from `/relay/request`, freshness), or
++- hand `vp_token`, the nonce and the challenge to the prover, which produces
++  the ZK proof with public inputs `[subject, policyId, bits, expiry]` plus the
++  nonce for the contract.
++
++The `sk` and the plaintext never leave the client.
++
++## Open question for the live test
++
++Does the sandbox wallet accept an encryption key in `client_metadata.jwks`
++that is unrelated to the verifier's registered certificate key?
++
++Expectation: yes. In the current design the encryption key is ALREADY a
++per-process ephemeral key (`state::generate_encryption_key`, a fresh
++`SecretKey::random` at startup, `kid` `enc-key-1`) with no relation to the
++registrar leaf; the relay path only changes who generated it. The JWK shape on
++the wire is identical (`kty`, `crv`, `x`, `y`, `use`, `alg`, `kid`), the
++`response_mode` is the same `direct_post.jwt`, and the request is signed by the
++same registered leaf. A wallet that pins the encryption key to the certificate
++would already refuse the default flow.
++
++Unverified until the phone run. The one thing to test on the phone:
++
++1. run the service with the registrar leaf (`docs/live-phone-path.md` section
++   2), `POST /relay/request` with a browser-generated key, show
++   `openid4vp_uri` as a QR, scan, consent;
++2. `GET /relay/status/:id` turns `responded`;
++3. pick up, decrypt in the browser, and check the KB-JWT `nonce` equals the
++   `nonce` from step 1.
++
++If the wallet refuses at step 1 or 2, the error surfaces on the phone (the
++wallet does not post), and the fallback is the default flow with the service
++key, which loses the blindness property but not the demo.
++
++## Limits
++
++- Sessions live in memory and are never expired; a restart forgets them.
++  Fine for the event, not for a deployment.
++- The service does not check that the stored string is a JWE at all; it
++  stores what the wallet sent. A malformed post shows up as a decryption
++  failure on the client.
++- No rate limit on `POST /relay/request`.

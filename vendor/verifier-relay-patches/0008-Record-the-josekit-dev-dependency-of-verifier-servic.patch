@@ -1,0 +1,22 @@
+From 85173981dfd710d39875536d57f0d5ea2c18db39 Mon Sep 17 00:00:00 2001
+From: devbotbo <7118.eth@proton.me>
+Date: Mon, 7 Sep 2026 21:01:10 +0200
+Subject: [PATCH] Record the josekit dev-dependency of verifier-service in
+ Cargo.lock
+
+---
+ Cargo.lock | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/Cargo.lock b/Cargo.lock
+index 47f7e56..563ca24 100644
+--- a/Cargo.lock
++++ b/Cargo.lock
+@@ -6110,6 +6110,7 @@ dependencies = [
+  "chrono",
+  "clap",
+  "hex",
++ "josekit",
+  "mdoc-zk-runtime",
+  "openid4vp",
+  "p256",

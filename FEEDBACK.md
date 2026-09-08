@@ -1,12 +1,18 @@
 # Uniswap developer feedback
 
-Project: Nachweis (ETHOnline 2026). Integration: a Uniswap v4 permissioned pool on Sepolia whose allowlist checker reads the Nachweis `AttestationRegistry`. Written during the integration, dated 2026-09-07. Lines marked TODO are for the live Sepolia run, which has not happened yet; everything else was observed on a Sepolia fork against the deployed contracts.
+Project: Attestat, repository `nachweis-app` (ETHOnline 2026). Integration: a Uniswap v4 permissioned pool on Sepolia whose allowlist checker reads the Attestat `AttestationRegistry`. Written during the integration, dated 2026-09-07; evidence labels corrected 2026-09-08. Lines marked TODO are for the Sepolia broadcast, which has not happened yet; everything else was observed on a local Sepolia fork (anvil forked from a public Sepolia RPC) against the bytecode of the contracts Uniswap has deployed there.
+
+## Status of evidence
+
+- Every result in this file comes from a local Sepolia fork on the developer's machine: Foundry fork tests and `forge script` dry runs against the deployed Uniswap contracts at their Sepolia addresses. The deployed bytecode was exercised; no transaction was broadcast.
+- Nothing from this project is deployed on Sepolia as of 2026-09-08. There are no transaction hashes, no pool id on the public chain and no step 7 submission.
+- The file will be updated with hashes and paid gas after the broadcast; until then, read "Sepolia" below as "local Sepolia fork" unless a line says broadcast.
 
 ## What was integrated
 
 - `IAllowlistChecker` implementation: `contracts/src/uniswap/EudiAllowlistChecker.sol`. Returns `SWAP_ALLOWED | LIQUIDITY_ALLOWED` when the registry holds a live decision for the account under the pool's policy, `NONE` otherwise.
-- The checker exercised through the real `PermissionsAdapterFactory` and `PermissionsAdapter` bytecode in unit tests, and against the live Sepolia factory in a fork test.
-- A Foundry script that runs onboarding steps 1 to 6 (create adapter, allowlist and fund, verify, approve wrappers and hook, initialize the pool with `PermissionedHooks`, enable swapping). Simulated on a Sepolia fork; all six steps succeeded, including `PoolManager.initialize` through the deployed hook.
+- The checker exercised through the real `PermissionsAdapterFactory` and `PermissionsAdapter` bytecode in unit tests, and against the deployed Sepolia factory on a local Sepolia fork.
+- A Foundry script that runs onboarding steps 1 to 6 (create adapter, allowlist and fund, verify, approve wrappers and hook, initialize the pool with `PermissionedHooks`, enable swapping). Simulated on a local Sepolia fork; all six steps succeeded, including `PoolManager.initialize` through the deployed hook.
 - A liquidity mint through the deployed `PermissionedPositionManager` (Permit2 approvals, `MINT_POSITION` + `SETTLE_PAIR`) and an exact-input swap through the deployed permissioned Universal Router (`V4_SWAP`: `SWAP_EXACT_IN_SINGLE`, `SETTLE_ALL`, `TAKE_ALL`), as scripts and as fork tests. The fork tests run the whole sequence: onboard, mint, swap as an attested investor, revoke, the same swap reverts in `PermissionedHooks.beforeSwap`, a never-attested address is rejected the same way.
 - Details and verification notes: `contracts/docs/uniswap-permissioned-pool.md`.
 
@@ -47,7 +53,7 @@ Stack parts used: v4-periphery permissioned pools (factory, adapter, hooks, Perm
 
 - Nothing in the Uniswap contracts. The one failing test during development was my expectation of the token's error in step 3 (item 4 above). The liquidity mint and both swap directions of the fork tests (allowed, revoked, never attested) passed on the first run against the deployed contracts.
 - Tooling, not Uniswap: `developers.uniswap.org/docs/...` answers a 303 to `/llms.mdx/...` for non-browser clients, which my fetch tool refused to follow. `curl -L` with a browser user agent worked.
-- TODO (live Sepolia): gas, reverts, and whether `PoolManager.initialize` behaves as in the fork simulation.
+- TODO (Sepolia broadcast): gas, reverts, and whether `PoolManager.initialize` behaves as in the fork simulation.
 
 ## Suggestions
 
@@ -60,10 +66,10 @@ Stack parts used: v4-periphery permissioned pools (factory, adapter, hooks, Perm
 - Add a "swap without the Trading API" code block (Permit2 approvals, `V4_SWAP` encoding with the six-field `ExactInputSingleParams`, the permissioned router address) next to the provide-liquidity page, and a sizing paragraph on that page.
 - Fix the `PermissionedHooks` source pointer in `deployments.json`, or publish the hook.
 
-## Live Sepolia experience
+## Local Sepolia fork results
 
-Fork results on 2026-09-07 (read-only public RPC, block 11655920 area): onboarding 6 steps, a full-range mint of 1000 NDF / 1000 mUSD (liquidity 999000000000000, tokenId 9 on the deployed position manager), a swap of 100 mUSD for 90.65 NDF, a revoke followed by `WrappedError(PermissionedHooks, beforeSwap, Unauthorized(), HookCallFailed())` for the identical calldata. Dry-run gas for the bootstrapping runs: 8,195,312 (mint) and 8,921,394 (mint plus swap).
+Not a broadcast. Fork results on 2026-09-07 (read-only public RPC, block 11655920 area): onboarding 6 steps, a full-range mint of 1000 NDF / 1000 mUSD (liquidity 999000000000000, tokenId 9 on the deployed position manager), a swap of 100 mUSD for 90.65 NDF, a revoke followed by `WrappedError(PermissionedHooks, beforeSwap, Unauthorized(), HookCallFailed())` for the identical calldata. Dry-run gas for the bootstrapping runs: 8,195,312 (mint) and 8,921,394 (mint plus swap).
 
 TODO: transaction hashes of steps 2 to 6.
-TODO: the same mint and swap broadcast, gas actually paid.
+TODO: the same mint and swap broadcast on Sepolia, gas actually paid.
 TODO: step 7 form submission and response.
