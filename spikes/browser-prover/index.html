@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>browser prover spike (pid-sdjwt)</title>
+    <style>
+      body { font: 14px/1.4 ui-monospace, Menlo, monospace; margin: 24px; max-width: 1100px; }
+      button { font: inherit; padding: 6px 12px; margin-right: 8px; }
+      pre { white-space: pre-wrap; word-break: break-all; background: #f4f4f4; padding: 8px; }
+      #status { font-weight: bold; }
+    </style>
+  </head>
+  <body>
+    <h1>browser prover spike: pid-sdjwt in a Chrome tab</h1>
+    <p>Synthetic data only. Isolation: <span id="isolated"></span>, threads: <span id="threads"></span></p>
+    <p>
+      <button id="run">decrypt JWE, witness, prove, verify</button>
+      <label><input type="checkbox" id="post" checked /> POST result to the dev server</label>
+    </p>
+    <p id="status">idle</p>
+    <pre id="log"></pre>
+    <h2>result</h2>
+    <pre id="result"></pre>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
