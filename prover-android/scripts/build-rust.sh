@@ -61,7 +61,9 @@ cp "$SYSROOT/usr/lib/$TRIPLE/libc++_shared.so" "$APP/src/main/jniLibs/$ABI/"
 # Kotlin bindings from the host build (same crate, same uniffi metadata); zig-linked
 # .so files lose the .symtab uniffi-bindgen reads, hence the host dylib.
 cargo build --release
-HOST_LIB="$(ls "$CORE"/target/release/libprover_mobile_core.{dylib,so} 2>/dev/null | head -1)"
+HOST_LIB="$(ls "$CORE"/target/release/libprover_mobile_core.{dylib,so} 2>/dev/null || true)"
+HOST_LIB="${HOST_LIB%%$'\n'*}"
+[ -n "$HOST_LIB" ] || { echo "host library not found under $CORE/target/release" >&2; exit 1; }
 UNIFFI_VERSION="$(grep -A1 '^name = "uniffi"$' "$CORE/Cargo.lock" | tail -1 | sed 's/version = "\(.*\)"/\1/')"
 BINDGEN="$WORK/uniffi-bindgen-cli"
 if [ ! -x "$BINDGEN/target/release/uniffi-bindgen-cli" ]; then
