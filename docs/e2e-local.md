@@ -21,10 +21,11 @@ and per-run summaries live in `.e2e/` (gitignored): `anvil.log`, `verifier.log`,
 ## What the script does
 
 1. Builds `verifier-service` (release, from the relay worktree, `VERIFIER_REPO`, default
-   `../nachweis-verifier-relay`) and the bridge (release) on every run (cargo is incremental; a
-   stale binary silently runs old code), and what is missing of the guest ELF
-   (`cargo prove build`), `forge build` and `bun install` in `scripts/e2e/` for the wallet helper.
-   A fresh checkout therefore needs no manual install step for this script.
+   `../nachweis-verifier-relay`), the bridge (release) and the guest ELF (`cargo prove build`)
+   on every run (cargo is incremental; a stale binary silently runs old code, and a guest ELF
+   from an older `lib.rs` fails execute mode with "guest public values differ from the native
+   run"), and what is missing of `forge build` and `bun install` in `scripts/e2e/` for the
+   wallet helper. A fresh checkout therefore needs no manual install step for this script.
 2. Generates a fresh P-256 issuer key and a self-signed certificate (openssl) and computes
    `sha256(SEC1 uncompressed)` of the key.
 3. Starts `anvil --fork-url <Sepolia>` on a free port with the deterministic default accounts:
