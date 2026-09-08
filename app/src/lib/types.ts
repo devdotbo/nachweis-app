@@ -23,12 +23,25 @@ export function hasDecision(d: Decision): boolean {
   return d.expiry !== 0n
 }
 
-export function isEligibleLocally(d: Decision, requiredBits: bigint, nowSeconds = BigInt(Math.floor(Date.now() / 1000))): boolean {
-  return !d.revoked && d.expiry > nowSeconds && (d.bits & requiredBits) === requiredBits
+/** Mirrors AttestationRegistry.isEligible: evidence (the decision) and issuer approval are both required. */
+export function isEligibleLocally(d: Decision, approved: boolean, requiredBits: bigint, nowSeconds = BigInt(Math.floor(Date.now() / 1000))): boolean {
+  return approved && !d.revoked && d.expiry > nowSeconds && (d.bits & requiredBits) === requiredBits
 }
 
+/** Mirrors AttestationRegistry.statusOf(subject, policyId). */
+export interface RegistryStatus {
+  /** Evidence is stored (attestWithProof or attestByOperator). */
+  hasDecision: boolean
+  /** The issuer approved (approve or attestByOperator); cleared by revoke. */
+  approved: boolean
+  revoked: boolean
+  expiry: bigint
+}
+
+export const EMPTY_STATUS: RegistryStatus = { hasDecision: false, approved: false, revoked: false, expiry: 0n }
+
 export interface RegistryEvent {
-  kind: 'Attested' | 'Revoked'
+  kind: 'Attested' | 'Approved' | 'Revoked'
   subject: Address
   policyId: Hex
   bits?: bigint

@@ -8,7 +8,12 @@ import type { BridgeSession } from '../bridge'
 import type { Handoff } from './handoff'
 import type { ClaimLine, PresentationRequest } from '../verifier'
 
-export type SessionState = 'pending' | 'presented' | 'rejected' | 'attested' | 'revoked'
+/**
+ * pending: waiting for the wallet; presented: the verifier accepted the presentation; proved: a proof is
+ * ready; attested: evidence is on chain, awaiting issuer approval; approved: the issuer approved, both
+ * doors open; revoked: the issuer withdrew approval (Re-approve reopens); rejected: the verifier refused.
+ */
+export type SessionState = 'pending' | 'presented' | 'proved' | 'attested' | 'approved' | 'revoked' | 'rejected'
 
 export interface Session {
   request: PresentationRequest

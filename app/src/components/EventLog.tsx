@@ -8,7 +8,7 @@ export function EventLog() {
       <h2>
         <span className="n">4</span>Registry events
       </h2>
-      <p className="lead">Attested and Revoked from the AttestationRegistry, newest first.</p>
+      <p className="lead">Attested, Approved and Revoked from the AttestationRegistry, newest first.</p>
       {loading ? <p className="muted">loading</p> : null}
       {!loading && events.length === 0 ? <div className="empty">No events yet.</div> : null}
       <div className="log">

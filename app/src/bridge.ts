@@ -6,26 +6,31 @@
  *   POST /sessions {bound_address} -> {session_id, nonce, openid4vp_uri?, request_uri?, mode, address_proof_message}
  *        (when VITE_BRIDGE_URL is set; the bridge creates the presentation request at the verifier itself)
  *   POST /sessions/:id/address-proof {signature}   EIP-191 signature of "nachweis:session:<id>"
- *   GET  /sessions/:id -> {state: created|presented|verified|proving|proved|attested|failed, tx_hash?, detail?}
+ *   GET  /sessions/:id -> {state: created|presented|verified|proving|proved|attested|approved|revoked|failed, approved, tx_hash?, detail?}
  *   POST /sessions/:id/attest {}  once the bridge reports proved (its verifier mode proves but does not
  *        attest by itself): the bridge sends attestWithProof with the operator key. 409 unless proved.
+ *        attested means evidence on chain, awaiting issuer approval; the issuer approves from the app
+ *        (registry.approve with the operator signer) or through POST /sessions/:id/approve with the
+ *        issuer token. The app reads approval from the chain, never from the session alone.
  *   GET  /sessions/:id/handoff -> {session_id, bound_address, challenge_hex, nonce, verifier_url, bridge_url, expires_at}
  *        (two-device flow: what the phone prover needs to join this session; only while created or presented)
  *
  * Mock mode walks the state machine on a timer and writes the decision into the mock registry.
  */
 import type { Address, Hex } from 'viem'
-import { BRIDGE_URL, MOCK } from './config'
+import { BRIDGE_URL, MOCK, POLICY_ID } from './config'
 import { demoDecision } from './lib/decision'
-import { MOCK_OPERATOR, mockAttest } from './lib/mockChain'
+import { MOCK_OPERATOR, mockAttestWithProof, mockStatusNow } from './lib/mockChain'
 import { getSession } from './lib/sessions'
 import { handoffFromRaw, handoffNonce, type Handoff, type HandoffRaw } from './lib/handoff'
 
-export const BRIDGE_STATES = ['created', 'presented', 'verified', 'proving', 'proved', 'attested', 'failed'] as const
+export const BRIDGE_STATES = ['created', 'presented', 'verified', 'proving', 'proved', 'attested', 'approved', 'revoked', 'failed'] as const
 export type BridgeState = (typeof BRIDGE_STATES)[number]
 
 export interface BridgeSession {
   state: BridgeState
+  /** Issuer approval as the bridge last saw it (registry.approved). */
+  approved?: boolean
   txHash?: Hex
   detail?: string
   /** "noir-ultrahonk" for a proof posted by the phone, "mock-groth16" / SP1 systems for a proof the bridge made. */
@@ -61,6 +66,9 @@ export interface BridgeSessionRaw {
   request_uri?: string | null
   public_values?: BridgePublicValues | null
   tx_hash?: string | null
+  approved?: boolean
+  approve_tx_hash?: string | null
+  revoke_tx_hash?: string | null
   proof_system?: string | null
   /** Unix seconds from the bridge. */
   updated_at?: string | number
@@ -121,8 +129,9 @@ export function sessionMessage(sessionId: string): string {
   return `nachweis:session:${sessionId}`
 }
 
+/** No further bridge transitions on their own: approval and revocation are issuer actions the app reads from the chain. */
 export function isTerminal(state: BridgeState): boolean {
-  return state === 'attested' || state === 'failed'
+  return state === 'attested' || state === 'approved' || state === 'revoked' || state === 'failed'
 }
 
 // ---------------------------------------------------------------------------
@@ -140,7 +149,13 @@ const httpClient: BridgeClient = {
     const body = await fetchBridgeSession(sessionId)
     const tx = body.tx_hash ?? undefined
     const detail = body.detail ?? body.error ?? undefined
-    return { state: body.state, txHash: tx && /^0x[0-9a-fA-F]{64}$/.test(tx) ? (tx as Hex) : undefined, detail, proofSystem: body.proof_system ?? undefined }
+    return {
+      state: body.state,
+      approved: body.approved === true,
+      txHash: tx && /^0x[0-9a-fA-F]{64}$/.test(tx) ? (tx as Hex) : undefined,
+      detail,
+      proofSystem: body.proof_system ?? undefined,
+    }
   },
   async requestAttest(sessionId) {
     const res = await fetch(`${BRIDGE_URL}/sessions/${encodeURIComponent(sessionId)}/attest`, {
@@ -155,6 +170,7 @@ const httpClient: BridgeClient = {
 
 // ---------------------------------------------------------------------------
 // mock: presented at t0 (set by the mock verifier), then verified, proving (3 s), proved, attested
+// (evidence only); approved and revoked follow the mock registry, which the issuer screen writes.
 // ---------------------------------------------------------------------------
 
 const MOCK_PROVING_MS = 3000
@@ -197,10 +213,13 @@ const mockClient: BridgeClient = {
     if (t < 1000 + MOCK_PROVING_MS) return { state: 'proving', detail: 'generating proof, 430k cycles' }
     if (t < 1500 + MOCK_PROVING_MS) return { state: 'proved', detail: 'Groth16 proof ready, sending attestWithProof' }
     if (!e.txHash) {
-      e.attesting ??= mockAttest(e.boundAddress, demoDecision(sessionId), MOCK_OPERATOR)
+      e.attesting ??= mockAttestWithProof(e.boundAddress, demoDecision(sessionId), MOCK_OPERATOR)
       e.txHash = await e.attesting
     }
-    return { state: 'attested', txHash: e.txHash, detail: 'attestWithProof confirmed' }
+    const chain = mockStatusNow(e.boundAddress, POLICY_ID)
+    if (chain.revoked) return { state: 'revoked', approved: false, txHash: e.txHash, detail: 'revoked by the issuer' }
+    if (chain.approved) return { state: 'approved', approved: true, txHash: e.txHash, detail: 'approved by the issuer' }
+    return { state: 'attested', approved: false, txHash: e.txHash, detail: 'attestWithProof confirmed, awaiting issuer approval' }
   },
   async requestAttest() {
     /* the mock bridge attests on its own */

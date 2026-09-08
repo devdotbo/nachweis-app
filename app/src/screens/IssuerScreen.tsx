@@ -9,7 +9,7 @@ export function IssuerScreen({ wallet }: { wallet: Wallet }) {
   const sessions = useSessions()
   return (
     <div className="grid">
-      <ConnectCard wallet={wallet} title="Connect operator wallet" lead="The operator key registered for the policy in the AttestationRegistry. It signs attestByOperator and revoke." />
+      <ConnectCard wallet={wallet} title="Connect operator wallet" lead="The operator key registered for the policy in the AttestationRegistry. It signs approve, revoke and the attestByOperator fallback." />
       <RevokeByAddress operator={wallet.address} />
       <div className="span2">
         <IssuerPending operator={wallet.address} sessions={sessions} />

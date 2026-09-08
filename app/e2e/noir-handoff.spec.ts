@@ -3,9 +3,10 @@
  * investor connects with the dev signer, creates the bridge session, the dev signer signs
  * nachweis:session:<id>, the "Prove on your phone" card shows the handoff QR and URI; the companion
  * plays the phone (`companion handoff … --stub-wallet`), proves with bb and posts the proof; the app
- * flips to attested with bits 0x3, Subscribe sends a tx with the dev signer and the FundToken balance
- * shows; then the issuer role (operator dev key) revokes and the investor view shows revoked with the
- * Subscribe door closed.
+ * shows attested with bits 0x3 but both doors closed (evidence only); the issuer role (operator dev
+ * key) approves, the investor is permitted, Subscribe sends a tx with the dev signer and the FundToken
+ * balance shows; the issuer revokes and the investor view shows revoked with the Subscribe door
+ * closed; the issuer re-approves and the door opens again.
  */
 import { expect, test } from '@playwright/test'
 import { writeFileSync } from 'node:fs'
@@ -15,10 +16,10 @@ import { card, clearShots, expectConnected, loadStack, runBun, shot } from './st
 const env = loadStack()
 test.beforeAll(() => clearShots(env.mode))
 
-test.describe('investor proves on the phone, subscribes, issuer revokes', () => {
+test.describe('investor proves on the phone, issuer approves, subscribes, issuer revokes and re-approves', () => {
   test.skip(env.mode !== 'noir', `stack mode is ${env.mode}, this spec needs noir`)
 
-  test('the six beats', async ({ page }) => {
+  test('the eight beats', async ({ page }) => {
     const errors: string[] = []
     page.on('pageerror', (e) => errors.push(String(e)))
     page.on('console', (m) => {
@@ -73,21 +74,44 @@ test.describe('investor proves on the phone, subscribes, issuer revokes', () => 
     writeFileSync(resolve(env.runDir, 'companion.log'), `${r.stdout}\n${r.stderr}`)
     expect(r.status, `companion handoff failed:\n${r.stderr.slice(-2000)}`).toBe(0)
 
-    // 6. attested: handoff card, badge, eligibility with bits 0x3, decision on chain
+    // 6. attested: handoff card, badge, eligibility with bits 0x3, decision on chain, but evidence only:
+    //    not permitted and both doors closed until the issuer approves
     await expect(handoff.getByText('attested from the phone')).toBeVisible()
-    await expect(present.getByText('presented, attested')).toBeVisible()
+    await expect(present.getByText('attested, awaiting issuer approval')).toBeVisible()
     const status = card(page, 'Eligibility')
-    await expect(status.locator('.status').first()).toHaveText('permitted')
+    await expect(status.locator('.status').first()).toHaveText('evidence on chain, awaiting issuer approval')
     await expect(status.locator('.steps .step.current')).toHaveText('attested')
     await expect(status.locator('.flag.on')).toHaveText(['yes: identity evidence', 'yes: over 18'])
     await expect(status.locator('dl.kv')).toContainText('0x3')
+    await expect(status.getByTestId('approved')).toHaveText('false')
     await expect(status.getByText('attest tx')).toBeVisible()
     await expect(card(page, 'What the chain sees').locator('pre.raw')).toContainText('"revoked": false')
-    await shot(page, env.mode, '04-attested')
-
-    // 7. Subscribe: the dev signer sends Subscription.subscribe(), the FundToken balance shows
     const doors = card(page, 'Two doors, one decision')
     const subscribeDoor = doors.locator('.door', { hasText: 'Subscribe' })
+    await expect(doors.getByTestId('doors-awaiting')).toBeVisible()
+    await expect(subscribeDoor.locator('.status')).toHaveText('closed')
+    await expect(subscribeDoor.getByRole('button', { name: 'Subscribe' })).toBeDisabled()
+    await shot(page, env.mode, '04-attested-awaiting-approval')
+
+    // 6b. the issuer approves: registry.approve(subject, policyId) with the operator dev key
+    await page.getByRole('button', { name: 'Issuer' }).click()
+    await expectConnected(page, env.operator)
+    const pending = card(page, 'Presentations')
+    const item = pending.locator('.item', { hasText: sessionId })
+    await expect(item.locator('.status')).toHaveText('attested (awaiting issuer approval)')
+    await expect(item.getByRole('button', { name: 'Revoke' })).toBeEnabled()
+    await item.getByRole('button', { name: 'Approve', exact: true }).click()
+    await expect(item.locator('.status')).toHaveText('approved')
+    await expect(pending.getByText('tx confirmed')).toBeVisible()
+    await expect(card(page, 'Registry events').locator('.ev.approved').first()).toBeVisible()
+    await shot(page, env.mode, '04b-approved-issuer')
+    await page.getByRole('button', { name: 'Investor' }).click()
+    await expectConnected(page, env.investor)
+    await expect(status.locator('.status').first()).toHaveText('permitted')
+    await expect(status.getByTestId('approved')).toHaveText('true')
+    await expect(status.locator('.steps .step.current')).toHaveText('approved')
+
+    // 7. Subscribe: the dev signer sends Subscription.subscribe(), the FundToken balance shows
     await expect(subscribeDoor.locator('.status')).toHaveText('open')
     const balanceText = doors.getByTestId('fund-balance').locator('code')
     await expect(balanceText).toHaveText(/^\d+(\.\d+)?$/)
@@ -100,14 +124,13 @@ test.describe('investor proves on the phone, subscribes, issuer revokes', () => 
     // 8. issuer role with the operator dev key: the session from this browser, Revoke
     await page.getByRole('button', { name: 'Issuer' }).click()
     await expectConnected(page, env.operator)
-    const pending = card(page, 'Presentations')
-    const item = pending.locator('.item', { hasText: sessionId })
-    await expect(item.locator('.status')).toHaveText('attested')
+    await expect(item.locator('.status')).toHaveText('approved')
     await shot(page, env.mode, '06-issuer')
     await item.getByRole('button', { name: 'Revoke' }).click()
     await expect(item.locator('.status')).toHaveText('revoked')
     await expect(pending.getByText('tx confirmed')).toBeVisible()
     await expect(card(page, 'Registry events').locator('.ev.revoked').first()).toBeVisible()
+    await expect(item.getByRole('button', { name: 'Re-approve' })).toBeEnabled()
     await shot(page, env.mode, '07-revoked-issuer')
 
     // 9. back to the investor: revoked, Subscribe closed
@@ -115,10 +138,25 @@ test.describe('investor proves on the phone, subscribes, issuer revokes', () => 
     await expectConnected(page, env.investor)
     await expect(status.locator('.status').first()).toHaveText('revoked')
     await expect(status.locator('dl.kv')).toContainText('true')
+    await expect(status.getByTestId('approved')).toHaveText('false')
     await expect(subscribeDoor.locator('.status')).toHaveText('closed')
     await expect(subscribeDoor.getByRole('button', { name: 'Subscribe' })).toBeDisabled()
     await expect(card(page, 'What the chain sees').locator('pre.raw')).toContainText('"revoked": true')
     await shot(page, env.mode, '08-revoked-investor')
+
+    // 10. re-approval needs the issuer: Re-approve reopens, the investor is permitted again
+    await page.getByRole('button', { name: 'Issuer' }).click()
+    await expectConnected(page, env.operator)
+    await item.getByRole('button', { name: 'Re-approve' }).click()
+    await expect(item.locator('.status')).toHaveText('approved')
+    await expect(pending.getByText('tx confirmed')).toBeVisible()
+    await shot(page, env.mode, '09-reapproved-issuer')
+    await page.getByRole('button', { name: 'Investor' }).click()
+    await expectConnected(page, env.investor)
+    await expect(status.locator('.status').first()).toHaveText('permitted')
+    await expect(subscribeDoor.locator('.status')).toHaveText('open')
+    await expect(card(page, 'What the chain sees').locator('pre.raw')).toContainText('"revoked": false')
+    await shot(page, env.mode, '10-reapproved-investor')
 
     expect(errors, `browser errors:\n${errors.join('\n')}`).toEqual([])
   })
