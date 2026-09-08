@@ -1,7 +1,7 @@
 // Generates circuits/pid-sdjwt/Prover.toml from a prover-sp1 style input.json
 // (SD-JWT presentation + issuer key + bound address + challenge).
 //
-//   bun run circuits/tools/gen-prover.ts <input.json> [out.toml] [--tamper=issuer-sig|age-disclosure|nonce|kb-sig]
+//   bun run circuits/tools/gen-prover.ts <input.json> [out.toml] [--tamper=issuer-sig|age-disclosure|nonce|kb-sig|hdr-window]
 //
 // No dependencies beyond bun. All offsets are byte offsets into the raw
 // (base64url-decoded) JSON of the issuer payload, the KB-JWT header and payload,
@@ -15,7 +15,7 @@ const args = process.argv.slice(2);
 const positional = args.filter((a) => !a.startsWith("--"));
 const tamper = (args.find((a) => a.startsWith("--tamper=")) ?? "").split("=")[1] ?? "";
 if (positional.length < 1) {
-  console.error("usage: gen-prover.ts <input.json> [out.toml] [--tamper=issuer-sig|age-disclosure|nonce|kb-sig]");
+  console.error("usage: gen-prover.ts <input.json> [out.toml] [--tamper=issuer-sig|age-disclosure|nonce|kb-sig|hdr-window]");
   process.exit(2);
 }
 const circuitDir = join(dirname(new URL(import.meta.url).pathname), "..", "pid-sdjwt");
@@ -37,7 +37,10 @@ const KB_PAYLOAD_MAX = constant("KB_PAYLOAD_MAX");
 const SALT_MAX_LEN = constant("SALT_MAX_LEN");
 const AGE_OBJ_DISC_MAX = constant("AGE_OBJ_DISC_MAX");
 const CNF_WINDOW = constant("CNF_WINDOW");
-const HEADER_PREFIX_RAW = 96; // first 128 base64url chars of the issuer header, decoded in-circuit
+// The circuit decodes a 128-char (96-byte) window of the issuer header that starts at a
+// 4-aligned base64url offset chosen here; alg and typ must both lie inside it.
+const HEADER_WINDOW_B64 = 128;
+const HEADER_WINDOW_RAW = 96;
 const audMatch = constantsSrc.match(/AUD_FRAGMENT: \[u8; \d+\] =\s*"\\"aud\\":\\"([^"\\]+)\\""\.as_bytes\(\);/);
 if (!audMatch) throw new Error("AUD_FRAGMENT not found in constants.nr");
 export const PINNED_AUD = audMatch[1];
@@ -60,7 +63,7 @@ const payloadObj = JSON.parse(payloadJson);
 // Sanity: the circuit re-encodes the raw payload; the round trip must be exact.
 if (b64url(payloadRaw) !== payloadB64) throw new Error("payload base64url round trip differs");
 if (sigB64.length !== 86) throw new Error(`issuer signature base64url length ${sigB64.length}, expected 86`);
-if (headerB64.length < 128) throw new Error("issuer header shorter than 128 base64url chars");
+if (headerB64.length < HEADER_WINDOW_B64) throw new Error(`issuer header shorter than ${HEADER_WINDOW_B64} base64url chars`);
 
 const uniqueIndex = (hay: string, needle: string, from = 0, label = needle): number => {
   const i = hay.indexOf(needle, from);
@@ -75,16 +78,31 @@ const byteIndexOf = (hay: string, needle: string, from = 0) => {
   return i < 0 ? -1 : byteOffset(hay, i);
 };
 
-// --- issuer header: alg and typ inside the first 96 decoded bytes -------------------
-const headerHead = fromB64url(headerB64.slice(0, 128)).toString("latin1"); // 96 bytes
-const hdrAlgOffset = headerHead.indexOf('"alg":"ES256"');
-const hdrTypOffset = (() => {
-  const d = headerHead.indexOf('"typ":"dc+sd-jwt"');
-  const v = headerHead.indexOf('"typ":"vc+sd-jwt"');
+// --- issuer header: alg and typ inside one 96-byte window of the decoded header ----------
+// The window starts at base64url char hdrWindowStart (a multiple of 4), i.e. decoded byte
+// hdrWindowStart * 3 / 4; both fragments must fall inside its 96 bytes. Key order is free
+// (the Bundesdruckerei PID header has x5c, kid, typ, alg; docs/evidence/g0-2026-09-08.md).
+const headerJson = fromB64url(headerB64).toString("latin1"); // byte-exact view
+const hdrAlgAbs = headerJson.indexOf('"alg":"ES256"');
+const hdrTypAbs = (() => {
+  const d = headerJson.indexOf('"typ":"dc+sd-jwt"');
+  const v = headerJson.indexOf('"typ":"vc+sd-jwt"');
   return d >= 0 ? d : v;
 })();
-if (hdrAlgOffset < 0 || hdrAlgOffset + 13 > HEADER_PREFIX_RAW) throw new Error('issuer header: "alg":"ES256" not within the first 96 decoded bytes');
-if (hdrTypOffset < 0 || hdrTypOffset + 17 > HEADER_PREFIX_RAW) throw new Error('issuer header: "typ":"dc+sd-jwt" (or vc+sd-jwt) not within the first 96 decoded bytes');
+if (hdrAlgAbs < 0) throw new Error('issuer header: "alg":"ES256" not found');
+if (hdrTypAbs < 0) throw new Error('issuer header: "typ":"dc+sd-jwt" (or vc+sd-jwt) not found');
+const hdrLo = Math.min(hdrAlgAbs, hdrTypAbs);
+const hdrHi = Math.max(hdrAlgAbs + 13, hdrTypAbs + 17);
+// largest 4-aligned start whose window still begins at or before the first fragment,
+// clamped so the window ends inside the header
+const hdrMaxStart = Math.floor((headerB64.length - HEADER_WINDOW_B64) / 4) * 4;
+let hdrWindowStart = Math.min(Math.floor(hdrLo / 3) * 4, hdrMaxStart);
+let hdrWindowRaw = (hdrWindowStart / 4) * 3;
+if (hdrHi > hdrWindowRaw + HEADER_WINDOW_RAW) {
+  throw new Error(`issuer header: "alg" (byte ${hdrAlgAbs}) and "typ" (byte ${hdrTypAbs}) do not share one ${HEADER_WINDOW_RAW}-byte window`);
+}
+let hdrAlgOffset = hdrAlgAbs - hdrWindowRaw;
+let hdrTypOffset = hdrTypAbs - hdrWindowRaw;
 
 // --- issuer payload offsets ---------------------------------------------------
 const vctOffset = uniqueIndex(payloadJson, '"vct":"urn:eudi:pid:de:1"');
@@ -247,6 +265,11 @@ switch (tamper) {
     kbSig = Buffer.from(kbSig);
     kbSig[5] ^= 1;
     break;
+  case "hdr-window": // a window that does not contain the alg fragment; the relative offsets stay
+    hdrWindowStart = hdrWindowStart > 0 ? 0 : hdrMaxStart;
+    hdrWindowRaw = (hdrWindowStart / 4) * 3;
+    if (hdrAlgAbs >= hdrWindowRaw && hdrAlgAbs + 13 <= hdrWindowRaw + HEADER_WINDOW_RAW) throw new Error("hdr-window tamper: the header is too short to place the window away from alg");
+    break;
   default:
     throw new Error(`unknown tamper mode ${tamper}`);
 }
@@ -264,6 +287,7 @@ let toml = `# Generated by circuits/tools/gen-prover.ts from ${inputPath}\n`;
 toml += tamper ? `# TAMPERED (${tamper}): this witness must fail\n` : "";
 toml += `# age shape ${shape}\n`;
 toml += bounded("issuer_header_b64", ascii(headerB64), HEADER_B64_MAX);
+toml += `hdr_window_b64_start = ${hdrWindowStart}\n`;
 toml += `hdr_alg_offset = ${hdrAlgOffset}\n`;
 toml += `hdr_typ_offset = ${hdrTypOffset}\n`;
 toml += bounded("payload", payloadRaw, PAYLOAD_MAX_LEN);
@@ -300,6 +324,6 @@ writeFileSync(outPath, toml);
 const expiry = payloadObj.exp; // committed expiry is the issuer exp; KB-JWT exp is checked off chain
 console.log(`wrote ${outPath}${tamper ? ` (tampered: ${tamper})` : ""}`);
 console.log(
-  `age shape ${shape}; header_b64 ${headerB64.length}/${HEADER_B64_MAX}, payload ${payloadRaw.length}/${PAYLOAD_MAX_LEN}, tail ${tail.length}/${TAIL_MAX}, kb_header ${kbHeaderRaw.length}/${KB_HEADER_MAX}, kb_payload ${kbPayloadRaw.length}/${KB_PAYLOAD_MAX}, age_obj_disclosure ${ageObjRaw.length}/${AGE_OBJ_DISC_MAX}`,
+  `age shape ${shape}; header window at b64 ${hdrWindowStart} (byte ${hdrWindowRaw}), alg at byte ${hdrAlgAbs}, typ at byte ${hdrTypAbs}; header_b64 ${headerB64.length}/${HEADER_B64_MAX}, payload ${payloadRaw.length}/${PAYLOAD_MAX_LEN}, tail ${tail.length}/${TAIL_MAX}, kb_header ${kbHeaderRaw.length}/${KB_HEADER_MAX}, kb_payload ${kbPayloadRaw.length}/${KB_PAYLOAD_MAX}, age_obj_disclosure ${ageObjRaw.length}/${AGE_OBJ_DISC_MAX}`,
 );
 console.log(`expected public outputs: issuer_key_hash=0x${sha256(sec1).toString("hex")} over18=1 expiry=${expiry} nonce=0x${nonce} subject=0x${subject.toString("hex")}`);

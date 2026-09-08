@@ -28,9 +28,10 @@ global SD_HASH_REST_MAX_LEN: u32 = 63 + 1 + B64_64_LEN + TAIL_MAX;
 global SD_HASH_REST_BLOCKS: u32 = (SD_HASH_REST_MAX_LEN + 9 + 63) / 64;
 /// kb_header_b64 "." kb_payload_b64
 global KB_SIGNING_INPUT_MAX_LEN: u32 = ENCODED_KB_HEADER_MAX_LEN + 1 + ENCODED_KB_PAYLOAD_MAX_LEN;
-/// base64url chars of the issuer header decoded in-circuit to find alg and typ.
-global HEADER_PREFIX_B64: u32 = 128;
-global HEADER_PREFIX_RAW: u32 = 96;
+/// base64url chars of the issuer header decoded in-circuit to find alg and typ: a window of
+/// 128 chars (96 bytes) that starts at a prover-chosen, 4-aligned offset (REALISM.md, section 8).
+global HEADER_WINDOW_B64: u32 = 128;
+global HEADER_WINDOW_RAW: u32 = 96;
 
 /// SHA-256 initial hash value (FIPS 180-4), the state before any block.
 global SHA256_INITIAL_STATE: [u32; 8] = [
@@ -299,7 +300,9 @@ fn hex_nibble(n: u8) -> u8 {
 fn main(
     // Private inputs: the presentation, split
     issuer_header_b64: BoundedVec<u8, HEADER_B64_MAX>,
-    // Offsets of "alg":"ES256" and "typ":"dc+sd-jwt" in the first 96 decoded header bytes
+    // Start (base64url chars, multiple of 4) of the 128-char header window decoded in-circuit,
+    // and the offsets of "alg":"ES256" and "typ":"dc+sd-jwt" inside its 96 decoded bytes
+    hdr_window_b64_start: u32,
     hdr_alg_offset: u32,
     hdr_typ_offset: u32,
     payload: BoundedVec<u8, PAYLOAD_MAX_LEN>,
@@ -347,16 +350,23 @@ fn main(
     subject: pub [u8; 20],
 ) -> pub ([u8; 32], u8, u64, [u8; 32]) {
     // ---- 1. issuer JWT: alg/typ, rebuild header.payload, verify ES256 ---------
-    assert(issuer_header_b64.len() >= HEADER_PREFIX_B64, "issuer header too short");
+    // The window is a 4-aligned slice of the base64url header, so its 96 decoded bytes are a
+    // contiguous slice of the decoded header at byte offset hdr_window_b64_start * 3 / 4. The
+    // header is part of the signed input hashed below, so a fragment found in the window is a
+    // fragment of the signed header, wherever the issuer placed it (REALISM.md, section 8).
+    assert(hdr_window_b64_start % 4 == 0, "issuer header window is not 4-aligned");
+    assert(
+        hdr_window_b64_start + HEADER_WINDOW_B64 <= issuer_header_b64.len(),
+        "issuer header window out of range",
+    );
     let header_storage = issuer_header_b64.storage();
-    let mut header_prefix: [u8; HEADER_PREFIX_B64] = [0; HEADER_PREFIX_B64];
-    for i in 0..HEADER_PREFIX_B64 {
-        header_prefix[i] = header_storage[i];
+    let mut header_window: [u8; HEADER_WINDOW_B64] = [0; HEADER_WINDOW_B64];
+    for i in 0..HEADER_WINDOW_B64 {
+        header_window[i] = header_storage[hdr_window_b64_start + i];
     }
-    let header_head: [u8; HEADER_PREFIX_RAW] = BASE64_URL_DECODER::decode(header_prefix);
-    assert(header_head[0] == ASCII_LBRACE, "issuer header is not a JSON object");
-    assert_fragment_at(header_head, HEADER_PREFIX_RAW, hdr_alg_offset, ALG_FRAGMENT, "issuer alg is not ES256          ");
-    assert(hdr_typ_offset + 17 <= HEADER_PREFIX_RAW, "issuer typ out of range");
+    let header_head: [u8; HEADER_WINDOW_RAW] = BASE64_URL_DECODER::decode(header_window);
+    assert_fragment_at(header_head, HEADER_WINDOW_RAW, hdr_alg_offset, ALG_FRAGMENT, "issuer alg is not ES256          ");
+    assert(hdr_typ_offset + 17 <= HEADER_WINDOW_RAW, "issuer typ out of range");
     for i in 0..17 {
         let c = header_head[hdr_typ_offset + i];
         if i == 7 {
