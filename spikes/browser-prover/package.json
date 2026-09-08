@@ -1,0 +1,24 @@
+{
+  "name": "nachweis-spike-browser-prover",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Spike: pid-sdjwt Noir proof (UltraHonk keccak) inside a Chrome tab with noir_js and bb.js",
+  "scripts": {
+    "prepare-inputs": "bun run scripts/prepare-inputs.ts",
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@aztec/bb.js": "5.0.0-nightly.20260324",
+    "@noir-lang/noir_js": "1.0.0-beta.21"
+  },
+  "devDependencies": {
+    "bun-types": "^1.4.2",
+    "jose": "^6.2.12",
+    "typescript": "^5.9.3",
+    "vite": "^7.1.7"
+  }
+}
