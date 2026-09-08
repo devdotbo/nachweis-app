@@ -29,7 +29,7 @@ pub struct AppState {
 
 impl AppState {
     pub fn new(cfg: Config, chain: Option<Chain>) -> Self {
-        let verifier = cfg.verifier_url.as_deref().map(VerifierClient::new);
+        let verifier = cfg.verifier_url.as_deref().map(|u| VerifierClient::with_token(u, cfg.verifier_result_token.clone()));
         Self { cfg, sessions: new_store(), chain, verifier }
     }
 }
@@ -232,6 +232,10 @@ async fn get_session(AxState(st): AxState<Shared>, Path(id): Path<String>) -> Re
 /// wallet the same ten minutes.
 pub const HANDOFF_TTL_SECS: u64 = 600;
 
+fn unix_now() -> u64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
+}
+
 /// RFC 3986 percent-encoding of everything outside the unreserved set (for the nachweis:// URI).
 fn percent_encode(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
@@ -283,8 +287,7 @@ async fn handoff(AxState(st): AxState<Shared>, Path(id): Path<String>, headers: 
     if !matches!(session.state, State::Created | State::Presented) {
         return Err(conflict(format!("session is {:?}, handoff is only available while created or presented", session.state).to_lowercase()));
     }
-    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
-    if now > session.created_at + HANDOFF_TTL_SECS {
+    if unix_now() > session.created_at + HANDOFF_TTL_SECS {
         return Err(conflict("handoff expired"));
     }
     let verifier_url = st.cfg.handoff_verifier_url.clone().or_else(|| st.cfg.verifier_url.clone());
@@ -375,7 +378,10 @@ async fn run_pipeline(st: Shared, id: Uuid, presentation: String) -> Result<(), 
     let input = match statement::build_input(&cfg, &session, &presentation) {
         Ok(i) => i,
         Err(e) => {
-            with_session(&st, id, |s| s.fail(e.to_string()))?;
+            with_session(&st, id, |s| {
+                s.presentation = None;
+                s.fail(e.to_string())
+            })?;
             return Err(AppError(StatusCode::UNPROCESSABLE_ENTITY, e.to_string()));
         }
     };
@@ -384,6 +390,9 @@ async fn run_pipeline(st: Shared, id: Uuid, presentation: String) -> Result<(), 
         let window = cfg.kb_jwt_window_secs;
         tokio::task::spawn_blocking(move || statement::run_native(&input, window)).await.map_err(internal)?
     };
+    // The presentation served its purpose (statement input built, native run done): drop the
+    // plaintext from the session so it does not outlive its use, whatever the outcome.
+    with_session(&st, id, |s| s.presentation = None)?;
     let (_pv, pv_bytes) = match native {
         Ok(x) => x,
         Err(e) => {
@@ -498,6 +507,10 @@ async fn noir_proof(
     let session = with_session(&st, id, |s| s.clone())?;
     if !matches!(session.state, State::Created | State::Proved) {
         return Err(conflict(format!("session is {:?}, expected created or proved", session.state).to_lowercase()));
+    }
+    // The handoff the phone joined expires with the session window; a proof for a stale session is refused.
+    if unix_now() > session.created_at + HANDOFF_TTL_SECS {
+        return Err(conflict(format!("session older than {HANDOFF_TTL_SECS} s, create a new one")));
     }
     require_address_proof(&st, &session)?;
 

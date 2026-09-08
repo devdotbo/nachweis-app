@@ -65,6 +65,7 @@ pub struct Session {
     pub address_verified: bool,
     /// The presentation as handed to the bridge (server mode). Never serialized.
     pub presentation: Option<String>,
+    /// Cleared as soon as the statement input is built and the native run is done (run_pipeline).
     pub public_values: Option<Vec<u8>>,
     pub decoded: Option<DecodedPublicValues>,
     pub proof_system: Option<String>,
