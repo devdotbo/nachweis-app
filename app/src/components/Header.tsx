@@ -8,7 +8,7 @@ export function Header({ role, setRole, wallet }: { role: Role; setRole: (r: Rol
   return (
     <header className="header">
       <div className="wordmark">
-        Nachweis<span>.</span>
+        Attestat<span>.</span>
       </div>
       <span className="tag">{MOCK ? 'mock chain' : chain.name}</span>
       {MOCK ? <span className="tag mock">mock mode</span> : BRIDGE_CONFIGURED ? <span className="tag">bridge</span> : VERIFIER_MODE === 'relay' ? <span className="tag">blind relay</span> : null}

@@ -1,6 +1,6 @@
 # prover-mobile-core
 
-Shared Rust core of the Nachweis on-phone provers (iOS `prover-ios/`, Android
+Shared Rust core of the Attestat on-phone provers (app identifiers keep the Nachweis Prover name) (iOS `prover-ios/`, Android
 `prover-android/`). One crate, built with Mopro (mopro-ffi) into a Swift
 package (xcframework) and Kotlin bindings (JNI). Toolchain choice and
 versions: `TOOLCHAIN.md`.

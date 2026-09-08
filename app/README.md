@@ -1,6 +1,6 @@
 # app
 
-Demo front end for Nachweis: a token issuer accepts identity evidence from the German EUDI test wallet (sample identity) through the Rust verifier-service, approves it, and the approval becomes an EligibilityDecision in the AttestationRegistry on Sepolia. FundToken transfers and the Subscription contract read that decision; a Uniswap permissioned pool (WP7) will read it too. Revoke closes both doors.
+Demo front end for Attestat (formerly Nachweis; the package keeps the name `nachweis-app`): a token issuer accepts identity evidence from the German EUDI test wallet (sample identity) through the Rust verifier-service, approves it, and the approval becomes an EligibilityDecision in the AttestationRegistry on Sepolia. FundToken transfers and the Subscription contract read that decision; a Uniswap permissioned pool (WP7) will read it too. Revoke closes both doors.
 
 Vite, React 19, TypeScript, wagmi v2 and viem, plain CSS. Package manager: bun.
 
