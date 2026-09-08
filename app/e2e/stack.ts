@@ -23,6 +23,8 @@ export interface StackEnv {
   issuerJson: string
   issuerKeyPem: string
   issuerCertPem: string
+  /** Bearer token the bridge expects on its issuer routes (approve, revoke, attest-operator). */
+  issuerToken?: string
   companionDir: string
   walletScript: string
   runDir: string

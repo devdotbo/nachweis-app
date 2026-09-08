@@ -7,8 +7,8 @@ import type { Address, Hex } from 'viem'
 import { usePublicClient, useReadContract, useWriteContract } from 'wagmi'
 import { FUND_TOKEN, MOCK, POLICY_ID, REGISTRY, REQUIRED_BITS, SUBSCRIPTION } from '../config'
 import { fundTokenAbi, registryAbi, subscriptionAbi } from './contracts'
-import { mockAttest, mockDecisionOf, mockIsEligible, mockRevoke, mockSubscribe, useMockState } from './mockChain'
-import { EMPTY_DECISION, type Decision, type RegistryEvent, type TxState } from './types'
+import { mockApprove, mockAttest, mockDecisionOf, mockIsEligible, mockRevoke, mockStatusOf, mockSubscribe, useMockState } from './mockChain'
+import { EMPTY_DECISION, EMPTY_STATUS, type Decision, type RegistryEvent, type RegistryStatus, type TxState } from './types'
 
 export interface DecisionRead {
   decision: Decision
@@ -19,7 +19,10 @@ export interface DecisionRead {
 export interface RegistryTx {
   tx: TxState
   reset: () => void
+  /** attestByOperator: evidence and approval in one transaction (fallback without a proof). */
   attest: (subject: Address, decision: Decision) => Promise<void>
+  /** approve: the issuer approves existing evidence; also reopens a revoked record. */
+  approve: (subject: Address, policyId: Hex) => Promise<void>
   revoke: (subject: Address, policyId: Hex) => Promise<void>
   subscribe: () => Promise<void>
 }
@@ -39,6 +42,11 @@ function useDecisionMock(subject?: Address): DecisionRead {
 function useEligibleMock(subject?: Address): boolean | undefined {
   const s = useMockState()
   return subject ? mockIsEligible(s, subject, POLICY_ID, REQUIRED_BITS) : undefined
+}
+
+function useRegistryStatusMock(subject?: Address): RegistryStatus {
+  const s = useMockState()
+  return subject ? mockStatusOf(s, subject, POLICY_ID) : EMPTY_STATUS
 }
 
 function useRegistryEventsMock(): { events: RegistryEvent[]; loading: boolean } {
@@ -72,6 +80,7 @@ function useRegistryTxMock(operator?: Address): RegistryTx {
     tx,
     reset: () => setTx({ status: 'idle' }),
     attest: (subject, decision) => run('attestByOperator', () => mockAttest(subject, decision, who)),
+    approve: (subject, policyId) => run('approve', () => mockApprove(subject, policyId, who)),
     revoke: (subject, policyId) => run('revoke', () => mockRevoke(subject, policyId, who)),
     subscribe: () => run('subscribe', () => mockSubscribe(who, POLICY_ID)),
   }
@@ -105,6 +114,19 @@ function useEligibleChain(subject?: Address): boolean | undefined {
   return q.data as boolean | undefined
 }
 
+/** AttestationRegistry.statusOf(subject, policyId): evidence, approval, revoked, expiry in one read. */
+function useRegistryStatusChain(subject?: Address): RegistryStatus {
+  const q = useReadContract({
+    address: REGISTRY,
+    abi: registryAbi,
+    functionName: 'statusOf',
+    args: subject ? [subject, POLICY_ID] : undefined,
+    query: { enabled: Boolean(subject), refetchInterval: POLL_MS },
+  })
+  const raw = q.data as readonly [boolean, boolean, boolean, bigint] | undefined
+  return raw ? { hasDecision: raw[0], approved: raw[1], revoked: raw[2], expiry: raw[3] } : EMPTY_STATUS
+}
+
 /** FundToken.balanceOf(holder), refreshed every 8 seconds (and by the subscribe tx through query invalidation). */
 function useFundBalanceChain(holder?: Address): bigint | undefined {
   const q = useReadContract({
@@ -128,14 +150,19 @@ function useRegistryEventsChain(): { events: RegistryEvent[]; loading: boolean }
       try {
         const latest = await client.getBlockNumber()
         const fromBlock = latest > EVENT_LOOKBACK_BLOCKS ? latest - EVENT_LOOKBACK_BLOCKS : 0n
-        const [attested, revoked] = await Promise.all([
+        const [attested, approved, revoked] = await Promise.all([
           client.getContractEvents({ address: REGISTRY, abi: registryAbi, eventName: 'Attested', fromBlock, toBlock: latest }),
+          client.getContractEvents({ address: REGISTRY, abi: registryAbi, eventName: 'Approved', fromBlock, toBlock: latest }),
           client.getContractEvents({ address: REGISTRY, abi: registryAbi, eventName: 'Revoked', fromBlock, toBlock: latest }),
         ])
         const out: RegistryEvent[] = []
         for (const l of attested) {
           const a = l.args as Record<string, unknown>
           out.push({ kind: 'Attested', subject: a.subject as Address, policyId: a.policyId as Hex, bits: a.bits as bigint, tier: Number(a.tier), expiry: a.expiry as bigint, statusRef: a.statusRef as Hex, actor: a.attester as Address, txHash: l.transactionHash, blockNumber: l.blockNumber })
+        }
+        for (const l of approved) {
+          const a = l.args as Record<string, unknown>
+          out.push({ kind: 'Approved', subject: a.subject as Address, policyId: a.policyId as Hex, actor: a.operator as Address, txHash: l.transactionHash, blockNumber: l.blockNumber })
         }
         for (const l of revoked) {
           const a = l.args as Record<string, unknown>
@@ -175,6 +202,7 @@ function useRegistryTxChain(): RegistryTx {
     tx,
     reset: () => setTx({ status: 'idle' }),
     attest: (subject, decision) => run('attestByOperator', () => send(REGISTRY, registryAbi, 'attestByOperator', [subject, decision])),
+    approve: (subject, policyId) => run('approve', () => send(REGISTRY, registryAbi, 'approve', [subject, policyId])),
     revoke: (subject, policyId) => run('revoke', () => send(REGISTRY, registryAbi, 'revoke', [subject, policyId])),
     subscribe: () => run('subscribe', () => send(SUBSCRIPTION, subscriptionAbi, 'subscribe', [])),
   }
@@ -192,6 +220,7 @@ function shortError(e: unknown): string {
 
 export const useDecision: (subject?: Address) => DecisionRead = MOCK ? useDecisionMock : useDecisionChain
 export const useEligible: (subject?: Address) => boolean | undefined = MOCK ? useEligibleMock : useEligibleChain
+export const useRegistryStatus: (subject?: Address) => RegistryStatus = MOCK ? useRegistryStatusMock : useRegistryStatusChain
 export const useRegistryEvents: () => { events: RegistryEvent[]; loading: boolean } = MOCK ? useRegistryEventsMock : useRegistryEventsChain
 export const useFundBalance: (holder?: Address) => bigint | undefined = MOCK ? useFundBalanceMock : useFundBalanceChain
 export const useRegistryTx: (actor?: Address) => RegistryTx = MOCK ? useRegistryTxMock : () => useRegistryTxChain()

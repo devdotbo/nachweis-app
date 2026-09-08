@@ -1,37 +1,44 @@
 import type { Address } from 'viem'
 import { BRIDGE_STATES, type BridgeState } from '../bridge'
 import { POLICY_ID, REQUIRED_BITS } from '../config'
-import { useDecision, useEligible } from '../lib/chain'
+import { useDecision, useEligible, useRegistryStatus } from '../lib/chain'
 import { bitFlags, formatExpiry, shortHex, tierLabel } from '../lib/format'
 import type { Session } from '../lib/sessions'
 import { hasDecision } from '../lib/types'
 
-export type InvestorStatus = 'not permitted' | 'presented, awaiting issuer' | 'permitted' | 'revoked' | 'expired'
+export type InvestorStatus = 'not permitted' | 'presented, awaiting issuer' | 'evidence on chain, awaiting issuer approval' | 'permitted' | 'revoked' | 'expired'
 
+/** Chain first: isEligible needs evidence and issuer approval; statusOf tells which of the two is missing. */
 export function useInvestorStatus(address?: Address, session?: Session) {
   const { decision } = useDecision(address)
   const eligible = useEligible(address)
+  const chain = useRegistryStatus(address)
   let status: InvestorStatus = 'not permitted'
   if (eligible) status = 'permitted'
-  else if (decision.revoked) status = 'revoked'
+  else if (decision.revoked || chain.revoked) status = 'revoked'
   else if (hasDecision(decision) && decision.expiry <= BigInt(Math.floor(Date.now() / 1000))) status = 'expired'
-  else if (session && (session.state === 'presented' || session.state === 'attested') && session.bridge?.state !== 'failed') status = 'presented, awaiting issuer'
-  return { decision, eligible: Boolean(eligible), status }
+  else if (chain.hasDecision && !chain.approved) status = 'evidence on chain, awaiting issuer approval'
+  else if (session && (session.state === 'presented' || session.state === 'proved' || session.state === 'attested') && session.bridge?.state !== 'failed')
+    status = 'presented, awaiting issuer'
+  return { decision, chain, eligible: Boolean(eligible), status }
 }
 
-const STEPS: readonly BridgeState[] = BRIDGE_STATES.filter((s) => s !== 'failed')
+const STEPS: readonly BridgeState[] = BRIDGE_STATES.filter((s) => s !== 'failed' && s !== 'revoked')
 
 function stepClass(step: BridgeState, current: BridgeState): string {
   if (current === 'failed') return step === 'created' ? 'step done' : 'step failed'
+  if (current === 'revoked') return step === 'approved' ? 'step failed' : 'step done'
   const i = STEPS.indexOf(step)
   const c = STEPS.indexOf(current)
   return i < c ? 'step done' : i === c ? 'step current' : 'step'
 }
 
 export function StatusCard({ address, session }: { address?: Address; session?: Session }) {
-  const { decision, status } = useInvestorStatus(address, session)
-  const cls = status === 'permitted' ? 'open' : status === 'presented, awaiting issuer' ? 'waiting' : 'closed'
+  const { decision, chain, status } = useInvestorStatus(address, session)
+  const cls = status === 'permitted' ? 'open' : status === 'presented, awaiting issuer' || status === 'evidence on chain, awaiting issuer approval' ? 'waiting' : 'closed'
   const b = session?.bridge
+  // The issuer approves and revokes on chain; show that step from the chain even when the bridge still says attested.
+  const shown: BridgeState = chain.revoked && b?.state !== 'failed' ? 'revoked' : chain.approved && b?.state !== 'failed' ? 'approved' : (b?.state ?? 'created')
   return (
     <section className={`card${address ? '' : ' locked'}`}>
       <h2>
@@ -47,11 +54,12 @@ export function StatusCard({ address, session }: { address?: Address; session?: 
         <>
           <div className="steps">
             {STEPS.map((s) => (
-              <span key={s} className={stepClass(s, b?.state ?? 'created')}>
+              <span key={s} className={stepClass(s, shown)}>
                 {s}
               </span>
             ))}
-            {b?.state === 'failed' ? <span className="step failed">failed</span> : null}
+            {shown === 'failed' ? <span className="step failed">failed</span> : null}
+            {shown === 'revoked' ? <span className="step failed">revoked</span> : null}
           </div>
           {b?.detail ? <p className={`muted${b.state === 'failed' ? ' err' : ''}`}>bridge: {b.detail}</p> : null}
           {b?.txHash ? (
@@ -83,8 +91,11 @@ export function StatusCard({ address, session }: { address?: Address; session?: 
         <dd>{decision.statusRef}</dd>
         <dt>revoked</dt>
         <dd>{decision.revoked ? 'true' : 'false'}</dd>
+        <dt>approved</dt>
+        <dd data-testid="approved">{chain.approved ? 'true' : 'false'}</dd>
       </dl>
       {!hasDecision(decision) ? <p className="muted">No decision on chain for this address yet (decisionOf returns zeros).</p> : null}
+      {chain.hasDecision && !chain.approved && !chain.revoked ? <p className="muted">Evidence is on chain. Attestat opens the doors only after the issuer approves.</p> : null}
       <p className="muted">Checks beyond identity evidence and age are simulated in this build.</p>
     </section>
   )

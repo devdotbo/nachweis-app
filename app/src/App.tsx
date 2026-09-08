@@ -1,16 +1,30 @@
 import { useEffect, useState } from 'react'
 import { Header } from './components/Header'
 import type { Role } from './lib/role'
-import { updateSession, useSessions } from './lib/sessions'
+import { updateSession, useSessions, type SessionState } from './lib/sessions'
 import { useWallet } from './lib/wallet'
 import { InvestorScreen } from './screens/InvestorScreen'
 import { IssuerScreen } from './screens/IssuerScreen'
-import { bridge, isTerminal } from './bridge'
+import { bridge, isTerminal, type BridgeState } from './bridge'
 import { verifier } from './verifier'
 
 const VERIFIER_POLL_MS = 2000
 /** Sessions for which POST /sessions/:id/attest went out (once per session, whatever the answer). */
 const attestRequested = new Set<string>()
+
+/**
+ * Session state the bridge's report implies. Approval and revocation the issuer did from this app
+ * (registry.approve / revoke with the operator signer) are never downgraded by a bridge that still
+ * says attested; the chain is the truth for the doors either way.
+ */
+export function sessionStateFromBridge(current: SessionState, b: BridgeState): SessionState | undefined {
+  if (b === 'approved') return 'approved'
+  if (b === 'revoked') return 'revoked'
+  if (current === 'approved' || current === 'revoked') return undefined
+  if (b === 'attested') return 'attested'
+  if (b === 'proved' && current === 'presented') return 'proved'
+  return undefined
+}
 
 /** Polls the verifier for every pending session, whichever role is on screen. */
 function useSessionPolling() {
@@ -38,7 +52,8 @@ function useSessionPolling() {
           const b = await bridge.getSession(s.request.sessionId)
           if (!alive) return
           const patch: Parameters<typeof updateSession>[1] = { bridge: b, bridgeError: undefined }
-          if (b.state === 'attested') patch.state = 'attested'
+          const next = sessionStateFromBridge(s.state, b.state)
+          if (next) patch.state = next
           updateSession(s.request.sessionId, patch)
           // The bridge's verifier mode stops at proved; the attest transaction is asked for explicitly.
           if (b.state === 'proved' && !attestRequested.has(s.request.sessionId)) {
@@ -48,7 +63,8 @@ function useSessionPolling() {
               await bridge.requestAttest(s.request.sessionId)
               const after = await bridge.getSession(s.request.sessionId)
               if (!alive) return
-              updateSession(s.request.sessionId, after.state === 'attested' ? { bridge: after, state: 'attested' } : { bridge: after })
+              const nextAfter = sessionStateFromBridge(s.state, after.state)
+              updateSession(s.request.sessionId, nextAfter ? { bridge: after, state: nextAfter } : { bridge: after })
             } catch (e) {
               if (alive) updateSession(s.request.sessionId, { bridgeError: e instanceof Error ? e.message : String(e) })
             }

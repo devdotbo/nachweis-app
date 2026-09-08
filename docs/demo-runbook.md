@@ -151,6 +151,7 @@ export OPERATOR_PRIVATE_KEY=0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae
 export REGISTRY=$REG
 export POLICY_ID=nachweis.pid.over18.v1
 export REQUIRE_ADDRESS_PROOF=false           # scripted run; true when the browser wallet signs the session
+export BRIDGE_ISSUER_TOKEN=local-issuer-token # issuer routes (approve, revoke, attest-operator); unset disables them
 export CORS_ORIGINS=http://localhost:5173
 export PROOF_MODE=mock
 export PROVER_ARTIFACTS=$PWD/../prover-sp1/fixtures
@@ -203,7 +204,18 @@ cast call $REG "decisionOf(address,bytes32)((bytes32,uint256,uint8,uint64,bytes3
 cast logs --rpc-url $RPC --address $REG "Attested(address,bytes32,uint256,uint8,uint64,bytes32,address)"
 ```
 
-Expected: the attest response carries `"attested":{"attester":"0xf39f…","bits":"0x3","expiry":1819756800,"policy_id":"0xd272…","status_ref":"0x…","subject":"0xf99e…","tier":1}` (the decoded `Attested` event) plus the `call` with the `Decision` and the four `publicInputs`; the session reads `attested | attested in 0x<tx hash>`; `decisionOf` prints `(0xd272…, 3, 1, 1819756800, 0x<statusRef>, false)`; `cast logs` shows one `Attested` log whose data is `bits 3, tier 1, expiry 0x6c774900, statusRef`. Nothing in the record or the event is a name. `isEligible(...)` now prints `true`.
+Expected: the attest response carries `"attested":{"attester":"0xf39f…","bits":"0x3","expiry":1819756800,"policy_id":"0xd272…","status_ref":"0x…","subject":"0xf99e…","tier":1}` (the decoded `Attested` event) plus the `call` with the `Decision` and the four `publicInputs`; the session reads `attested | attested in 0x<tx hash>`; `decisionOf` prints `(0xd272…, 3, 1, 1819756800, 0x<statusRef>, false)`; `cast logs` shows one `Attested` log whose data is `bits 3, tier 1, expiry 0x6c774900, statusRef`. Nothing in the record or the event is a name. `isEligible(...)` still prints `false`: the proof is evidence, the issuer has not approved yet (`approved(address,bytes32)` false, session `attested | attested in 0x…, awaiting issuer approval`).
+
+Beat 3b, the issuer approves (separate step, bearer token):
+
+```
+curl -s -X POST $B/sessions/$SID/approve                                                   # {"error":"issuer token required ..."} 401
+curl -s -X POST $B/sessions/$SID/approve -H "authorization: Bearer $BRIDGE_ISSUER_TOKEN"   # {"status":"approved","tx_hash":…,"approved":true,"chain":{…}}
+cast call $REG "statusOf(address,bytes32)(bool,bool,bool,uint64)" $SUBJ $POLICY_ID --rpc-url $RPC   # true true false <expiry>
+cast call $REG "isEligible(address,bytes32,uint256)(bool)" $SUBJ $POLICY_ID 3 --rpc-url $RPC        # true
+```
+
+In the app the same step is the Approve button on the issuer screen (registry.approve from the operator signer).
 
 Beat 4, door one (the subject has no key on anvil, so impersonate it):
 
@@ -221,14 +233,14 @@ Door two (the Uniswap pool) needs the Sepolia fork, section 7.
 Beat 6, revoke and the refusals (verified locally 2026-09-07):
 
 ```
-curl -s -X POST $B/revoke -H 'content-type: application/json' -d "{\"subject\":\"$SUBJ\"}"
+curl -s -X POST $B/revoke -H "authorization: Bearer $BRIDGE_ISSUER_TOKEN" -H 'content-type: application/json' -d "{\"subject\":\"$SUBJ\"}"
 cast call $REG "isEligible(address,bytes32,uint256)(bool)" $SUBJ $POLICY_ID 3 --rpc-url $RPC       # false
 cast send $SUB "subscribe()" --from $SUBJ --unlocked --rpc-url $RPC                                   # reverts: custom error 0xf8eb54de (Subscription.NotEligible)
 curl -s -X POST $B/sessions/$SID/attest -H 'content-type: application/json' -d '{}'                   # {"error":"session is attested, expected proved"}
 cast logs --rpc-url $RPC --address $REG "Revoked(address,bytes32,address)"                            # one Revoked log
 ```
 
-Re-attesting after a revoke is an explicit operator action (`POST $B/sessions/$SID/attest-operator` with `{"tier":1}` reopens the decision through `attestByOperator`; verified locally, then `subscribe()` succeeds again). The proof path cannot reopen a revoked decision and the fixture nonce is consumed (`NonceConsumed`).
+Re-approval after a revoke is an explicit issuer action: `POST $B/sessions/$SID/approve` with the issuer token (or Re-approve in the app) reopens the record through `registry.approve`; `subscribe()` succeeds again. The operator fallback `POST $B/sessions/$SID/attest-operator` with `{"tier":1}` also reopens (it stores and approves in one transaction). The proof path cannot reopen a revoked decision (`DecisionRevoked`) and the fixture nonce is consumed (`NonceConsumed`).
 
 ## 6. The bridge, PROOF_MODE=execute and groth16
 
@@ -328,11 +340,13 @@ The six beats as clicks, and what to watch:
 | 1 investor | Investor: card 1 "Connect wallet", card 3 "Eligibility" | Connect | Eligibility chip `not permitted`; both doors closed | `cast call $REG isEligible …` false |
 | 2 wallet | Investor: card 2 "Present your ID" | the yellow button creates the request; QR and openid4vp link appear; the phone scans and taps once | chip `presented, awaiting issuer`; bridge state chips created, presented, verified | verifier-service log: presentation verified (names in the service, not in any response) |
 | 3a binding | same card | "sign" (ghost button): the wallet signs `nachweis:session:<id>` | `address_verified` | bridge: `POST /sessions/:id/address-proof` 200 |
-| 3 issuer | Issuer: card 3 "Presentations" | Approve (operator path) or wait for the bridge's `attestWithProof` | bridge chips proving, proved, attested with the tx hash; investor card 3 turns `permitted`, card 5 "What the chain sees" shows the raw Decision and "no name, no document" | bridge: `attestWithProof` tx hash and decoded `Attested`; Issuer card 4 "Registry events" lists `Attested` |
+| 3 evidence | Investor: card 3 "Eligibility" | wait for the bridge's `attestWithProof` | bridge chips proving, proved, attested with the tx hash; chip `evidence on chain, awaiting issuer approval`; both doors closed; card 5 "What the chain sees" shows the raw Decision and "no name, no document" | bridge: `attestWithProof` tx hash and decoded `Attested`; `cast call $REG isEligible …` false |
+| 3b issuer | Issuer: card 3 "Presentations" | Approve (registry.approve from the operator signer; "Attest directly" is the operator fallback without a proof) | badge `attested (awaiting issuer approval)` turns `approved`; investor card 3 turns `permitted`, both doors open | Issuer card 4 "Registry events" lists `Attested` and `Approved`; `cast call $REG isEligible …` true |
 | 4 doors | Investor: card 4 "Two doors, one decision" | Subscribe (`Subscription.subscribe()`); Swap (disabled until `VITE_POOL`; on Sepolia the swap is the script of section 7 or the viem calldata in `contracts/docs/uniswap-permissioned-pool.md`) | balance of NDF; door states from `isEligible` | anvil: `subscribe` mined |
-| 6 revoke | Issuer: card 3 Revoke, or card 2 "Revoke by address" | Revoke | Issuer card 4 shows `Revoked`; Investor card 3 `revoked`, both doors closed; Subscribe now fails with `NotEligible` | bridge or cast: `revoke` tx; `cast logs … Revoked` |
+| 6 revoke | Issuer: card 3 Revoke, or card 2 "Revoke by address" | Revoke | Issuer card 4 shows `Revoked`; Investor card 3 `revoked`, both doors closed; Subscribe now fails with `NotEligible`; the issuer button reads Re-approve | bridge or cast: `revoke` tx; `cast logs … Revoked` |
+| 7 re-approve | Issuer: card 3 | Re-approve | badge `approved`; Investor card 3 `permitted`, doors open again (reapproval requires the issuer; a replayed proof cannot reopen) | `cast logs … Approved` |
 
-Simulated checks: the issuer screen today has no "simulated" label for sanctions and similar checks (`grep -ri simulat app/src` is empty). The caption in the video must carry it (see `docs/video-shotlist.md`).
+Simulated checks: the issuer screen states per session what Approve confirms (presentation verified by the issuer's verifier for this session, bound address signed the session, issuer approves eligibility for that address) and that sanctions and other checks are simulated in this build. The caption in the video should carry it too (see `docs/video-shotlist.md`).
 
 ## 8b. Browser run (headless, no wallet extension)
 

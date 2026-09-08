@@ -33,10 +33,14 @@ sol! {
         error NonceConsumed(bytes32 policyId, bytes32 nonce);
         event Attested(address indexed subject, bytes32 indexed policyId, uint256 bits, uint8 tier, uint64 expiry, bytes32 statusRef, address indexed attester);
         event Revoked(address indexed subject, bytes32 indexed policyId, address indexed operator);
+        event Approved(address indexed subject, bytes32 indexed policyId, address indexed operator);
         function setOperator(bytes32 policyId, address operator, bool enabled) external;
         function setVerifier(bytes32 policyId, address verifier) external;
         function attestByOperator(address subject, Decision calldata decision) external;
         function revoke(address subject, bytes32 policyId) external;
+        function approve(address subject, bytes32 policyId) external;
+        function approved(address subject, bytes32 policyId) external view returns (bool);
+        function statusOf(address subject, bytes32 policyId) external view returns (bool hasDecision, bool isApproved, bool isRevoked, uint64 expiry);
         function attestWithProof(address subject, Decision calldata decision, bytes calldata proof, bytes32[] calldata publicInputs) external;
         function isEligible(address subject, bytes32 policyId, uint256 requiredBits) external view returns (bool);
         function decisionOf(address subject, bytes32 policyId) external view returns (Decision memory);
@@ -159,6 +163,15 @@ pub fn decision(policy_id: B256, bits: U256, tier: u8, expiry: u64, session_id: 
     Decision { policyId: policy_id, bits, tier, expiry, statusRef: status_ref(session_id), revoked: false }
 }
 
+/// Mirror of AttestationRegistry.statusOf.
+#[derive(Debug, Clone, Copy, serde::Serialize)]
+pub struct RegistryStatus {
+    pub has_decision: bool,
+    pub approved: bool,
+    pub revoked: bool,
+    pub expiry: u64,
+}
+
 #[derive(Clone)]
 pub struct Chain {
     pub provider: DynProvider,
@@ -266,6 +279,31 @@ impl Chain {
             .context("revoke receipt")?;
         check_receipt(&receipt)?;
         Ok(receipt.transaction_hash)
+    }
+
+    /// Issuer approval of existing evidence: sets approved, clears revoked (reopens after revoke).
+    pub async fn approve(&self, subject: Address, policy_id: B256) -> Result<B256> {
+        let receipt = self
+            .contract()
+            .approve(subject, policy_id)
+            .send()
+            .await
+            .map_err(|e| describe_error("approve", e))?
+            .get_receipt()
+            .await
+            .context("approve receipt")?;
+        check_receipt(&receipt)?;
+        Ok(receipt.transaction_hash)
+    }
+
+    pub async fn approved(&self, subject: Address, policy_id: B256) -> Result<bool> {
+        self.contract().approved(subject, policy_id).call().await.map_err(|e| anyhow!("approved: {e}"))
+    }
+
+    /// (hasDecision, approved, revoked, expiry) in one call.
+    pub async fn status_of(&self, subject: Address, policy_id: B256) -> Result<RegistryStatus> {
+        let r = self.contract().statusOf(subject, policy_id).call().await.map_err(|e| anyhow!("statusOf: {e}"))?;
+        Ok(RegistryStatus { has_decision: r.hasDecision, approved: r.isApproved, revoked: r.isRevoked, expiry: r.expiry })
     }
 
     pub async fn is_eligible(&self, subject: Address, policy_id: B256, required_bits: U256) -> Result<bool> {

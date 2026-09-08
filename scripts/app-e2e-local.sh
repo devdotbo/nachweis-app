@@ -62,6 +62,7 @@ K1=0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d   # anvil 
 OPERATOR=0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266
 INVESTOR=0x70997970C51812dc3A010C7d01b50e0d17dc79C8
 POLICY=0xd27260f1ca509ba75dea6cd27b2985a96e423550e16db3350d2945e215e3d05f # keccak256("nachweis.pid.over18.v1")
+ISSUER_TOKEN="${BRIDGE_ISSUER_TOKEN:-local-issuer-token}"   # bearer token for the bridge's issuer routes (approve, revoke, attest-operator)
 free_port() { python3 -c 'import socket;s=socket.socket();s.bind(("127.0.0.1",0));print(s.getsockname()[1]);s.close()'; }
 ANVIL_PORT="${ANVIL_PORT:-$(free_port)}"; VERIFIER_PORT="${VERIFIER_PORT:-$(free_port)}"
 BRIDGE_PORT="${BRIDGE_PORT:-$(free_port)}"; APP_PORT="${APP_PORT:-$(free_port)}"
@@ -130,7 +131,7 @@ BRIDGE_BIN="$ROOT/service/target/release/nachweis-bridge"
 [ -x "$BRIDGE_BIN" ] || BRIDGE_BIN="$ROOT/service/target/debug/nachweis-bridge"
 [ -x "$BRIDGE_BIN" ] || { (cd "$ROOT/service" && cargo build --release) || die "bridge build failed"; BRIDGE_BIN="$ROOT/service/target/release/nachweis-bridge"; }
 BRIDGE_ENV=(BIND="127.0.0.1:$BRIDGE_PORT" RPC_URL="$RPC" OPERATOR_PRIVATE_KEY=$K0 REGISTRY=$REGISTRY POLICY_ID=nachweis.pid.over18.v1
-  REQUIRE_ADDRESS_PROOF=true RUST_LOG="${RUST_LOG:-info}")
+  REQUIRE_ADDRESS_PROOF=true BRIDGE_ISSUER_TOKEN="$ISSUER_TOKEN" RUST_LOG="${RUST_LOG:-info}")
 if [ "$MODE" = noir ]; then
   BRIDGE_ENV+=(NOIR_VERIFIER=$NOIR_VERIFIER HANDOFF_VERIFIER_URL="$VERIFIER_URL" HANDOFF_BRIDGE_URL="$BRIDGE_URL")
 else
@@ -155,7 +156,7 @@ ENV_JSON="$RUN_DIR/env.json"
 jq -n --arg mode "$MODE" --arg appUrl "$APP_URL" --arg rpcUrl "$RPC" --arg verifierUrl "$VERIFIER_URL" --arg bridgeUrl "$BRIDGE_URL" \
   --arg registry "$REGISTRY" --arg fundToken "$TOKEN" --arg subscription "$SUBSCRIPTION" --arg noirVerifier "$NOIR_VERIFIER" --arg policyId "$POLICY" \
   --arg investor "$INVESTOR" --arg operator "$OPERATOR" --arg issuerJson "$ISSUER_JSON" --arg issuerKeyPem "$ISSUER_KEY_PEM" --arg issuerCertPem "$ISSUER_CERT_PEM" \
-  --arg companionDir "$ROOT/companion" --arg walletScript "$ROOT/scripts/e2e/wallet.ts" --arg runDir "$RUN_DIR" \
+  --arg companionDir "$ROOT/companion" --arg walletScript "$ROOT/scripts/e2e/wallet.ts" --arg runDir "$RUN_DIR" --arg issuerToken "$ISSUER_TOKEN" \
   '$ARGS.named' > "$ENV_JSON"
 say "env for the specs: $ENV_JSON"
 

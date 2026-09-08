@@ -54,6 +54,9 @@ pub struct Config {
     /// This bridge's base URL as reachable from the phone (HANDOFF_BRIDGE_URL; falls back to the
     /// scheme and Host of the request that fetched the handoff).
     pub handoff_bridge_url: Option<String>,
+    /// Bearer token for the issuer's privileged routes: attest-operator, approve, revoke
+    /// (BRIDGE_ISSUER_TOKEN). Unset: those routes answer 503 and a warning is logged at startup.
+    pub issuer_token: Option<String>,
 }
 
 /// Default KB-JWT freshness window (10 minutes): sandbox wallets mint KB-JWTs with exp = iat + 300.
@@ -133,6 +136,7 @@ impl Config {
             kb_jwt_window_secs,
             handoff_verifier_url: env_opt("HANDOFF_VERIFIER_URL").map(|u| u.trim_end_matches('/').to_string()),
             handoff_bridge_url: env_opt("HANDOFF_BRIDGE_URL").map(|u| u.trim_end_matches('/').to_string()),
+            issuer_token: env_opt("BRIDGE_ISSUER_TOKEN").map(|t| t.trim().to_string()),
         })
     }
 

@@ -9,8 +9,14 @@ import {IProofVerifier} from "./interfaces/IProofVerifier.sol";
 /// @notice Stores one EligibilityDecision per (subject address, policyId).
 ///         Roles: the owner configures policies (operators and proof verifiers);
 ///         operators are issuer keys that attest and revoke for their policy.
-///         Two write paths: attestByOperator (issuer-signed, available now) and
-///         attestWithProof (zero-knowledge proof checked by the policy's IProofVerifier).
+///         Eligibility needs two things: evidence and issuer approval.
+///           1. Evidence: attestWithProof (zero-knowledge proof checked by the policy's IProofVerifier)
+///              or attestByOperator (issuer-signed decision) stores the Decision.
+///           2. Approval: an operator calls approve(subject, policyId). attestByOperator approves in the
+///              same transaction because the operator signed the decision; attestWithProof never does.
+///         isEligible is true only when both hold and the decision is neither revoked nor expired.
+///         revoke closes everything and clears approval; only an operator (approve or attestByOperator)
+///         can reopen a revoked record, a replayed proof cannot.
 ///         Nothing here identifies a person: only policyId, predicate bits, tier, expiry and an opaque statusRef.
 contract AttestationRegistry is IEligibility, Ownable {
     // ---------------------------------------------------------------------
@@ -43,6 +49,7 @@ contract AttestationRegistry is IEligibility, Ownable {
         address indexed attester
     );
     event Revoked(address indexed subject, bytes32 indexed policyId, address indexed operator);
+    event Approved(address indexed subject, bytes32 indexed policyId, address indexed operator);
 
     // ---------------------------------------------------------------------
     // Storage
@@ -56,6 +63,10 @@ contract AttestationRegistry is IEligibility, Ownable {
 
     /// @dev subject => policyId => decision
     mapping(address => mapping(bytes32 => Decision)) private _decisions;
+
+    /// @notice subject => policyId => issuer approval. Set by approve and attestByOperator, cleared by revoke.
+    ///         Evidence without approval (attestWithProof alone) is never eligible.
+    mapping(address => mapping(bytes32 => bool)) public approved;
 
     /// @dev keccak256(abi.encode(policyId, nonce)) => consumed. Proof-path replay protection, see attestWithProof.
     mapping(bytes32 => bool) public nonceConsumed;
@@ -90,18 +101,31 @@ contract AttestationRegistry is IEligibility, Ownable {
         _;
     }
 
-    /// @notice Issuer-signed attestation. Overwrites any previous decision for (subject, policyId),
-    ///         including a revoked one (re-approval is an explicit operator action).
+    /// @notice Issuer-signed attestation. Stores the decision and approves it in one step (the operator
+    ///         signed it). Overwrites any previous decision for (subject, policyId), including a revoked one.
     function attestByOperator(address subject, Decision calldata decision) external onlyOperator(decision.policyId) {
         _store(subject, decision);
+        approved[subject][decision.policyId] = true;
+        emit Approved(subject, decision.policyId, msg.sender);
+    }
+
+    /// @notice Issuer approval of existing evidence. Requires a stored decision (from attestWithProof or
+    ///         attestByOperator). Sets approved and clears revoked: issuer authority reopens a revoked record.
+    function approve(address subject, bytes32 policyId) external onlyOperator(policyId) {
+        Decision storage d = _decisions[subject][policyId];
+        if (d.policyId == bytes32(0)) revert NoDecision(subject, policyId);
+        d.revoked = false;
+        approved[subject][policyId] = true;
+        emit Approved(subject, policyId, msg.sender);
     }
 
     /// @notice Revoke closes everything for (subject, policyId): fund token transfers, subscriptions,
-    ///         pool access. Only a fresh attestByOperator can reopen it.
+    ///         pool access. Clears approval. Only approve or a fresh attestByOperator can reopen it.
     function revoke(address subject, bytes32 policyId) external onlyOperator(policyId) {
         Decision storage d = _decisions[subject][policyId];
         if (d.policyId == bytes32(0)) revert NoDecision(subject, policyId);
         d.revoked = true;
+        approved[subject][policyId] = false;
         emit Revoked(subject, policyId, msg.sender);
     }
 
@@ -109,8 +133,10 @@ contract AttestationRegistry is IEligibility, Ownable {
     // Proof path
     // ---------------------------------------------------------------------
 
-    /// @notice Attest with a zero-knowledge proof checked by the policy's IProofVerifier.
+    /// @notice Store evidence with a zero-knowledge proof checked by the policy's IProofVerifier.
     ///         Permissionless: anyone may submit, because the proof binds the decision to the subject.
+    ///         Evidence only: approved stays false until an operator calls approve, so the subject is
+    ///         not eligible after this call alone.
     ///
     /// Public inputs layout (bytes32 each, exactly PUBLIC_INPUTS_LENGTH entries):
     ///   publicInputs[0] = bytes32(uint256(uint160(subject)))   the Ethereum address the decision is for
@@ -157,9 +183,25 @@ contract AttestationRegistry is IEligibility, Ownable {
     // ---------------------------------------------------------------------
 
     /// @inheritdoc IEligibility
+    /// @dev Evidence and issuer approval are both required.
     function isEligible(address subject, bytes32 policyId, uint256 requiredBits) external view returns (bool) {
         Decision storage d = _decisions[subject][policyId];
-        return !d.revoked && d.expiry > block.timestamp && (d.bits & requiredBits) == requiredBits;
+        return approved[subject][policyId] && !d.revoked && d.expiry > block.timestamp
+            && (d.bits & requiredBits) == requiredBits;
+    }
+
+    /// @notice One-call state for UIs and the bridge.
+    /// @return hasDecision evidence is stored (proof or operator)
+    /// @return isApproved issuer approval is set
+    /// @return isRevoked the record is revoked
+    /// @return expiry decision expiry (unix seconds, 0 without a decision)
+    function statusOf(address subject, bytes32 policyId)
+        external
+        view
+        returns (bool hasDecision, bool isApproved, bool isRevoked, uint64 expiry)
+    {
+        Decision storage d = _decisions[subject][policyId];
+        return (d.policyId != bytes32(0), approved[subject][policyId], d.revoked, d.expiry);
     }
 
     /// @inheritdoc IEligibility

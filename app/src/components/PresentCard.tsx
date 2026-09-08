@@ -141,8 +141,12 @@ function SessionBadge({ session }: { session: Session }) {
       return <span className="status waiting">waiting for wallet</span>
     case 'presented':
       return <span className="status open">presented</span>
+    case 'proved':
+      return <span className="status open">presented, proved</span>
     case 'attested':
-      return <span className="status open">presented, attested</span>
+      return <span className="status waiting">attested, awaiting issuer approval</span>
+    case 'approved':
+      return <span className="status open">approved</span>
     case 'revoked':
       return <span className="status closed">revoked</span>
     case 'rejected':
