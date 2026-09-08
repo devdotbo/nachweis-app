@@ -149,10 +149,70 @@ vector, `adb shell am start -n org.nachweis.prover/.MainActivity --ez autoprove 
   emulated cores; the Pixel 10 (Tensor G5, 8 cores) is expected in the 10 to
   20 s band, which the device run will settle.
 
+## Measured on device (ChromeOS ARC, 2026-09-08)
+
+The first physical device run. Not a phone: the Android container (ARC) of a
+Lenovo IdeaPad Duet 3 Chromebook, `ro.product.model` `strongbad`, Android 13
+(SDK 33), ChromeOS R151-16733.60.0, arm64-v8a, 3.2 GB RAM (`MemTotal`
+3,269,444 kB), 8 cores (`/proc/cpuinfo`: 2x CPU part 0x804 + 6x 0x805, the
+Kryo Gold/Silver pair of a Snapdragon 7c Gen 2). Reached over Wi-Fi
+(`adb connect 192.168.0.35:5555`; every command below carries
+`-s 192.168.0.35:5555` because a headless emulator shares the adb server).
+WP22 circuit assets (the committed `pid_sdjwt_evm.vk`, hash `2e13794a...`),
+realistic test vector, debug APK 103.7 MB, `adb install -r` took 22 s and
+succeeded without any ChromeOS setting beyond ADB debugging.
+
+    adb -s 192.168.0.35:5555 shell am force-stop org.nachweis.prover
+    adb -s 192.168.0.35:5555 logcat -c
+    adb -s 192.168.0.35:5555 shell am start -n org.nachweis.prover/.MainActivity --ez autoprove true
+    adb -s 192.168.0.35:5555 logcat -d -v time NachweisProver:I '*:S'
+
+| run | execute (witness) | prove (UltraHonk keccak, ZK) | wall (derive + SRS + prove + verify) | peak RSS (ru_maxrss) | asset copy + SRS load | on-device verify | killed |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 1, cold (fresh install, `dumpsys meminfo` every 2 s) | 2,189 ms | 49,038 ms | 59,929 ms | 1,650 MB | 8.4 s | true | no |
+| 2, warm (`dumpsys meminfo` every 5 s) | 2,190 ms | 46,950 ms | 57,641 ms | 1,688 MB | 8.5 s | true | no |
+| 3, warm (no sampling) | 2,193 ms | 47,566 ms | 58,219 ms | 1,664 MB | 7.6 s | true | no |
+| 4, warm, two-device run (handoff + autoprove) | 2,112 ms | 41,352 ms | 51,725 ms | 1,696 MB | 7.1 s | true | no |
+
+- Process start to proof line: 71 s on the cold run (`Start proc` 23:14:09.2,
+  proof 23:15:20.6), about 63 s warm. Budget for the demo: one minute of
+  "Proving..." on this class of device, versus 10 s on the emulator and 5 s
+  with desktop `bb`.
+- All three proofs of runs 1 to 3 were pulled
+  (`adb -s 192.168.0.35:5555 pull /sdcard/Android/data/org.nachweis.prover/files/proof`,
+  same for `public_inputs`) and verify on the Mac with the committed asset VK:
+  `bb verify -k prover-android/app/src/main/assets/pid_sdjwt_evm.vk -p proof -i public_inputs -t evm`
+  -> "Proof verified successfully" (bb 5.0.0-nightly.20260324). `public_inputs`
+  (2,752 B) is identical across the runs and to the desktop output; the proof
+  bytes differ per run (ZK randomness).
+- Memory: `ru_maxrss` 1.65 to 1.70 GB, the same as the emulator; `dumpsys
+  meminfo` sampled at most 1,630 MB TOTAL RSS. On 3.2 GB the container ran
+  the proof next to ChromeOS without killing the app: logcat carried 278
+  `lowmemorykiller` lines of the form "Skipping kill; 60868 kB freed
+  elsewhere" / "cache and free below min for oom_score_adj 950" during the
+  first seconds of the SRS load (it reclaimed page cache, killed nothing), 0
+  `Killing` lines from ActivityManager, process id unchanged through all
+  runs. `android:largeHeap="true"` is already set in the manifest; low memory
+  mode was not needed. A second memory-heavy Android app or a large Chrome
+  tab in the same session may change that; not tested.
+- The 2 s `dumpsys meminfo` sampling of run 1 costs about 2 s of prove time
+  versus run 3; run 4 (no sampling, second process of the minute) is the
+  fastest at 41 s, so the band on this device is 41 to 49 s prove.
+- `adb reverse tcp:8788 tcp:8788` works on ARC (the app reached the Mac's
+  bridge and relay at `127.0.0.1`), so `scripts/two-device-local.sh --phone`
+  runs unchanged with `ANDROID_SERIAL=192.168.0.35:5555`; see
+  `docs/two-device.md`.
+- Gotcha hit on the way: `circuits/pid-sdjwt/out/adapted/vk` is a gitignored
+  build output. A worktree that still holds the WP13 file makes the
+  companion's `bb verify` fail ("verification failed at pairing check")
+  although its `nargo compile` is fresh; `bb write_vk -b target/pid_sdjwt.json
+  -o out/adapted -t evm` regenerates it (result byte-identical to the
+  committed asset VK).
+
 Pixel 10 results: not yet measured (device arrives later); add a row here.
 
 
-## Device day checklist (Pixel 10)
+## Device day checklist (Pixel 10; the ARC run above followed steps 2 to 5 and 7 with `adb connect <ip>:5555` instead of USB)
 
 1. Phone: Settings > About phone > tap Build number 7 times; Settings >
    System > Developer options > USB debugging on. Connect USB, accept the RSA
