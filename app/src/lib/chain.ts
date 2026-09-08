@@ -8,6 +8,7 @@ import { usePublicClient, useReadContract, useWriteContract } from 'wagmi'
 import { FUND_TOKEN, MOCK, POLICY_ID, REGISTRY, REQUIRED_BITS, SUBSCRIPTION } from '../config'
 import { fundTokenAbi, registryAbi, subscriptionAbi } from './contracts'
 import { mockApprove, mockAttest, mockDecisionOf, mockIsEligible, mockRevoke, mockStatusOf, mockSubscribe, useMockState } from './mockChain'
+import { addReceipt, type ReceiptKind } from './receipts'
 import { EMPTY_DECISION, EMPTY_STATUS, type Decision, type RegistryEvent, type RegistryStatus, type TxState } from './types'
 
 export interface DecisionRead {
@@ -58,12 +59,16 @@ function useFundBalanceMock(holder?: Address): bigint | undefined {
   return holder ? (s.balances[holder.toLowerCase()] ?? 0n) : undefined
 }
 
-function useTxState(): [TxState, (t: TxState) => void, <T>(label: string, fn: () => Promise<Hex>) => Promise<T | void>] {
+type TxRun = (label: ReceiptKind, fn: () => Promise<Hex>, meta?: { subject?: Address; from?: Address }) => Promise<void>
+
+/** Tx state for one sender; every confirmed hash is also recorded in the receipts store (src/lib/receipts.ts). */
+function useTxState(): [TxState, (t: TxState) => void, TxRun] {
   const [tx, setTx] = useState<TxState>({ status: 'idle' })
-  const run = useCallback(async (label: string, fn: () => Promise<Hex>) => {
+  const run = useCallback<TxRun>(async (label, fn, meta) => {
     setTx({ status: 'pending', label })
     try {
       const hash = await fn()
+      addReceipt({ kind: label, hash, subject: meta?.subject, from: meta?.from, at: Date.now() })
       setTx({ status: 'done', hash })
     } catch (e) {
       setTx({ status: 'error', message: shortError(e) })
@@ -79,10 +84,10 @@ function useRegistryTxMock(operator?: Address): RegistryTx {
   return {
     tx,
     reset: () => setTx({ status: 'idle' }),
-    attest: (subject, decision) => run('attestByOperator', () => mockAttest(subject, decision, who)),
-    approve: (subject, policyId) => run('approve', () => mockApprove(subject, policyId, who)),
-    revoke: (subject, policyId) => run('revoke', () => mockRevoke(subject, policyId, who)),
-    subscribe: () => run('subscribe', () => mockSubscribe(who, POLICY_ID)),
+    attest: (subject, decision) => run('attestByOperator', () => mockAttest(subject, decision, who), { subject, from: who }),
+    approve: (subject, policyId) => run('approve', () => mockApprove(subject, policyId, who), { subject, from: who }),
+    revoke: (subject, policyId) => run('revoke', () => mockRevoke(subject, policyId, who), { subject, from: who }),
+    subscribe: () => run('subscribe', () => mockSubscribe(who, POLICY_ID), { subject: who, from: who }),
   }
 }
 
@@ -186,7 +191,7 @@ function useRegistryEventsChain(): { events: RegistryEvent[]; loading: boolean }
   return { events, loading }
 }
 
-function useRegistryTxChain(): RegistryTx {
+function useRegistryTxChain(actor?: Address): RegistryTx {
   const [tx, setTx, run] = useTxState()
   const { writeContractAsync } = useWriteContract()
   const client = usePublicClient()
@@ -201,10 +206,10 @@ function useRegistryTxChain(): RegistryTx {
   return {
     tx,
     reset: () => setTx({ status: 'idle' }),
-    attest: (subject, decision) => run('attestByOperator', () => send(REGISTRY, registryAbi, 'attestByOperator', [subject, decision])),
-    approve: (subject, policyId) => run('approve', () => send(REGISTRY, registryAbi, 'approve', [subject, policyId])),
-    revoke: (subject, policyId) => run('revoke', () => send(REGISTRY, registryAbi, 'revoke', [subject, policyId])),
-    subscribe: () => run('subscribe', () => send(SUBSCRIPTION, subscriptionAbi, 'subscribe', [])),
+    attest: (subject, decision) => run('attestByOperator', () => send(REGISTRY, registryAbi, 'attestByOperator', [subject, decision]), { subject, from: actor }),
+    approve: (subject, policyId) => run('approve', () => send(REGISTRY, registryAbi, 'approve', [subject, policyId]), { subject, from: actor }),
+    revoke: (subject, policyId) => run('revoke', () => send(REGISTRY, registryAbi, 'revoke', [subject, policyId]), { subject, from: actor }),
+    subscribe: () => run('subscribe', () => send(SUBSCRIPTION, subscriptionAbi, 'subscribe', []), { subject: actor, from: actor }),
   }
 }
 
@@ -223,4 +228,4 @@ export const useEligible: (subject?: Address) => boolean | undefined = MOCK ? us
 export const useRegistryStatus: (subject?: Address) => RegistryStatus = MOCK ? useRegistryStatusMock : useRegistryStatusChain
 export const useRegistryEvents: () => { events: RegistryEvent[]; loading: boolean } = MOCK ? useRegistryEventsMock : useRegistryEventsChain
 export const useFundBalance: (holder?: Address) => bigint | undefined = MOCK ? useFundBalanceMock : useFundBalanceChain
-export const useRegistryTx: (actor?: Address) => RegistryTx = MOCK ? useRegistryTxMock : () => useRegistryTxChain()
+export const useRegistryTx: (actor?: Address) => RegistryTx = MOCK ? useRegistryTxMock : useRegistryTxChain
