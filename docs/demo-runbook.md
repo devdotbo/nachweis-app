@@ -358,6 +358,8 @@ scripts/app-e2e-local.sh --mode sp1-mock --test    # SP1 path with PROOF_MODE=mo
 scripts/app-e2e-local.sh                           # keep the stack running and click through it yourself (URL printed)
 ```
 
+With the official wallet's presentation instead of a minted one: `SESSION=<private session file> scripts/real-proof-local.sh` (anvil, contracts pinned to the real issuer key hash, bridge, the cached real Noir proof, approve, subscribe, checker, revoke; see docs/two-device.md, "Real presentation from the official wallet").
+
 What it proves: the real bridge session, the EIP-191 session signature, the handoff QR and URI, attestation from the phone's proof, Subscribe with a FundToken balance, revoke from the issuer role, both doors closed afterwards. Screenshots per beat in `app/_preview/e2e/<mode>/`. Details and limits: `app/README.md`, "Browser e2e".
 
 ## 9. Sepolia real run (builder, manual)

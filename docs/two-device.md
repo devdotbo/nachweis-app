@@ -73,6 +73,47 @@ with the issuer token (`BRIDGE_ISSUER_TOKEN`, script default `local-issuer-token
 makes it true, false for an unrelated address, the handoff now answers 409, revoke closes it and
 approve reopens it, and the verifier and bridge logs carry no plaintext marker.
 
+## Real presentation from the official wallet
+
+`scripts/real-proof-local.sh` plays the same route with the presentation the official German test
+wallet produced in the G0 run (docs/evidence/g0-2026-09-08.md) instead of a minted one. It takes
+the companion session file as `SESSION=/path/to/session.json` (no default: that file holds the
+presentation and the client key and lives in the private, gitignored run directory
+`docs/evidence/private/runs/<timestamp>/` of the main checkout; the script refuses a path inside
+the repository except under `.e2e/`). Only `bound_address`, `challenge_hex`, `nonce`,
+`session_id` and the `proof` object are read; the presentation is never printed or copied.
+
+    SESSION=/path/to/private/runs/<timestamp>/session.json scripts/real-proof-local.sh [--keep]
+
+Proof cache: the companion's `prove` writes the proof into the session file itself (`proof`:
+`proof_hex`, `public_inputs_hex`, the decoded public inputs, the issuer's SEC1 key, timings) and
+keeps its work files in `proof-<first 8 of the relay session id>/` next to it. The script runs
+`prove` only when `proof` is missing (`PROVE_FLAGS="--kb-window 0"` for a stale KB-JWT) and then
+uses the cached proof on every run. No verifier-service is needed: the presentation was already
+picked up, so the flow starts at the bridge.
+
+What it does, each step timed: pins `NoirPidVerifier` to the proof's `issuer_key_hash` (checked
+against sha256 of the recorded SEC1 key; `PID_ISSUER_KEY_HASH` overrides), deploys
+`EudiAllowlistChecker(registry, POLICY, 3)` next to `FundToken` and `Subscription`, starts the
+bridge in local mode with a fresh random `BRIDGE_ISSUER_TOKEN` and `REQUIRE_ADDRESS_PROOF=true`,
+creates the bridge session with the session file's own challenge (so the bridge nonce equals the
+nonce inside the proof), signs `nachweis:session:<id>` with anvil key 1 (the bound address
+0x7099...79C8), and posts `{proof_hex, public_inputs_hex, tier}` to `POST /sessions/:id/noir-proof`,
+the body the companion's `submit` sends. Assertions, in order: proof before the signature 409;
+`statusOf` (evidence true, approved false, revoked false, expiry); `isEligible` false;
+`subscribe()` reverts; `checkAllowlist` 0x0000; approve without token 401; approve; `statusOf`
+approved; `isEligible` true (stranger false); `subscribe()` mined with an NDF balance;
+`checkAllowlist` 0x0003 (swap | liquidity, stranger 0x0000); revoke; `statusOf` revoked and
+approval cleared; `isEligible` false; `subscribe()` reverts `NotEligible`; checker 0x0000;
+re-approve reopens all three; the same proof on a second session is refused (registry
+`NonceConsumed`, 502 from the bridge); 0 plaintext markers in the bridge log. Ends with
+`REAL-PROOF-LOCAL PASS`, gas figures and `summary.json` in `RUN_DIR` (default `.e2e/real-proof`).
+
+Known bridge behaviour found by the replay check: after a reverted `attestWithProof` the bridge's
+operator nonce cache is one ahead of the chain (alloy's cached nonce filler); its next transaction
+is queued with a nonce gap and its receipt never arrives (chain nonce 14, revoke queued at 15,
+2026-09-08). The script therefore runs the replay last; a bridge restart resets the cache.
+
 ## Recorded timeline, companion as the phone
 
     [   0.25 s] anvil on http://127.0.0.1:8545
