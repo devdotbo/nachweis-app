@@ -5,7 +5,8 @@ use alloy::sol_types::SolType;
 use anyhow::{anyhow, Context, Result};
 use base64::engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD};
 use base64::Engine;
-use nachweis_pid_lib::{check_kb_freshness, prove_statement_with_facts, GuestInput, PublicValuesStruct};
+use nachweis_pid_hostlib::check_kb_freshness;
+use nachweis_pid_lib::{prove_statement_with_facts, GuestInput, PublicValuesStruct};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::time::SystemTime;
 use x509_cert::{der::Decode, Certificate};
@@ -56,7 +57,7 @@ fn panic_message(p: Box<dyn std::any::Any + Send>) -> String {
 
 /// Run the statement natively, then the KB-JWT freshness check the guest cannot do (it has no
 /// clock): with `kb_jwt_window_secs = Some(w)` the KB-JWT `iat` must lie in `[now - w, now + w]`
-/// and `exp`, when present, in `(now, now + w]` (`nachweis_pid_lib::check_kb_freshness`). The
+/// and `exp`, when present, in `(now, now + w]` (`nachweis_pid_hostlib::check_kb_freshness`). The
 /// library asserts on every check, so a statement failure surfaces as a panic which is caught
 /// and returned as the error text.
 pub fn run_native(input: &GuestInput, kb_jwt_window_secs: Option<u64>) -> Result<(PublicValuesStruct, Vec<u8>)> {
@@ -89,7 +90,7 @@ pub fn decode_public_values(bytes: &[u8]) -> Result<DecodedPublicValues> {
 mod tests {
     use super::*;
     use crate::config::DEFAULT_KB_JWT_WINDOW_SECS;
-    use nachweis_pid_lib::synth::{mint, SynthOptions};
+    use nachweis_pid_hostlib::synth::{mint, SynthOptions};
 
     fn now() -> u64 {
         SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs()

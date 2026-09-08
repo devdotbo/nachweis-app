@@ -3753,6 +3753,7 @@ dependencies = [
  "axum",
  "base64",
  "hex",
+ "nachweis-pid-hostlib",
  "nachweis-pid-lib",
  "rand 0.8.8",
  "reqwest 0.12.28",
@@ -3766,6 +3767,17 @@ dependencies = [
  "tracing-subscriber",
  "uuid",
  "x509-cert",
+]
+
+[[package]]
+name = "nachweis-pid-hostlib"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "nachweis-pid-lib",
+ "p256",
+ "serde_json",
+ "sha2",
 ]
 
 [[package]]

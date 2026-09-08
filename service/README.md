@@ -170,7 +170,7 @@ each route performs, and by whom, is tabulated in `docs/trust-boundaries.md`.
 
 - `cargo test --lib`: ABI encoding of the proof argument and the `publicInputs` layout; decoding of
   the Noir public inputs against `contracts/test/fixtures/noir/public_inputs.bin`; the native
-  statement run with synthetic presentations (`nachweis_pid_lib::synth`, no real credential):
+  statement run with synthetic presentations (`nachweis_pid_hostlib::synth`, no real credential):
   a KB-JWT without `exp` passes the default window and commits the issuer `exp`, a stale `iat`
   or an expired `exp` is rejected as `KB-JWT freshness: ...`.
 - `cargo test --test anvil`: starts `anvil` on a free port, deploys `AttestationRegistry` and
