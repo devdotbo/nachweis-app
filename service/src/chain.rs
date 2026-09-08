@@ -1,6 +1,6 @@
 //! Ethereum side: AttestationRegistry binding, calldata construction, sending with the operator key.
 use crate::session::AttestedEvent;
-use alloy::network::{EthereumWallet, TransactionBuilder};
+use alloy::network::{Ethereum, EthereumWallet, TransactionBuilder};
 use alloy::primitives::{keccak256, Address, Bytes, Signature, B256, U256};
 use alloy::providers::{DynProvider, Provider, ProviderBuilder};
 use alloy::rpc::types::{TransactionReceipt, TransactionRequest};
@@ -208,7 +208,19 @@ impl Chain {
         let signer: PrivateKeySigner = private_key.trim().parse().context("OPERATOR_PRIVATE_KEY")?;
         let operator = signer.address();
         let url = rpc_url.parse().context("RPC_URL")?;
-        let provider = ProviderBuilder::new().wallet(EthereumWallet::from(signer)).connect_http(url).erased();
+        // Fillers chosen one by one instead of `ProviderBuilder::new()`: the recommended set carries the
+        // cached nonce manager, which increments its nonce while a transaction is prepared, also when
+        // that send then reverts at gas estimation (NonceConsumed on a replayed proof, NoDecision on a
+        // bare subject). The next send is then queued one ahead of the chain and its receipt never
+        // arrives (WP24, 2026-09-08). The simple manager asks eth_getTransactionCount(pending) before
+        // every send; the bridge sends few transactions, so the extra call does not matter.
+        let provider = ProviderBuilder::<_, _, Ethereum>::default()
+            .with_gas_estimation()
+            .with_simple_nonce_management()
+            .fetch_chain_id()
+            .wallet(EthereumWallet::from(signer))
+            .connect_http(url)
+            .erased();
         Ok(Self { provider, registry, operator })
     }
 

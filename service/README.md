@@ -16,7 +16,7 @@ cargo test                     # unit tests + the anvil end-to-end test (skips i
 |---|---|---|
 | `BIND` | listen address | `127.0.0.1:8787` |
 | `RPC_URL` | Ethereum JSON-RPC (anvil, Sepolia) | unset: attest and revoke endpoints answer 503 |
-| `OPERATOR_PRIVATE_KEY` | key that sends `attestWithProof`, `attestByOperator`, `approve`, `revoke`; must be an operator of `POLICY_ID` for the last three | unset |
+| `OPERATOR_PRIVATE_KEY` | key that sends `attestWithProof`, `attestByOperator`, `approve`, `revoke`; must be an operator of `POLICY_ID` for the last three. The nonce is read from the chain (`eth_getTransactionCount` pending) before every send, so a reverted send leaves no gap for the next one; the key must not sign from another process at the same time | unset |
 | `BRIDGE_ISSUER_TOKEN` | bearer token for the issuer routes `attest-operator`, `approve` (by session) and `revoke`: `Authorization: Bearer <token>`. Unset: those routes answer 503 and a warning is logged at startup; nothing privileged runs unauthenticated | unset |
 | `REGISTRY` | `AttestationRegistry` address | unset |
 | `NOIR_VERIFIER` | `NoirPidVerifier` address for the client-side Noir path: `POST /sessions/:id/noir-proof` dry-runs `verify` with an `eth_call` before sending, so a bad proof answers 422 with the typed revert instead of a failed transaction | unset: no dry run |
@@ -184,6 +184,10 @@ each route performs, and by whom, is tabulated in `docs/trust-boundaries.md`.
   makes it false and blocks re-attestation, `approve` reopens it, `revoke` by session closes it,
   `attest-operator` reopens and approves in one step, revoke again. Skips with
   a message when `anvil` is not installed.
+- `cargo test --test anvil reverted_send`: a send that reverts at gas estimation (`approve` on a
+  subject without a decision, `NoDecision`) followed by `attestByOperator` and `revoke`, both required
+  to land within 10 s and the chain nonce to advance by exactly two. With alloy's cached nonce manager
+  the second send is queued one ahead of the chain and never mined (the WP24 observation).
 - `cargo test --test anvil noir_proof`: deploys `ZKTranscriptLib`, the bb-generated `HonkVerifier`
   (linked, `optimizer_runs = 1` artifact) and a `NoirPidVerifier` pinned to the fixture issuer, then
   posts `contracts/test/fixtures/noir/{proof,public_inputs}.bin` to `noir-proof`: wrong session
