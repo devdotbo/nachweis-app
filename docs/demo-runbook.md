@@ -363,6 +363,12 @@ With the official wallet's presentation instead of a minted one: `SESSION=<priva
 
 What it proves: the real bridge session, the EIP-191 session signature, the handoff QR and URI, attestation from the phone's proof (or, in browser mode, from the tab's own bb.js proof), Subscribe with a FundToken balance, revoke from the issuer role, both doors closed afterwards. Hosting note for the browser path: the page must be served with COOP `same-origin` and COEP `require-corp` (the Vite dev and preview servers do; a static host must send them, see `app/README.md`, "Hosting"). Screenshots per beat in `app/_preview/e2e/<mode>/`. Details and limits: `app/README.md`, "Browser e2e".
 
+## 8c. Demo sequence for the video: the official wallet answers the browser (docs/browser-real-wallet.md)
+
+The sequence to film. Two commands and one phone: `scripts/browser-real-wallet-up.sh` starts the relay verifier behind a cloudflared tunnel (as `g0-up.sh` does), anvil on a free port, the contracts with NoirPidVerifier pinned to the sandbox PID issuer, the checker, the bridge in local mode with `REQUIRE_ADDRESS_PROOF=true`, and the app with the dev signer; it prints the app URL, the public URL, the run directory and the click sequence. `scripts/browser-real-wallet-down.sh` stops it all and leaves the logs.
+
+On camera, in Chrome on the Mac: Connect dev signer; Create presentation request (the dev signer signs the session); "Prove in this browser" (the QR appears); scan it with the official test wallet on the iPhone, consent; the tab decrypts and proves in about 30 s and shows "attested from this browser"; switch to Issuer, Approve; back to Investor, Subscribe, the FundToken balance rises. What the tab sends and to which host, the evidence to record, the fail branches and the smoke test without the phone are in `docs/browser-real-wallet.md`.
+
 ## 9. Sepolia real run (builder, manual)
 
 Not run 2026-09-07. Nothing is deployed to any network as of this file. What the builder must have:
