@@ -1,4 +1,4 @@
-# prover-android: on-phone Noir prover for Nachweis
+# prover-android: on-phone Noir prover for Attestat (app id org.nachweis.prover, display name Nachweis Prover)
 
 An Android app (Kotlin, Compose, minSdk 30, arm64) that takes the encrypted
 EUDI wallet response from the blind relay, decrypts it on the phone, derives

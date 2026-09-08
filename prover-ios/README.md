@@ -1,4 +1,4 @@
-# prover-ios: Nachweis on-phone prover for iPhone (WP12)
+# prover-ios: Attestat on-phone prover for iPhone (WP12; target NachweisProver, display name Nachweis Prover)
 
 SwiftUI app (iOS 17+) that requests a PID presentation through the blind
 relay, decrypts the wallet's JWE on the phone, derives the pid-sdjwt circuit

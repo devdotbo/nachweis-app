@@ -8,7 +8,7 @@ Windows to have open before recording: the app at `http://localhost:5173` (inves
 
 | # | beat | max s | screen or terminal (this repo) | caption on screen | spoken |
 |---|---|---|---|---|---|
-| 0 | intro | 12 | title card: "Nachweis" and the spoken line | "Your ID wallet should work where you invest." | the same line, then one sentence: an issuer accepts the state ID wallet once and the approval follows the customer's crypto wallet |
+| 0 | intro | 12 | title card: "Attestat" and the spoken line | "Your ID wallet should work where you invest." | the same line, then one sentence: an issuer accepts the state ID wallet once and the approval follows the customer's crypto wallet |
 | 1 | the investor | 12 | app, Investor role: card 1 "Connect wallet" then card 3 "Eligibility" showing `not permitted`, card 4 "Two doors, one decision" with both doors closed | "identity evidence required" | she opens the fund app with her own wallet; the address is not permitted |
 | 2 | the wallet | 28 | app card 2 "Present your ID": the QR; then the phone: the official German test wallet shows the request (given name, family name, over 18), she taps once; back on the app card 3 turns `presented, awaiting issuer` | "official test wallet, sample identity" and, on the phone shot, "names go to the issuer, not to the chain" | the state test wallet answers the issuer's registered request: given name, family name, over 18. The names go to the issuer's verifier, not to the chain |
 | 3a | the binding | 10 | app card 2, the sign button; the wallet pop-up with `nachweis:session:<id>`; the bridge terminal line for `POST /sessions/:id/address-proof` | "signed by the crypto wallet, not by the ID wallet" | her crypto wallet signs the session; the presentation is bound to that address through the nonce |
@@ -20,7 +20,7 @@ Windows to have open before recording: the app at `http://localhost:5173` (inves
 
 Closing card text, on screen for the last 8 to 12 seconds:
 
-    Nachweis helps token issuers accept EUDI identity evidence and apply their approval to customers' linked crypto wallets, without putting identity documents on chain.
+    Attestat helps token issuers accept EUDI identity evidence and apply their approval to customers' linked crypto wallets, without putting identity documents on chain.
 
     no document on chain
 
