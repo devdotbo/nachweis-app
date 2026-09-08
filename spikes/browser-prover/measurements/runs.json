@@ -1,0 +1,139 @@
+{
+  "date": "2026-09-08",
+  "machine": "Apple M3 Max, 16 logical cores, macOS 25.6.0",
+  "chrome": "152.0.0.0",
+  "bbjs": "5.0.0-nightly.20260324",
+  "noir_js": "1.0.0-beta.21",
+  "native_reference": {
+    "bb": "5.0.0-nightly.20260324",
+    "prove_real_s": [
+      4.13,
+      4.09,
+      4.03
+    ],
+    "max_rss_mib": [
+      2231,
+      2182,
+      2226
+    ],
+    "public_inputs_sha256": "4ea8becf1a1507dea981db42a412477e58c421309d20c8a45f6f90e85de4e43f"
+  },
+  "warmup_run_cold_cache": {
+    "note": "first load, CRS not yet in IndexedDB, wasm not cached; page still used the slow memory sampler so total is not comparable",
+    "timingsMs": {
+      "witness": 1277,
+      "bb_init": 10647,
+      "prove": 11376,
+      "verify": 4031,
+      "write_vk": 3996
+    },
+    "renderer_rss_peak_mib": 2965
+  },
+  "runs": [
+    {
+      "run": "A",
+      "startedAt": 1788899943454,
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36",
+      "threads": 16,
+      "crossOriginIsolated": true,
+      "timingsMs": {
+        "load_fixtures": 16,
+        "jwe_decrypt": 1,
+        "witness": 1129,
+        "bb_init": 728,
+        "prove": 11253,
+        "verify": 4373,
+        "write_vk": 4218,
+        "total_to_verified": 21953
+      },
+      "memory": {
+        "peak_js_heap_main_thread": "307 MiB",
+        "ua_specific_after_prove": "288 MiB",
+        "renderer_rss_peak_mib": 2883
+      },
+      "verifiedInBrowser": true,
+      "proofBytes": 10304,
+      "proofSha256": "a776314ca59ff3e0aee4e0c325b397c5f084b242582dd970ebf06b46632a9a9a",
+      "publicInputsSha256": "4ea8becf1a1507dea981db42a412477e58c421309d20c8a45f6f90e85de4e43f",
+      "publicInputsDecoded": {
+        "subject": "0xf99edde971f4e9c88715a79ca78963284a2955dc",
+        "issuer_key_hash": "0xb52359580c14e2d79d34605740d86338adc6a0868a22ec648d1896187813fd26",
+        "over18": 1,
+        "expiry": 1819756800,
+        "nonce": "0x306863157ddb59f4e5a56f41aa8591e68b574c8c3475c43d9bd469220be90762"
+      },
+      "vkSha256": "c3c7bff016e9f1984824357b4526d0df6dec149bb1f7b628a62cb4fd9dbeb1b7",
+      "nativeVerify": "bb verify -t evm with prover-android/app/src/main/assets/pid_sdjwt_evm.vk: Proof verified successfully"
+    },
+    {
+      "run": "B",
+      "startedAt": 1788900057599,
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36",
+      "threads": 16,
+      "crossOriginIsolated": true,
+      "timingsMs": {
+        "load_fixtures": 16,
+        "jwe_decrypt": 1,
+        "witness": 1161,
+        "bb_init": 751,
+        "prove": 11233,
+        "verify": 4048,
+        "write_vk": 4110,
+        "total_to_verified": 21558
+      },
+      "memory": {
+        "peak_js_heap_main_thread": "251 MiB",
+        "ua_specific_after_prove": "339 MiB",
+        "renderer_rss_peak_mib": 2912
+      },
+      "verifiedInBrowser": true,
+      "proofBytes": 10304,
+      "proofSha256": "524bafd8bafd34c9fb82d549b47ba453b55f54f6ff658a9e54b6109a85a8f86e",
+      "publicInputsSha256": "4ea8becf1a1507dea981db42a412477e58c421309d20c8a45f6f90e85de4e43f",
+      "publicInputsDecoded": {
+        "subject": "0xf99edde971f4e9c88715a79ca78963284a2955dc",
+        "issuer_key_hash": "0xb52359580c14e2d79d34605740d86338adc6a0868a22ec648d1896187813fd26",
+        "over18": 1,
+        "expiry": 1819756800,
+        "nonce": "0x306863157ddb59f4e5a56f41aa8591e68b574c8c3475c43d9bd469220be90762"
+      },
+      "vkSha256": "c3c7bff016e9f1984824357b4526d0df6dec149bb1f7b628a62cb4fd9dbeb1b7",
+      "nativeVerify": "bb verify -t evm with prover-android/app/src/main/assets/pid_sdjwt_evm.vk: Proof verified successfully"
+    },
+    {
+      "run": "C",
+      "startedAt": 1788900139893,
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36",
+      "threads": 16,
+      "crossOriginIsolated": true,
+      "timingsMs": {
+        "load_fixtures": 15,
+        "jwe_decrypt": 1,
+        "witness": 1122,
+        "bb_init": 708,
+        "prove": 11043,
+        "verify": 4011,
+        "write_vk": 4003,
+        "total_to_verified": 21140
+      },
+      "memory": {
+        "peak_js_heap_main_thread": "252 MiB",
+        "ua_specific_after_prove": "339 MiB",
+        "renderer_rss_peak_mib": 2915
+      },
+      "verifiedInBrowser": true,
+      "proofBytes": 10304,
+      "proofSha256": "a1050fe99d4f9cf3e894835cd7d0a2cf80b49ed59599a189b6f21f0d2044e699",
+      "publicInputsSha256": "4ea8becf1a1507dea981db42a412477e58c421309d20c8a45f6f90e85de4e43f",
+      "publicInputsDecoded": {
+        "subject": "0xf99edde971f4e9c88715a79ca78963284a2955dc",
+        "issuer_key_hash": "0xb52359580c14e2d79d34605740d86338adc6a0868a22ec648d1896187813fd26",
+        "over18": 1,
+        "expiry": 1819756800,
+        "nonce": "0x306863157ddb59f4e5a56f41aa8591e68b574c8c3475c43d9bd469220be90762"
+      },
+      "vkSha256": "c3c7bff016e9f1984824357b4526d0df6dec149bb1f7b628a62cb4fd9dbeb1b7",
+      "nativeVerify": "bb verify -t evm with prover-android/app/src/main/assets/pid_sdjwt_evm.vk: Proof verified successfully"
+    }
+  ]
+}
