@@ -46,13 +46,15 @@ Kept: the encode-payload-in-circuit design, the disclosure digest scheme, the
 
 Changed (src/main.nr, src/constants.nr):
 
-1. Header is a private input `issuer_header_b64` (max 2304). Its first 128
-   base64url chars are decoded in-circuit (96 bytes) and must contain
-   `"alg":"ES256"` and `"typ":"dc+sd-jwt"` (or `vc+sd-jwt`) at prover offsets,
-   so alg and typ are fixed for any key order without decoding the x5c chain.
-   (Before the realism pass the first 40 chars were pinned as a constant, which
-   assumed the key order alg, typ.) The header is otherwise not interpreted
-   (x5c is not checked).
+1. Header is a private input `issuer_header_b64` (max 2304). A 128-char
+   base64url window starting at the private, 4-aligned `hdr_window_b64_start`
+   is decoded in-circuit (96 bytes) and must contain `"alg":"ES256"` and
+   `"typ":"dc+sd-jwt"` (or `vc+sd-jwt`) at prover offsets relative to the
+   window, so alg and typ are fixed for any key order and any header length
+   without decoding the x5c chain (REALISM.md, section 8; the BDR issuer puts
+   them after x5c and kid). (Before the realism pass the first 40 chars were
+   pinned as a constant, which assumed the key order alg, typ; WP13 decoded a
+   fixed prefix.) The header is otherwise not interpreted (x5c is not checked).
 2. `"vct":"urn:eudi:pid:de:1"` must appear at `vct_offset` in the raw payload.
 3. Age: the disclosure `["<salt>","18",true]` is rebuilt from the salt, digested
    as in d10, and must sit quoted at `age_target_offset` inside the array that

@@ -36,7 +36,7 @@ bun test                      # 21 tests: nonce vectors, statement pre-check on 
 | `status` | the session without secrets or claims; `--registry` adds `isEligible` |
 | `issuer-key FILE` | the test issuer: creates a P-256 key and a self-signed leaf plus a self-signed "CA" certificate (two-certificate `x5c`, about 580 DER bytes each, with the extensions of a sandbox issuer certificate; 0600), prints the SEC1 key and its sha256, which `NoirPidVerifier` pins |
 | `mint-test-presentation` | the phone stand-in, mirroring `verifier-service/tests/bridge_http.rs` (`mint_presentation`, `answer_as_wallet`): reads the signed request, mints an SD-JWT VC in the 23-claim German PID layout (`vct urn:eudi:pid:de:1`, two-certificate `x5c`, `exp` one year, `cnf.jwk` fresh holder key in ERICA's key order, `status.status_list`, 12 top-level digests, nested `age_equal_or_over`, `address`, `place_of_birth`; disclosures given_name, family_name, `age_equal_or_over.18`) plus a KB-JWT (header with `kid` as ERICA sends it; `nonce`, `aud` = the pinned `client_id`, `iat`, `exp = iat + 300`, `sd_hash`), encrypts to the advertised key, `POST /response/:id`. `--age-shape nested|disclosed|plain` picks how the age object arrives (`circuits/pid-sdjwt/REALISM.md`, section 3), `--minimal` the older three-digest layout |
-| `mint-fixture` | the same minter without a verifier: writes `prover-sp1/fixtures/<name>-input.json` and `<name>-over18.sdjwt` (default name `realistic`) with the SP1 fixture's subject and challenge, so the Noir fixtures in `contracts/test/fixtures/noir` can be regenerated (`--issuer-key`, `--out`, `--name`, `--age-shape`, `--issuer-exp`) |
+| `mint-fixture` | the same minter without a verifier: writes `prover-sp1/fixtures/<name>-input.json` and `<name>-over18.sdjwt` (default name `realistic`) with the SP1 fixture's subject and challenge, `--header-layout x5c-first` for the Bundesdruckerei header order (x5c, kid, typ, alg; fixture `bdr-layout`), so the Noir fixtures in `contracts/test/fixtures/noir` can be regenerated (`--issuer-key`, `--out`, `--name`, `--age-shape`, `--issuer-exp`) |
 
 Environment: `NACHWEIS_COMPANION_DIR` (default `~/.nachweis-companion`), `NACHWEIS_SESSION`,
 `NACHWEIS_VERIFIER_URL`, `NACHWEIS_BRIDGE_URL`, `NACHWEIS_ADDRESS`, `NACHWEIS_WALLET_KEY`,
@@ -166,8 +166,11 @@ What is unverified until the phone run, and how the companion handles it:
    header 2304 base64url chars, KB header with `kid`, KB payload 384); the age object may be
    nested in the payload, disclosed with nested digests, or disclosed with plain values; digest
    order, whitespace and key order do not matter. Still assumed: `"vct":"urn:eudi:pid:de:1"`
-   (three vct literals are in circulation), an `exp` in the issuer payload, `alg`/`typ` within
-   the first 96 decoded header bytes. `gen-prover.ts` refuses with the exact reason otherwise.
+   (three vct literals are in circulation), an `exp` in the issuer payload, `alg` and `typ`
+   within one 96-byte window of the decoded header (any key order; the window start is a
+   private input since WP22, after the G0 run showed the Bundesdruckerei order `x5c, kid, typ,
+   alg`). `gen-prover.ts` refuses with the exact reason otherwise. G0 (2026-09-08) confirmed
+   the vct literal, `exp`, the nested age shape and the sizes (`docs/evidence/g0-2026-09-08.md`).
 5. `enc`. The wallet may pick A256GCM; both are accepted on decrypt.
 
 ## Privacy statement
