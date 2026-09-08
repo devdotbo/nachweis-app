@@ -16,7 +16,8 @@ cargo test                     # unit tests + the anvil end-to-end test (skips i
 |---|---|---|
 | `BIND` | listen address | `127.0.0.1:8787` |
 | `RPC_URL` | Ethereum JSON-RPC (anvil, Sepolia) | unset: attest and revoke endpoints answer 503 |
-| `OPERATOR_PRIVATE_KEY` | key that sends `attestWithProof`, `attestByOperator`, `revoke`; must be an operator of `POLICY_ID` for the last two | unset |
+| `OPERATOR_PRIVATE_KEY` | key that sends `attestWithProof`, `attestByOperator`, `approve`, `revoke`; must be an operator of `POLICY_ID` for the last three | unset |
+| `BRIDGE_ISSUER_TOKEN` | bearer token for the issuer routes `attest-operator`, `approve` (by session) and `revoke`: `Authorization: Bearer <token>`. Unset: those routes answer 503 and a warning is logged at startup; nothing privileged runs unauthenticated | unset |
 | `REGISTRY` | `AttestationRegistry` address | unset |
 | `NOIR_VERIFIER` | `NoirPidVerifier` address for the client-side Noir path: `POST /sessions/:id/noir-proof` dry-runs `verify` with an `eth_call` before sending, so a bad proof answers 422 with the typed revert instead of a failed transaction | unset: no dry run |
 | `POLICY_ID` | `0x` + 32-byte hex, or any string which is `keccak256`-hashed | `nachweis.pid.over18.v1` = `0xd27260f1ca509ba75dea6cd27b2985a96e423550e16db3350d2945e215e3d05f` |
@@ -47,25 +48,30 @@ Build with `--no-default-features` to let sp1-sdk use the Docker image instead.
 | `POST /sessions` | `{bound_address, challenge_hex?}` | new session; challenge = 32 random bytes unless given; nonce = hex(sha256(address20 ‖ challenge32)). Verifier mode creates the presentation request first and uses the verifier's session id as `session_id`, so the app polls one id. Returns `{session_id, nonce, challenge_hex, openid4vp_uri, request_uri, mode, address_proof_message}` |
 | `POST /sessions/:id/address-proof` | `{signature}` | EIP-191 personal-message signature over `nachweis:session:<session_id>` by the bound address (`personal_sign` in the wallet). Recovers the signer with alloy; 401 if it is not `bound_address`. Sets `address_verified` |
 | `GET /sessions/:id/handoff` | | two-device flow: what the phone prover needs to join THIS session after the browser wallet signed it: `{session_id, bound_address, challenge_hex, nonce, verifier_url, bridge_url, expires_at, address_verified, state, uri}`. `verifier_url` is `HANDOFF_VERIFIER_URL` (else `VERIFIER_URL`, else null), `bridge_url` is `HANDOFF_BRIDGE_URL` (else scheme and `Host` of this request), `expires_at` = `created_at` + 600 s, `uri` the same as `nachweis://handoff?v=1&s=…&a=…&c=…&b=…&r=…`. 409 once the session is past `presented` or the handoff has expired, 404 for unknown ids. The phone requests the presentation with the same challenge (same nonce), then posts `noir-proof` here; the address proof stays the browser's |
-| `GET /sessions/:id` | | `state`, `detail` (one human-readable line), `error`, `address_verified`, public values, proof, `tx_hash`, decoded `Attested` event; 404 for unknown ids. The presentation is never returned |
+| `GET /sessions/:id` | | `state`, `detail` (one human-readable line), `error`, `address_verified`, public values, proof, `tx_hash`, decoded `Attested` event, `approved` (issuer approval as last seen on chain), `approve_tx_hash`, `revoke_tx_hash`; 404 for unknown ids. The presentation is never returned |
 | `POST /sessions/:id/presentation` | `{sd_jwt_presentation}` | local mode entry: runs the statement natively (422 with the statement's error on failure), then generates the proof per `PROOF_MODE`. Returns `{status, public_values_hex, public_values, proof_hex, proof_system, vkey, cycles}`. Blocks until the proof is done |
-| `POST /sessions/:id/noir-proof` | `{proof_hex, public_inputs_hex[86], tier?}` | client-side path (`/companion`): the holder's device decrypted the blind-relayed presentation and proved the statement with `/circuits/pid-sdjwt`; the bridge receives only the bb proof (10,304 bytes) and the 86 public input field elements. Decodes them as `NoirPidVerifier` does (subject 20, issuerKeyHash 32, over18, expiry, nonce 32), requires `subject == bound_address`, `nonce == session nonce`, over18 = 1, expiry ahead of now (422 otherwise), with `REQUIRE_ADDRESS_PROOF` the address proof (409), dry-runs `NoirPidVerifier.verify` when `NOIR_VERIFIER` is set (422 with the typed revert), then sends `attestWithProof(subject, Decision, abi.encode(bytes proof, bytes32[] publicInputs), [subject, policyId, bits, expiry])`. `created` or `proved` -> `proved` -> `attested`. Returns `{status: attested, path: noir, tx_hash, attested, public_values, call}`. The bridge never sees a presentation on this path |
-| `POST /sessions/:id/attest` | `{tier?}` | `attestWithProof` with the session's proof; 409 unless the session is `proved` and (with `REQUIRE_ADDRESS_PROOF`) `address_verified`. Reverts come back as 502 with the typed error decoded (registry, `Sp1PidVerifier`, gateway) plus the raw revert data. Returns `{tx_hash, attested, call}` |
-| `POST /sessions/:id/attest-operator` | `{tier?, bits?}` | `attestByOperator` (fallback demo); needs at least a natively verified session. `bits` overrides the proof-path bits (default `0x3` = identity evidence \| over 18, which is `FundToken.DEFAULT_REQUIRED_BITS`); bits `0x4` (EU resident) and `0x8` (not sanctioned) are reserved and required nowhere |
-| `POST /revoke` | `{subject}` | `revoke(subject, POLICY_ID)` |
-| `GET /health` | | mode, proof mode, registry, operator |
+| `POST /sessions/:id/noir-proof` | `{proof_hex, public_inputs_hex[86], tier?}` | client-side path (`/companion`): the holder's device decrypted the blind-relayed presentation and proved the statement with `/circuits/pid-sdjwt`; the bridge receives only the bb proof (10,304 bytes) and the 86 public input field elements. Decodes them as `NoirPidVerifier` does (subject 20, issuerKeyHash 32, over18, expiry, nonce 32), requires `subject == bound_address`, `nonce == session nonce`, over18 = 1, expiry ahead of now (422 otherwise), with `REQUIRE_ADDRESS_PROOF` the address proof (409), dry-runs `NoirPidVerifier.verify` when `NOIR_VERIFIER` is set (422 with the typed revert), then sends `attestWithProof(subject, Decision, abi.encode(bytes proof, bytes32[] publicInputs), [subject, policyId, bits, expiry])`. `created` or `proved` -> `proved` -> `attested` (evidence on chain, awaiting issuer approval). Returns `{status: attested, path: noir, tx_hash, attested, public_values, call}`. The bridge never sees a presentation on this path |
+| `POST /sessions/:id/attest` | `{tier?}` | `attestWithProof` with the session's proof; 409 unless the session is `proved` and (with `REQUIRE_ADDRESS_PROOF`) `address_verified`. Reverts come back as 502 with the typed error decoded (registry, `Sp1PidVerifier`, gateway) plus the raw revert data. Evidence only: the subject is not eligible until the issuer approves. Returns `{tx_hash, attested, call}` |
+| `POST /sessions/:id/approve` | | issuer route (bearer token). `approve(subject, POLICY_ID)` from the operator key for the session's bound address: sets `approved`, clears `revoked`. 409 unless the session is `attested` or `revoked`. Both doors (FundToken transfer check, Subscription, the Uniswap checker) open only after this. Returns `{status: approved, tx_hash, approved, chain: statusOf}` |
+| `POST /sessions/:id/revoke` | | issuer route (bearer token). `revoke(subject, POLICY_ID)` for the session's bound address; 409 unless `attested` or `approved`. The session moves to `revoked`; `approve` reopens it |
+| `POST /sessions/:id/attest-operator` | `{tier?, bits?}` | issuer route (bearer token). `attestByOperator` (fallback when no proof route exists): stores the decision and approves in one transaction, the session goes straight to `approved`. Needs at least a natively verified session. `bits` overrides the proof-path bits (default `0x3` = identity evidence \| over 18, which is `FundToken.DEFAULT_REQUIRED_BITS`); bits `0x4` (EU resident) and `0x8` (not sanctioned) are reserved and required nowhere |
+| `POST /revoke` | `{subject}` | issuer route (bearer token). `revoke(subject, POLICY_ID)` by address; sessions bound to that address move to `revoked` |
+| `GET /health` | | mode, proof mode, registry, operator, `issuer_routes` (`token` or `disabled`) |
 
 ## State machine
 
 ```
-created ──presentation──> presented ──native statement ok──> verified ──> proving ──> proved ──attest──> attested
-   │                          │                                                │
-   └── verifier rejected /    └── statement failed (422, error text) ──> failed <── proof failed
+created ──presentation──> presented ──native statement ok──> verified ──> proving ──> proved ──attest──> attested ──approve──> approved
+   │                          │                                                │                            ▲                 │
+   └── verifier rejected /    └── statement failed (422, error text) ──> failed <── proof failed          approve ──── revoked <── revoke
        wallet timeout
 ```
 
-`failed` is terminal and carries `error`. `attest-operator` may run from `verified` onward and
-also lands in `attested`. The client-side Noir path (`noir-proof`) skips `presented` and
+`attested` means evidence on chain, awaiting issuer approval: `isEligible` is still false. `approved`
+means the issuer called `approve` (both doors open); `revoke` withdraws it (`revoked`) and only
+`approve` reopens it, a replayed proof cannot (`DecisionRevoked`). `failed` is terminal and
+carries `error`. `attest-operator` may run from `verified` onward and lands in `approved`
+directly (the operator signed the decision). The client-side Noir path (`noir-proof`) skips `presented` and
 `verified`: it goes `created -> proved -> attested` in one request, because the statement was
 checked and proved on the holder's device. With `PROOF_MODE=execute` or `compressed` the session reaches `proved`
 with `proof_hex: null`; `attest` then answers 409, because there is no on-chain proof.
@@ -167,15 +173,18 @@ list, freshness window) stay in front of the bridge, which then proves the state
   operator, then drives the HTTP API in mock mode with the fixture vector: nonce matches the
   fixture KB-JWT, address proof (wrong signer 401, right signer sets `address_verified`),
   wrong challenge fails with the statement's nonce error, `attest` emits
-  `Attested` with bits `0x3` and `statusRef = keccak(session id)`, `isEligible` true, `revoke`
-  makes it false and blocks re-attestation, `attest-operator` reopens it, revoke again. Skips with
+  `Attested` with bits `0x3` and `statusRef = keccak(session id)` but `isEligible` stays false
+  (`approved` false, session `attested`), the issuer routes answer 401 without the token and 503
+  without a configured token, `approve` makes `isEligible` true (session `approved`), `revoke`
+  makes it false and blocks re-attestation, `approve` reopens it, `revoke` by session closes it,
+  `attest-operator` reopens and approves in one step, revoke again. Skips with
   a message when `anvil` is not installed.
 - `cargo test --test anvil noir_proof`: deploys `ZKTranscriptLib`, the bb-generated `HonkVerifier`
   (linked, `optimizer_runs = 1` artifact) and a `NoirPidVerifier` pinned to the fixture issuer, then
   posts `contracts/test/fixtures/noir/{proof,public_inputs}.bin` to `noir-proof`: wrong session
   nonce 422, 85 inputs 400, one flipped proof byte 422 from the `verify` dry run (no tx), the real
-  proof attests through the on-chain UltraHonk verification with bits `0x3`, `isEligible` true, a
-  second post on the attested session 409, and with `REQUIRE_ADDRESS_PROOF` the endpoint answers
+  proof attests through the on-chain UltraHonk verification with bits `0x3`, `isEligible` false
+  until `approve` with the issuer token makes it true, a second post on the attested session 409, and with `REQUIRE_ADDRESS_PROOF` the endpoint answers
   409 until the bound address has signed.
 
 ## Privacy statement
@@ -203,6 +212,7 @@ export OPERATOR_PRIVATE_KEY=0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae
 export REGISTRY=<deployed AttestationRegistry with setVerifier(POLICY_ID, verifier) and setOperator(POLICY_ID, operator, true)>
 export POLICY_ID=nachweis.pid.over18.v1          # default; keccak256 -> 0xd27260f1…d05f
 export REQUIRE_ADDRESS_PROOF=true                # false for a scripted run without a wallet signature
+export BRIDGE_ISSUER_TOKEN=local-issuer-token    # bearer token for approve, revoke, attest-operator; unset disables them (503)
 export CORS_ORIGINS=http://localhost:5173
 export PROOF_MODE=mock                      # or groth16 with SP1_PROVER=cpu and the SP1 adapter as verifier
 export PROVER_ARTIFACTS=$PWD/../prover-sp1/fixtures

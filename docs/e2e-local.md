@@ -43,10 +43,14 @@ and per-run summaries live in `.e2e/` (gitignored): `anvil.log`, `verifier.log`,
    mints an SD-JWT VC plus KB-JWT for the request's nonce and `client_id`, encrypts it to the
    request's key (ECDH-ES, A128GCM) and posts it to `/response/:id`. The bridge's poller picks
    the presentation up, runs the statement natively, proves, and the script follows the session
-   to `proved`, calls `attest` (`attest-operator` in execute mode), reads the receipt's gas,
-   then `subscribe()` from the investor key, asserts balance > 0 and `isEligible` true, revokes
-   through `POST /revoke`, asserts `isEligible` false and that `subscribe()` reverts with
-   `NotEligible`.
+   to `proved`, calls `attest` (`attest-operator` in execute mode), reads the receipt's gas.
+   Evidence only: it asserts `isEligible` false, `approved` false, `subscribe()` reverting and the
+   session at `attested` (awaiting issuer approval), then that `POST /sessions/:id/approve` answers
+   401 without the bearer token and approves with it (`BRIDGE_ISSUER_TOKEN`, script default
+   `local-issuer-token`). Then `subscribe()` from the investor key, asserts balance > 0 and
+   `isEligible` true, revokes through `POST /revoke` (token required), asserts `isEligible` false,
+   the session at `revoked` and that `subscribe()` reverts with `NotEligible`, and finally that
+   `approve` reopens the revoked record (`isEligible` true again).
 8. Prints the timeline and writes `.e2e/summary-<mode>.json`.
 
 ### The synthetic wallet
@@ -189,7 +193,10 @@ Two attempts before this one did not reach the gateway; neither was a pipeline d
 - `PID_ISSUER_KEY_HASH` per run (see "Issuer key pinning"). No contract fixture was changed.
 - No trust anchor on the verifier (`TRUST_ANCHOR_PATH` unset), because the e2e issuer is
   self-signed. Issuer trust for this run is the pinned key hash in `Sp1PidVerifier`.
-- Execute mode attests via `attest-operator` (no proof exists in that mode).
+- Execute mode attests via `attest-operator` (no proof exists in that mode); that route stores
+  and approves in one transaction, so the "awaiting approval" assertions are skipped there.
+- The issuer routes (`approve`, `revoke`, `attest-operator`) need `BRIDGE_ISSUER_TOKEN`; the
+  scripts pass `local-issuer-token` unless the variable is set.
 - `touch ~/.sp1/circuits/groth16/v6.1.0/.complete` once on a machine whose artifacts were
   downloaded by an sp1-prover 6.1.0 host (see the groth16 section).
 - Nothing in the verifier repo was modified; only built and run.

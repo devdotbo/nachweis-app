@@ -19,7 +19,11 @@ blind-relay mode, bridge debug build, Android emulator `pixel_api35`).
 4. Phone: `POST /sessions/<handoff session id>/noir-proof {proof_hex, public_inputs_hex[86]}`. The
    bridge checks subject and nonce against the session, dry-runs `NoirPidVerifier.verify`, sends
    `attestWithProof`. The address proof is the browser's; the phone never signs anything for Ethereum.
-5. Browser: the existing `GET /sessions/:id` poll flips to `attested`.
+5. Browser: the existing `GET /sessions/:id` poll flips to `attested` (evidence on chain, awaiting
+   issuer approval; the doors stay closed).
+6. Issuer: approves in a separate step, from the app (registry.approve with the operator signer)
+   or `POST /sessions/:id/approve` with the bridge's issuer token. Only then is the address
+   eligible; revoke withdraws it and only the issuer can re-approve.
 
 ## Handoff shape
 
@@ -60,9 +64,11 @@ fresh companion test issuer, starts verifier-service (relay, 8091) and the bridg
 `REQUIRE_ADDRESS_PROOF=true`, `HANDOFF_VERIFIER_URL`), then plays the browser with curl and
 `cast wallet sign` (anvil key 1 is the investor) and the phone with
 `companion handoff "<handoff json>" --stub-wallet`. Asserts afterwards, independently of the
-companion's output: `GET /sessions/:id` is `attested` with `proof_system noir-ultrahonk`,
-`isEligible(investor, POLICY, 3)` is true and false for an unrelated address, the handoff now
-answers 409, and the verifier and bridge logs carry no plaintext marker.
+companion's output: `GET /sessions/:id` is `attested` with `proof_system noir-ultrahonk` and
+`approved false`, `isEligible(investor, POLICY, 3)` is false until `POST /sessions/:id/approve`
+with the issuer token (`BRIDGE_ISSUER_TOKEN`, script default `local-issuer-token`; 401 without it)
+makes it true, false for an unrelated address, the handoff now answers 409, revoke closes it and
+approve reopens it, and the verifier and bridge logs carry no plaintext marker.
 
 ## Recorded timeline, companion as the phone
 
