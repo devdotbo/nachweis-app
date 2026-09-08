@@ -354,13 +354,14 @@ Simulated checks: the issuer screen states per session what Approve confirms (pr
 
 ```
 scripts/app-e2e-local.sh --test                    # two-device flow: companion as the phone, about 20 s after the builds
+scripts/app-e2e-local.sh --mode browser --test     # "Prove in this browser": the tab proves with bb.js, about 40 s (docs/spec-browser-prover.md)
 scripts/app-e2e-local.sh --mode sp1-mock --test    # SP1 path with PROOF_MODE=mock, wallet.ts as the wallet
 scripts/app-e2e-local.sh                           # keep the stack running and click through it yourself (URL printed)
 ```
 
 With the official wallet's presentation instead of a minted one: `SESSION=<private session file> scripts/real-proof-local.sh` (anvil, contracts pinned to the real issuer key hash, bridge, the cached real Noir proof, approve, subscribe, checker, revoke; see docs/two-device.md, "Real presentation from the official wallet").
 
-What it proves: the real bridge session, the EIP-191 session signature, the handoff QR and URI, attestation from the phone's proof, Subscribe with a FundToken balance, revoke from the issuer role, both doors closed afterwards. Screenshots per beat in `app/_preview/e2e/<mode>/`. Details and limits: `app/README.md`, "Browser e2e".
+What it proves: the real bridge session, the EIP-191 session signature, the handoff QR and URI, attestation from the phone's proof (or, in browser mode, from the tab's own bb.js proof), Subscribe with a FundToken balance, revoke from the issuer role, both doors closed afterwards. Hosting note for the browser path: the page must be served with COOP `same-origin` and COEP `require-corp` (the Vite dev and preview servers do; a static host must send them, see `app/README.md`, "Hosting"). Screenshots per beat in `app/_preview/e2e/<mode>/`. Details and limits: `app/README.md`, "Browser e2e".
 
 ## 9. Sepolia real run (builder, manual)
 

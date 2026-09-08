@@ -5,6 +5,7 @@
 import { useSyncExternalStore } from 'react'
 import type { Address } from 'viem'
 import type { BridgeSession } from '../bridge'
+import type { BrowserProve } from './browserProver'
 import type { Handoff } from './handoff'
 import type { ClaimLine, PresentationRequest } from '../verifier'
 
@@ -34,6 +35,8 @@ export interface Session {
   /** Two-device flow: what the phone prover scans or pastes, fetched once the wallet has signed. */
   handoff?: Handoff
   handoffError?: string
+  /** "Prove in this browser": progress of the tab's own relay request and proof (src/lib/browserProver.ts). */
+  browser?: BrowserProve
 }
 
 let sessions: Session[] = []

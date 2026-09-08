@@ -17,6 +17,17 @@ bun run build             # typecheck + vite build into dist/
 
 Mock mode (`VITE_MOCK=1`) runs the whole flow in memory with fake delays: mock wallets, a mock verifier that "presents" the sample identity after four seconds, a mock bridge that walks verified, proving (three seconds, "generating proof, 430k cycles"), proved, attested, and a mock registry. No network calls. Use it to record the video even if a chain step is red.
 
+## Hosting (COOP and COEP)
+
+"Prove in this browser" (card 2b, `docs/spec-browser-prover.md`) runs noir_js and bb.js in a Web Worker. bb.js proves on a thread pool over `SharedArrayBuffer`, which the browser only hands out to a cross-origin isolated page, so the page must be served with
+
+```
+Cross-Origin-Opener-Policy: same-origin
+Cross-Origin-Embedder-Policy: require-corp
+```
+
+`vite.config.ts` sets both on `bun run dev` and `bun run preview`. A static host (Vercel, Netlify, nginx, S3 behind CloudFront) must send them itself; without them `crossOriginIsolated` is false, the card explains it and the handoff paths (phone, desktop companion) stay available. Under COEP every cross-origin resource needs CORS or CORP headers: the verifier (`CorsLayer::permissive()`), the bridge (`CORS_ORIGINS`, any origin by default), anvil and the Aztec CRS CDN all send them. The compiled circuit is served at `/circuits/pid_sdjwt.json` (dev: from `prover-android/app/src/main/assets/`, stripped to abi and bytecode, 2.9 MB; build: copied into `dist/circuits/`). Download on the first proof: about 6 MB gzip of wasm and JS plus the 67 MB CRS, cached in IndexedDB afterwards. iPhone and iPad are excluded (bb.js caps their wasm memory at 1 GiB; the proof needs about 3 GB).
+
 ## Environment
 
 | variable | meaning |
@@ -48,6 +59,7 @@ Enabled only when `VITE_DEV_PRIVATE_KEY` (investor) or `VITE_DEV_OPERATOR_KEY` (
 
 ```
 scripts/app-e2e-local.sh --test                    # noir: start, run the spec, stop (exit code = result)
+scripts/app-e2e-local.sh --mode browser --test     # the same stack, the "Prove in this browser" path
 scripts/app-e2e-local.sh --mode sp1-mock --test    # the SP1 path with PROOF_MODE=mock
 scripts/app-e2e-local.sh                           # start and keep running, then:
 cd app && APP_E2E_ENV=../.e2e/app/env.json bunx playwright test
@@ -55,6 +67,8 @@ scripts/app-e2e-local.sh --stop
 ```
 
 `e2e/noir-handoff.spec.ts` (mode `noir`, about 20 s): connect with the dev signer; create the session (`POST /sessions`), the dev signer signs `nachweis:session:<id>` and the bridge confirms `address_verified`; the "Prove on your phone" card shows the handoff QR and URI (session, address, bridge and verifier URLs checked); the spec hands the URI to `companion handoff … --stub-wallet` (the phone: request with the same challenge, stub wallet, bb proof, `POST /sessions/:id/noir-proof`); the app flips to attested from the phone, permitted, bits 0x3 with both flags, attest tx, decision on chain; Subscribe sends `Subscription.subscribe()` with the dev signer and the FundToken balance rises; the Issuer role (operator key) shows the session as attested, Revoke sends the tx and the registry event log shows Revoked; back on Investor the status is revoked, `revoked: true` on chain, the Subscribe door closed and its button disabled. No console errors allowed. One run per stack: a revoked subject cannot be re-attested with a proof (`DecisionRevoked`), and `evm_revert` would desync the bridge's cached tx nonce, so a rerun restarts the stack (2 s).
+
+`e2e/browser-prover.spec.ts` (mode `browser`, about 40 s on the M3 Max, up to 120 s allowed for the proof): the same stack as noir; card 2b defaults to "Prove in this browser" (the dev server is cross-origin isolated); the tab creates the relay request and shows the wallet QR; the spec answers the relay with `companion mint-test-presentation --request-uri …`; the tab picks up, decrypts, checks, proves with bb.js in a worker, verifies and posts the proof; the bridge dry-runs NoirPidVerifier and attests; the spec reads the attest receipt from anvil, checks every request the page made against the allowlist of `docs/spec-browser-prover.md` (relay, bridge session, RPC, Aztec CRS), then the issuer approves and Subscribe passes. Timings land in `.e2e/app/browser-timings.json`. `PW_CHANNEL=chrome PW_HEADED=1 bunx playwright test e2e/browser-prover.spec.ts` runs it in the installed Google Chrome.
 
 `e2e/sp1-mock.spec.ts` (mode `sp1-mock`, about 10 s): the bridge in verifier mode creates the OpenID4VP request at the verifier, the app shows the wallet QR and link, `scripts/e2e/wallet.ts` answers the verifier as the wallet, the bridge verifies, proves (mock) and, asked by the app (`POST /sessions/:id/attest`, sent when the poll sees `proved`), attests. The spec records which bridge states the 2 s poll surfaced (`.e2e/app/states-seen.json`); with the mock prover, presented, verified, proving and proved pass within one interval, so usually only created and attested are seen.
 
