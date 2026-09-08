@@ -6,11 +6,11 @@ stays out of git.
 
 ## Layout
 
-- /Users/bioharz/git/ethglobal/nachweis-app-wt-circuit/docs/evidence/g0-template.md:
+- /Users/bioharz/git/ethglobal/nachweis-app/docs/evidence/g0-template.md:
   the form the builder copies and fills.
-- /Users/bioharz/git/ethglobal/nachweis-app-wt-circuit/docs/evidence/g0-YYYY-MM-DD-<n>.md:
+- /Users/bioharz/git/ethglobal/nachweis-app/docs/evidence/g0-YYYY-MM-DD-<n>.md:
   one filled copy per run attempt, committed.
-- /Users/bioharz/git/ethglobal/nachweis-app-wt-circuit/docs/evidence/private/:
+- /Users/bioharz/git/ethglobal/nachweis-app/docs/evidence/private/:
   raw captures (verifier log, companion output, tunnel log, screenshots,
   the stored ciphertext, the decrypted presentation, witness files). Ignored
   by git through docs/evidence/.gitignore. Never commit anything from here,
