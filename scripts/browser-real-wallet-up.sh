@@ -29,6 +29,7 @@
 #   TUNNEL VERIFIER_DIR VERIFIER_BIN RP_KEY_PATH RP_LEAF_PATH   passed through to g0-up.sh
 #   RUN_ROOT  [<repo>/docs/evidence/private/runs] (gitignored)   RUN_DIR  [RUN_ROOT/<timestamp>-browser]
 #   BRIDGE_ISSUER_TOKEN  [fresh random; written to RUN_DIR/issuer-token (0600), never printed]
+#   TUNNEL_WAIT_SECS     [180] how long to wait for the public hostname to answer /health
 # Stop: scripts/browser-real-wallet-down.sh [RUN_DIR]
 # Nothing touches a public chain: every transaction goes to the local anvil. No secret is printed.
 set -eEuo pipefail
@@ -107,11 +108,6 @@ else
   say "verifier on $VERIFIER_URL, public $PUBLIC_URL (client_id $(grep -m1 'client_id' "$RUN_DIR/verifier.log" | awk '{print $NF}' || echo '?'))"
 fi
 PUBLIC_BASE="${PUBLIC_URL%/}"
-if wait_http "$PUBLIC_URL" 30; then
-  say "tunnel answers: GET $PUBLIC_URL"
-else
-  say "warning: $PUBLIC_URL did not answer within 30 s (quick tunnels sometimes need a minute of DNS); the wallet needs it"
-fi
 
 # The relay request the tab will make, probed once with a throwaway P-256 key and a random challenge:
 # request_uri (what the wallet and the tab fetch) must be on the PUBLIC_URL host. The pending relay
@@ -190,6 +186,14 @@ COOP=$(curl -sI "$APP_URL/" | grep -i '^cross-origin-opener-policy' | tr -d '\r'
 COEP=$(curl -sI "$APP_URL/" | grep -i '^cross-origin-embedder-policy' | tr -d '\r' | awk '{print $2}')
 [ "$COOP" = same-origin ] && [ "$COEP" = require-corp ] || die "the app does not send COOP same-origin and COEP require-corp (got '$COOP', '$COEP'); bb.js would prove single-threaded"
 say "app on $APP_URL (COOP $COOP, COEP $COEP; dev signer: investor $INVESTOR, operator $OPERATOR)"
+
+# The tab fetches the request object over the tunnel host right after POST /relay/request, so the
+# public hostname must resolve before the first click. A quick tunnel's DNS takes one to two minutes
+# (seen 2026-09-08: registered at once, not reachable after 30 s); the wait runs after the builds.
+TUNNEL_WAIT_SECS="${TUNNEL_WAIT_SECS:-180}"
+say "waiting for the tunnel: GET ${PUBLIC_URL}health (up to $TUNNEL_WAIT_SECS s)"
+wait_http "${PUBLIC_URL}health" "$TUNNEL_WAIT_SECS" || die "${PUBLIC_URL}health did not answer within $TUNNEL_WAIT_SECS s (tunnel log: $RUN_DIR/tunnel.log); the wallet and the tab need it"
+say "tunnel answers: GET ${PUBLIC_URL}health"
 
 # ------------------------------------------------------------------ 6. record (no secrets) and the env for the Playwright spec
 ENV_JSON="$RUN_DIR/env.json"
