@@ -1,6 +1,9 @@
 //! Session state machine and in-memory store.
 //!
-//! created -> presented -> verified -> proving -> proved -> attested
+//! created -> presented -> verified -> proving -> proved -> attested -> approved
+//! attested: evidence is on chain, awaiting issuer approval (not eligible yet).
+//! approved: the issuer called registry.approve; both doors are open.
+//! revoked: the issuer withdrew approval; approve moves the session back to approved.
 //! Any step may move to failed (with error text). A failed session is terminal.
 use alloy::primitives::{Address, B256};
 use serde::Serialize;
@@ -18,6 +21,8 @@ pub enum State {
     Proving,
     Proved,
     Attested,
+    Approved,
+    Revoked,
     Failed,
 }
 
@@ -68,6 +73,10 @@ pub struct Session {
     pub cycles: Option<u64>,
     pub tx_hash: Option<B256>,
     pub attested: Option<AttestedEvent>,
+    /// Issuer approval as last seen on chain (registry.approved). Evidence alone never sets it.
+    pub approved: bool,
+    pub approve_tx_hash: Option<B256>,
+    pub revoke_tx_hash: Option<B256>,
     pub created_at: u64,
     pub updated_at: u64,
 }
@@ -102,6 +111,9 @@ impl Session {
             cycles: None,
             tx_hash: None,
             attested: None,
+            approved: false,
+            approve_tx_hash: None,
+            revoke_tx_hash: None,
             created_at: t,
             updated_at: t,
         }
@@ -135,8 +147,16 @@ impl Session {
                 _ => "proof ready".into(),
             },
             State::Attested => match self.tx_hash {
-                Some(h) => format!("attested in {h}"),
-                None => "attested".into(),
+                Some(h) => format!("attested in {h}, awaiting issuer approval"),
+                None => "attested, awaiting issuer approval".into(),
+            },
+            State::Approved => match self.approve_tx_hash {
+                Some(h) => format!("approved by the issuer in {h}"),
+                None => "approved by the issuer".into(),
+            },
+            State::Revoked => match self.revoke_tx_hash {
+                Some(h) => format!("revoked by the issuer in {h}"),
+                None => "revoked by the issuer".into(),
             },
             State::Failed => self.error.clone().unwrap_or_else(|| "failed".into()),
         }
@@ -164,6 +184,9 @@ impl Session {
             "cycles": self.cycles,
             "tx_hash": self.tx_hash,
             "attested": self.attested,
+            "approved": self.approved,
+            "approve_tx_hash": self.approve_tx_hash,
+            "revoke_tx_hash": self.revoke_tx_hash,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
         })

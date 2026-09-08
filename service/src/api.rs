@@ -81,6 +81,8 @@ pub fn router(state: Shared) -> Router {
         .route("/sessions/:id/noir-proof", post(noir_proof))
         .route("/sessions/:id/attest", post(attest))
         .route("/sessions/:id/attest-operator", post(attest_operator))
+        .route("/sessions/:id/approve", post(approve))
+        .route("/sessions/:id/revoke", post(revoke_session))
         .route("/revoke", post(revoke))
         .with_state(state)
         .layer(cors)
@@ -95,7 +97,34 @@ async fn health(AxState(st): AxState<Shared>) -> Json<Value> {
         "noir_verifier": st.cfg.noir_verifier,
         "policy_id": st.cfg.policy_id,
         "require_address_proof": st.cfg.require_address_proof,
+        "issuer_routes": if st.cfg.issuer_token.is_some() { "token" } else { "disabled" },
     }))
+}
+
+/// Issuer authorization for the privileged routes (attest-operator, approve, revoke):
+/// `Authorization: Bearer <BRIDGE_ISSUER_TOKEN>`. Without a configured token the routes are
+/// disabled (503) rather than open.
+fn require_issuer(st: &AppState, headers: &HeaderMap) -> Result<(), AppError> {
+    let Some(expected) = st.cfg.issuer_token.as_deref() else {
+        return Err(unavailable("issuer routes disabled: BRIDGE_ISSUER_TOKEN is not set"));
+    };
+    let presented = headers
+        .get(axum::http::header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix("Bearer ").or_else(|| v.strip_prefix("bearer ")))
+        .map(str::trim);
+    match presented {
+        Some(t) if constant_time_eq(t.as_bytes(), expected.as_bytes()) => Ok(()),
+        Some(_) => Err(unauthorized("issuer token does not match")),
+        None => Err(unauthorized("issuer token required: Authorization: Bearer <BRIDGE_ISSUER_TOKEN>")),
+    }
+}
+
+fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
 }
 
 #[derive(Deserialize)]
@@ -556,16 +585,20 @@ async fn noir_proof(
     })))
 }
 
+/// Operator fallback (no proof route): the issuer signs the decision itself. Stores evidence and
+/// approves in one transaction, so the session goes straight to `approved`.
 async fn attest_operator(
     AxState(st): AxState<Shared>,
     Path(id): Path<String>,
+    headers: HeaderMap,
     body: Option<Json<AttestBody>>,
 ) -> Result<Json<Value>, AppError> {
+    require_issuer(&st, &headers)?;
     let id = parse_session_id(&id)?;
     let body = body.map(|b| b.0).unwrap_or_default();
     let ch = chain_of(&st)?;
     let session = with_session(&st, id, |s| s.clone())?;
-    if !matches!(session.state, State::Verified | State::Proving | State::Proved | State::Attested) {
+    if !matches!(session.state, State::Verified | State::Proving | State::Proved | State::Attested | State::Revoked) {
         return Err(conflict(format!("session is {:?}, the statement must have verified natively first", session.state).to_lowercase()));
     }
     require_address_proof(&st, &session)?;
@@ -582,10 +615,61 @@ async fn attest_operator(
     with_session(&st, id, |s| {
         s.tx_hash = Some(tx);
         s.attested = Some(ev.clone());
+        s.approved = true;
+        s.approve_tx_hash = Some(tx);
         s.error = None;
-        s.set_state(State::Attested);
+        s.set_state(State::Approved);
     })?;
-    Ok(Json(json!({ "session_id": id, "status": "attested", "path": "operator", "tx_hash": tx, "attested": ev })))
+    Ok(Json(json!({ "session_id": id, "status": "approved", "path": "operator", "tx_hash": tx, "attested": ev, "approved": true })))
+}
+
+/// Issuer approval of the evidence a session put on chain: registry.approve from the operator
+/// signer. attested | revoked -> approved. Re-approval after revoke goes through here too.
+async fn approve(AxState(st): AxState<Shared>, Path(id): Path<String>, headers: HeaderMap) -> Result<Json<Value>, AppError> {
+    require_issuer(&st, &headers)?;
+    let id = parse_session_id(&id)?;
+    let ch = chain_of(&st)?;
+    let session = with_session(&st, id, |s| s.clone())?;
+    if !matches!(session.state, State::Attested | State::Revoked) {
+        return Err(conflict(format!("session is {:?}, expected attested or revoked", session.state).to_lowercase()));
+    }
+    let tx = ch
+        .approve(session.bound_address, st.cfg.policy_id)
+        .await
+        .map_err(|e| AppError(StatusCode::BAD_GATEWAY, e.to_string()))?;
+    let status = ch.status_of(session.bound_address, st.cfg.policy_id).await.map_err(internal)?;
+    with_session(&st, id, |s| {
+        s.approved = status.approved;
+        s.approve_tx_hash = Some(tx);
+        s.error = None;
+        s.set_state(State::Approved);
+    })?;
+    Ok(Json(json!({
+        "session_id": id, "status": "approved", "subject": session.bound_address, "policy_id": st.cfg.policy_id,
+        "tx_hash": tx, "approved": status.approved, "chain": status,
+    })))
+}
+
+/// Issuer withdraws approval for a session's bound address. approved | attested -> revoked.
+async fn revoke_session(AxState(st): AxState<Shared>, Path(id): Path<String>, headers: HeaderMap) -> Result<Json<Value>, AppError> {
+    require_issuer(&st, &headers)?;
+    let id = parse_session_id(&id)?;
+    let ch = chain_of(&st)?;
+    let session = with_session(&st, id, |s| s.clone())?;
+    if !matches!(session.state, State::Attested | State::Approved) {
+        return Err(conflict(format!("session is {:?}, expected attested or approved", session.state).to_lowercase()));
+    }
+    let tx = ch
+        .revoke(session.bound_address, st.cfg.policy_id)
+        .await
+        .map_err(|e| AppError(StatusCode::BAD_GATEWAY, e.to_string()))?;
+    with_session(&st, id, |s| {
+        s.approved = false;
+        s.revoke_tx_hash = Some(tx);
+        s.error = None;
+        s.set_state(State::Revoked);
+    })?;
+    Ok(Json(json!({ "session_id": id, "status": "revoked", "subject": session.bound_address, "policy_id": st.cfg.policy_id, "tx_hash": tx })))
 }
 
 #[derive(Deserialize)]
@@ -593,8 +677,19 @@ pub struct RevokeBody {
     pub subject: Address,
 }
 
-async fn revoke(AxState(st): AxState<Shared>, Json(req): Json<RevokeBody>) -> Result<Json<Value>, AppError> {
+/// Revoke by address (no session). Sessions bound to that address move to `revoked`.
+async fn revoke(AxState(st): AxState<Shared>, headers: HeaderMap, Json(req): Json<RevokeBody>) -> Result<Json<Value>, AppError> {
+    require_issuer(&st, &headers)?;
     let ch = chain_of(&st)?;
     let tx = ch.revoke(req.subject, st.cfg.policy_id).await.map_err(|e| AppError(StatusCode::BAD_GATEWAY, e.to_string()))?;
+    if let Ok(mut map) = st.sessions.lock() {
+        for s in map.values_mut().filter(|s| s.bound_address == req.subject) {
+            if matches!(s.state, State::Attested | State::Approved) {
+                s.approved = false;
+                s.revoke_tx_hash = Some(tx);
+                s.set_state(State::Revoked);
+            }
+        }
+    }
     Ok(Json(json!({ "status": "revoked", "subject": req.subject, "policy_id": st.cfg.policy_id, "tx_hash": tx })))
 }

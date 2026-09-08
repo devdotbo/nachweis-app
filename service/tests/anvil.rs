@@ -1,5 +1,5 @@
 //! End-to-end against a local anvil: deploy AttestationRegistry + MockProofVerifier from the forge
-//! artifacts, run the mock-proof pipeline through the HTTP API, attest, check isEligible, revoke.
+//! artifacts, run the mock-proof pipeline through the HTTP API, attest (evidence), approve (issuer), check isEligible, revoke.
 //!
 //! Skips (passes with a message) when `anvil` is not on PATH or the contracts are not built and
 //! `forge` is unavailable. Never touches a network other than the anvil it starts.
@@ -16,6 +16,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 const ANVIL_KEY0: &str = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
+const ISSUER_TOKEN: &str = "test-issuer-token";
 
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..")
@@ -151,9 +152,11 @@ async fn mock_pipeline_attests_and_revokes_on_anvil() {
         kb_jwt_window_secs: None,
         handoff_verifier_url: None,
         handoff_bridge_url: None,
+        issuer_token: Some(ISSUER_TOKEN.into()),
     };
     let fresh_cfg = Config { kb_jwt_window_secs: Some(600), ..cfg.clone() };
     let strict_cfg = Config { require_address_proof: true, ..cfg.clone() };
+    let notoken_cfg = Config { issuer_token: None, ..cfg.clone() };
     let state = Arc::new(AppState::new(cfg, Some(chain.clone())));
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}", listener.local_addr().unwrap());
@@ -321,19 +324,71 @@ async fn mock_pipeline_attests_and_revokes_on_anvil() {
     assert_eq!(attested["attested"]["subject"].as_str().unwrap().to_lowercase(), format!("{subject:?}"));
     assert_eq!(attested["attested"]["bits"], "0x3");
     assert_eq!(attested["attested"]["expiry"], calldata["decoded"]["expiry"]);
-    assert!(chain.is_eligible(subject, policy_id, U256::from(3)).await.unwrap());
+    // Evidence only: the decision is stored but the subject is not eligible until the issuer approves.
+    assert!(!chain.is_eligible(subject, policy_id, U256::from(3)).await.unwrap());
+    assert!(!chain.approved(subject, policy_id).await.unwrap());
     let d = chain.decision_of(subject, policy_id).await.unwrap();
     assert_eq!(d.statusRef, status_ref(sid.parse().unwrap()));
     assert_eq!(d.bits, U256::from(3));
     let st: serde_json::Value = http.get(format!("{base}/sessions/{sid}")).send().await.unwrap().json().await.unwrap();
     assert_eq!(st["state"], "attested");
+    assert_eq!(st["approved"], false);
     assert_eq!(st["address_verified"], false);
     assert!(st["detail"].as_str().unwrap().starts_with("attested in 0x"));
+    assert!(st["detail"].as_str().unwrap().ends_with("awaiting issuer approval"));
     assert!(st.get("presentation").is_none());
 
-    // 4. revoke closes the decision; the proof path cannot reopen it.
+    // 3b. The issuer routes need the bearer token: no token 401, wrong token 401, no configured token 503.
+    let r = http.post(format!("{base}/sessions/{sid}/approve")).send().await.unwrap();
+    assert_eq!(r.status(), 401, "approve without the issuer token");
+    let r = http.post(format!("{base}/sessions/{sid}/approve")).bearer_auth("wrong").send().await.unwrap();
+    assert_eq!(r.status(), 401, "approve with a wrong issuer token");
+    let r = http.post(format!("{base}/sessions/{sid}/attest-operator")).send().await.unwrap();
+    assert_eq!(r.status(), 401, "attest-operator without the issuer token");
+    let r = http.post(format!("{base}/revoke")).json(&serde_json::json!({ "subject": subject })).send().await.unwrap();
+    assert_eq!(r.status(), 401, "revoke without the issuer token");
+    assert!(!chain.is_eligible(subject, policy_id, U256::from(3)).await.unwrap());
+    {
+        let notoken = Arc::new(AppState::new(notoken_cfg, Some(chain.clone())));
+        let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let nb = format!("http://{}", l.local_addr().unwrap());
+        tokio::spawn(async move { axum::serve(l, router(notoken)).await.unwrap() });
+        let r = http.post(format!("{nb}/sessions/{sid}/approve")).bearer_auth(ISSUER_TOKEN).send().await.unwrap();
+        assert_eq!(r.status(), 503, "issuer routes are disabled without BRIDGE_ISSUER_TOKEN");
+        let h: serde_json::Value = http.get(format!("{nb}/health")).send().await.unwrap().json().await.unwrap();
+        assert_eq!(h["issuer_routes"], "disabled");
+    }
+
+    // 3c. Issuer approval opens the doors.
+    let approved: serde_json::Value = http
+        .post(format!("{base}/sessions/{sid}/approve"))
+        .bearer_auth(ISSUER_TOKEN)
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(approved["status"], "approved", "{approved}");
+    assert_eq!(approved["approved"], true);
+    assert!(approved["tx_hash"].as_str().unwrap().starts_with("0x"));
+    assert!(chain.is_eligible(subject, policy_id, U256::from(3)).await.unwrap());
+    assert!(chain.approved(subject, policy_id).await.unwrap());
+    let cs = chain.status_of(subject, policy_id).await.unwrap();
+    assert!(cs.has_decision && cs.approved && !cs.revoked);
+    let st: serde_json::Value = http.get(format!("{base}/sessions/{sid}")).send().await.unwrap().json().await.unwrap();
+    assert_eq!(st["state"], "approved");
+    assert_eq!(st["approved"], true);
+    assert!(st["detail"].as_str().unwrap().starts_with("approved by the issuer in 0x"));
+    let r = http.post(format!("{base}/sessions/{sid}/approve")).bearer_auth(ISSUER_TOKEN).send().await.unwrap();
+    assert_eq!(r.status(), 409, "an approved session has nothing left to approve");
+
+    // 4. revoke closes the decision; the proof path cannot reopen it; the session reads revoked.
     let revoked: serde_json::Value = http
         .post(format!("{base}/revoke"))
+        .bearer_auth(ISSUER_TOKEN)
         .json(&serde_json::json!({ "subject": subject }))
         .send()
         .await
@@ -345,13 +400,49 @@ async fn mock_pipeline_attests_and_revokes_on_anvil() {
         .unwrap();
     assert_eq!(revoked["status"], "revoked");
     assert!(!chain.is_eligible(subject, policy_id, U256::from(3)).await.unwrap());
+    assert!(!chain.approved(subject, policy_id).await.unwrap());
+    let st: serde_json::Value = http.get(format!("{base}/sessions/{sid}")).send().await.unwrap().json().await.unwrap();
+    assert_eq!(st["state"], "revoked");
+    assert_eq!(st["approved"], false);
     let again = http.post(format!("{base}/sessions/{sid}/attest")).send().await.unwrap();
     assert_eq!(again.status(), 409, "attested session must not re-attest");
 
-    // 5. operator fallback reopens after revoke (bits override: identity only, so 0x3 stays
-    //    ineligible while 0x1 is eligible), then revoke again.
+    // 4b. Re-approval by the issuer reopens the revoked record; revoke by session closes it again.
+    let re: serde_json::Value = http
+        .post(format!("{base}/sessions/{sid}/approve"))
+        .bearer_auth(ISSUER_TOKEN)
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(re["status"], "approved", "{re}");
+    assert!(chain.is_eligible(subject, policy_id, U256::from(3)).await.unwrap());
+    assert!(!chain.decision_of(subject, policy_id).await.unwrap().revoked);
+    let rv: serde_json::Value = http
+        .post(format!("{base}/sessions/{sid}/revoke"))
+        .bearer_auth(ISSUER_TOKEN)
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(rv["status"], "revoked", "{rv}");
+    assert!(!chain.is_eligible(subject, policy_id, U256::from(3)).await.unwrap());
+    let st: serde_json::Value = http.get(format!("{base}/sessions/{sid}")).send().await.unwrap().json().await.unwrap();
+    assert_eq!(st["state"], "revoked");
+
+    // 5. operator fallback reopens after revoke and approves in one step (bits override: identity
+    //    only, so 0x3 stays ineligible while 0x1 is eligible), then revoke again.
     let op: serde_json::Value = http
         .post(format!("{base}/sessions/{sid}/attest-operator"))
+        .bearer_auth(ISSUER_TOKEN)
         .json(&serde_json::json!({ "bits": "0x1", "tier": 2 }))
         .send()
         .await
@@ -362,9 +453,12 @@ async fn mock_pipeline_attests_and_revokes_on_anvil() {
         .await
         .unwrap();
     assert_eq!(op["path"], "operator");
+    assert_eq!(op["status"], "approved");
     assert_eq!(op["attested"]["bits"], "0x1");
     assert!(chain.is_eligible(subject, policy_id, U256::from(1)).await.unwrap());
     assert!(!chain.is_eligible(subject, policy_id, U256::from(3)).await.unwrap());
+    let st: serde_json::Value = http.get(format!("{base}/sessions/{sid}")).send().await.unwrap().json().await.unwrap();
+    assert_eq!(st["state"], "approved");
     chain.revoke(subject, policy_id).await.unwrap();
     assert!(!chain.is_eligible(subject, policy_id, U256::from(1)).await.unwrap());
 }
@@ -432,6 +526,7 @@ async fn noir_proof_attests_through_noir_pid_verifier_on_anvil() {
     let noir = chain.deploy(&noir_code, &(honk, pv.issuer_key_hash, policy_id).abi_encode_params()).await.unwrap();
     chain.registry = registry;
     chain.set_verifier(policy_id, noir).await.unwrap();
+    chain.set_operator(policy_id, owner, true).await.unwrap();
 
     // --- bridge: local mode, no proof mode involved; the Noir path needs no prover artifacts ---
     let cfg = Config {
@@ -453,6 +548,7 @@ async fn noir_proof_attests_through_noir_pid_verifier_on_anvil() {
         kb_jwt_window_secs: None,
         handoff_verifier_url: None,
         handoff_bridge_url: None,
+        issuer_token: Some(ISSUER_TOKEN.into()),
     };
     let strict_cfg = Config { require_address_proof: true, ..cfg.clone() };
     let state = Arc::new(AppState::new(cfg, Some(chain.clone())));
@@ -535,15 +631,33 @@ async fn noir_proof_attests_through_noir_pid_verifier_on_anvil() {
     assert_eq!(attested["attested"]["bits"], "0x3");
     assert_eq!(attested["attested"]["expiry"], pv.expiry);
     assert_eq!(attested["call"]["honk_public_inputs"], 86);
-    assert!(chain.is_eligible(subject, policy_id, U256::from(3)).await.unwrap());
+    // Evidence only until the issuer approves.
+    assert!(!chain.is_eligible(subject, policy_id, U256::from(3)).await.unwrap());
     let d = chain.decision_of(subject, policy_id).await.unwrap();
     assert_eq!(d.statusRef, status_ref(sid.parse().unwrap()));
     assert_eq!(d.expiry, pv.expiry);
     let st: serde_json::Value = http.get(format!("{base}/sessions/{sid}")).send().await.unwrap().json().await.unwrap();
     assert_eq!(st["state"], "attested");
+    assert_eq!(st["approved"], false);
     assert_eq!(st["proof_system"], "noir-ultrahonk");
     assert_eq!(st["public_values"]["over18"], 1);
     assert!(st.get("presentation").is_none());
+    let approved: serde_json::Value = http
+        .post(format!("{base}/sessions/{sid}/approve"))
+        .bearer_auth(ISSUER_TOKEN)
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(approved["status"], "approved", "{approved}");
+    assert!(chain.is_eligible(subject, policy_id, U256::from(3)).await.unwrap());
+    let st: serde_json::Value = http.get(format!("{base}/sessions/{sid}")).send().await.unwrap().json().await.unwrap();
+    assert_eq!(st["state"], "approved");
+    assert_eq!(st["approved"], true);
 
     // 3. Same proof again: the registry consumes the nonce once (NonceConsumed), the session is done anyway.
     let r = http

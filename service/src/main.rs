@@ -29,6 +29,11 @@ async fn main() -> Result<()> {
             None
         }
     };
+    if cfg.issuer_token.is_none() {
+        tracing::warn!(
+            "BRIDGE_ISSUER_TOKEN unset: the issuer routes (attest-operator, approve, revoke) answer 503 until it is set"
+        );
+    }
     tracing::info!(
         proof_mode = cfg.proof_mode.as_str(),
         mode = if cfg.verifier_url.is_some() { "verifier" } else { "local" },
