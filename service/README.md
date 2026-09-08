@@ -25,12 +25,13 @@ cargo test                     # unit tests + the anvil end-to-end test (skips i
 | `HANDOFF_BRIDGE_URL` | this bridge's base URL as the phone reaches it, advertised in the handoff | unset: scheme and `Host` of the handoff request |
 | `CORS_ORIGINS` | comma-separated allowed origins for the browser app, e.g. `http://localhost:5173` | unset: any origin |
 | `VERIFIER_URL` | verifier-service base URL; enables verifier mode (see below) | unset: local mode |
+| `VERIFIER_RESULT_TOKEN` | shared secret sent as `X-Result-Token` on the verifier's `GET /result/:id`; must equal the verifier's `RESULT_TOKEN`. The verifier serves the raw presentation only with `RESULT_INCLUDES_PRESENTATION=true` there and only to a caller with this token (401 without it, 503 if the verifier has no token configured); the bridge names the variable in its error | unset: no header sent, verifier mode fails at the first poll |
 | `PROOF_MODE` | `mock`, `execute`, `compressed`, `groth16` | `mock` |
 | `PROVER_ARTIFACTS` | directory with `calldata-groth16.json` (mock proof), `vkey.txt`, optionally the guest ELF `nachweis-pid-program` | `../prover-sp1/fixtures` |
 | `PROVER_ELF` | explicit guest ELF path; else `PROVER_ARTIFACTS/nachweis-pid-program`, else `../prover-sp1/target/elf-compilation/riscv64im-succinct-zkvm-elf/release/nachweis-pid-program` | unset |
 | `EXPECTED_VCT` | vct the statement expects | `urn:eudi:pid:de:1` |
 | `EXPECTED_AUD` | KB-JWT `aud` the statement expects (the verifier's `client_id`) | `https://self-issued.me/v2` |
-| `KB_JWT_WINDOW_SECS` | KB-JWT freshness window: `exp` must lie within this many seconds ahead of now and `iat` must not be older than this; checked after the native statement run, before proving. `0` disables the check (only for the stored fixture, whose KB-JWT expired five minutes after minting) | `600` |
+| `KB_JWT_WINDOW_SECS` | KB-JWT freshness window on the SP1 route (`POST /sessions/:id/presentation`, verifier mode): `exp` must lie within this many seconds ahead of now and `iat` must not be older than this; checked after the native statement run, before proving. Not applied on the Noir route (`POST /sessions/:id/noir-proof`): the bridge receives no KB-JWT there, the companion's `--kb-window` is the only freshness check (see `docs/trust-boundaries.md`). `0` disables the check (only for the stored fixture, whose KB-JWT expired five minutes after minting) | `600` |
 | `ISSUER_KEY_SEC1_HEX` | issuer P-256 key, SEC1 uncompressed; when unset the key is read from the `x5c` leaf certificate in the issuer JWT header (that is what a real ERICA credential needs; the synthetic fixture needs the override because its header copies the ERICA x5c) | unset |
 | `SP1_PROVER` | sp1-sdk prover selection: `cpu` (local), `mock`, `network` | sp1 default |
 | `RUST_LOG` | tracing filter | `info` |
@@ -96,26 +97,25 @@ wallet / app          bridge                         verifier-service          p
 
 ## How the presentation reaches the bridge
 
-Local mode (`VERIFIER_URL` unset, the only mode that works against the verifier as it is today):
-the caller posts the compact SD-JWT presentation (`issuerJwt~d1~…~dN~kbJwt`) to
-`POST /sessions/:id/presentation`. The wallet must have been asked for the bridge's nonce and
-audience, which the caller arranges out of band.
+Local mode (`VERIFIER_URL` unset): the caller posts the compact SD-JWT presentation
+(`issuerJwt~d1~…~dN~kbJwt`) to `POST /sessions/:id/presentation`. The wallet must have been asked
+for the bridge's nonce and audience, which the caller arranges out of band. Nothing in front of
+the bridge checks the issuer's trust chain or the status list in this mode.
 
-Verifier mode (`VERIFIER_URL` set): `POST /sessions` calls the verifier to create the
-OpenID4VP request with the bridge's nonce and then polls for the verified presentation (2 s
-interval, 10 min timeout). This needs two additions in `verifier-service/src/handlers.rs`, which
-does not have them yet:
-
-1. `POST /request {"nonce"}` returning `{"session", "authorization_request", "request_uri"}`:
-   `create_request` currently mints `Uuid::new_v4()` as the nonce and only `GET /` (HTML) calls it.
-   Change: take the nonce from the JSON body instead of `Uuid::new_v4()` and return the pair as JSON.
-2. `GET /result/:id` returning `{"status": "verified", "presentation": "<compact SD-JWT>"}`
-   (`"pending"` / `"rejected"` otherwise): `SessionResult::Verified` stores only the parsed
-   `VerifiedPid` (disclosed view, no raw token). Change: keep the presentation string `p` from
-   `verify_vp_token` next to it (`SessionResult::Verified(Box<VerifiedPid>, String)`) and serve it.
-
-Both are read-side additions; the verifier's own checks (x5c chain to the trust anchor, status
-list, freshness window) stay in front of the bridge, which then proves the statement subset.
+Verifier mode (`VERIFIER_URL` set): `POST /sessions` calls the verifier's `POST /request
+{"nonce"}` to create the OpenID4VP request with the bridge's nonce and then polls
+`GET /result/:id` for the verified presentation (2 s interval, 10 min timeout), sending
+`VERIFIER_RESULT_TOKEN` as `X-Result-Token`. Both endpoints exist on the verifier's
+`nachweis-relay` branch (`docs/bridge-mode.md` there). The verifier serves the presentation only
+with `RESULT_INCLUDES_PRESENTATION=true` and `RESULT_TOKEN` set; by default its result is a
+minimized summary without the disclosed values, and this bridge then fails with a message naming
+the flag. The verifier's own checks (decryption, issuer signature, x5c chain to the trust anchor
+when `TRUST_ANCHOR_PATH` is set, status list when `LIVE_STATUS` is set, vct, holder binding,
+nonce, aud, sd_hash, KB-JWT freshness) run in front of the bridge on this route, and the
+verifier and the bridge both see the plaintext presentation: that is the SP1 route's plaintext
+boundary. The Noir route does not pass through here; its presentation goes through the verifier's
+blind relay as ciphertext, and the bridge receives proof and public inputs only. Which checks
+each route performs, and by whom, is tabulated in `docs/trust-boundaries.md`.
 
 ## Proof modes
 
@@ -140,9 +140,11 @@ list, freshness window) stay in front of the bridge, which then proves the state
 
 1. Resolved: both proofs commit the issuer credential `exp` only (it used to be
    `min(issuer exp, KB-JWT exp)`, and real ERICA KB-JWTs carry `exp = iat + 300`, so the on-chain
-   decision expired five minutes after the presentation). KB-JWT freshness is enforced here, off
-   chain: after the native statement run the bridge checks `exp` and `iat` against its clock
-   (`KB_JWT_WINDOW_SECS`, default 600) and answers 422 `KB-JWT freshness: ...` before proving.
+   decision expired five minutes after the presentation). KB-JWT freshness is enforced off
+   chain, and where depends on the route: on the SP1 route the bridge checks `exp` and `iat`
+   against its clock after the native statement run (`KB_JWT_WINDOW_SECS`, default 600) and
+   answers 422 `KB-JWT freshness: ...` before proving; on the Noir route the bridge never sees
+   the KB-JWT, and the companion's `--kb-window` (default 600) is the only freshness check.
    The fixture's expiry (1819756800, 2027-09-01) lies ahead of real time, so the anvil test runs
    on a plain `anvil` and disables the window only for the stale fixture KB-JWT (and checks that
    the default window rejects it).
@@ -209,5 +211,8 @@ export PROVER_ARTIFACTS=$PWD/../prover-sp1/fixtures
 export PROVER_ELF=$PWD/../prover-sp1/target/elf-compilation/riscv64im-succinct-zkvm-elf/release/nachweis-pid-program
 export ISSUER_KEY_SEC1_HEX=$(python3 -c "import json;print(json.load(open('../prover-sp1/fixtures/input.json'))['issuer_key_sec1_hex'])")   # fixture only; unset for a real ERICA credential
 export KB_JWT_WINDOW_SECS=0                     # fixture only (its KB-JWT is stale); default 600 for a real presentation
+# verifier mode: the verifier runs with RESULT_INCLUDES_PRESENTATION=true and RESULT_TOKEN=<secret>
+# export VERIFIER_URL=http://127.0.0.1:8080
+# export VERIFIER_RESULT_TOKEN=<secret>
 RUST_LOG=info ./target/release/nachweis-bridge
 ```
