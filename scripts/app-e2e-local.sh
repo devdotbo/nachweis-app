@@ -20,9 +20,12 @@
 #   --test    run `bunx playwright test` in app/ against the stack, then stop it (exit code = test result)
 #   --stop    stop a stack started earlier (pids in RUN_DIR/pids) and exit
 # Env: VERIFIER_REPO (default ../nachweis-verifier-relay), RUN_DIR (default .e2e/app),
-#      ANVIL_PORT, VERIFIER_PORT, BRIDGE_PORT, APP_PORT (default: free ports).
+#      ANVIL_PORT, VERIFIER_PORT, BRIDGE_PORT, APP_PORT (default: free ports),
+#      BRIDGE_ISSUER_TOKEN (default local-issuer-token), RESULT_TOKEN (default: random per run, never printed).
+# A fresh checkout needs `bun install` in app/, companion/ and scripts/e2e/; the script runs it when
+# node_modules is missing.
 # Nothing touches a public chain: every transaction goes to the local anvil.
-set -euo pipefail
+set -eEuo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VERIFIER_REPO="${VERIFIER_REPO:-$(cd "$ROOT/.." && pwd)/nachweis-verifier-relay}"
@@ -33,7 +36,7 @@ while [ $# -gt 0 ]; do
     --mode) MODE="$2"; shift 2 ;;
     --test) TEST=1; shift ;;
     --stop) STOP=1; shift ;;
-    -h|--help) sed -n '2,25p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,27p' "$0"; exit 0 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
 done
@@ -63,6 +66,10 @@ OPERATOR=0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266
 INVESTOR=0x70997970C51812dc3A010C7d01b50e0d17dc79C8
 POLICY=0xd27260f1ca509ba75dea6cd27b2985a96e423550e16db3350d2945e215e3d05f # keccak256("nachweis.pid.over18.v1")
 ISSUER_TOKEN="${BRIDGE_ISSUER_TOKEN:-local-issuer-token}"   # bearer token for the bridge's issuer routes (approve, revoke, attest-operator)
+# Shared secret for the verifier's GET /result/:id (X-Result-Token): RESULT_TOKEN on the verifier,
+# VERIFIER_RESULT_TOKEN on the bridge. Random per run, never printed. Only the sp1-mock stack reads
+# results (verifier mode); the noir stack's relay path never calls /result.
+RESULT_TOKEN="${RESULT_TOKEN:-$(openssl rand -hex 16)}"
 free_port() { python3 -c 'import socket;s=socket.socket();s.bind(("127.0.0.1",0));print(s.getsockname()[1]);s.close()'; }
 ANVIL_PORT="${ANVIL_PORT:-$(free_port)}"; VERIFIER_PORT="${VERIFIER_PORT:-$(free_port)}"
 BRIDGE_PORT="${BRIDGE_PORT:-$(free_port)}"; APP_PORT="${APP_PORT:-$(free_port)}"
@@ -79,7 +86,15 @@ wait_http() { # url, seconds
   return 1
 }
 stop_all
-trap 'rc=$?; [ $rc -eq 0 ] || stop_all' EXIT
+# Every non-zero exit names its reason: set -e alone would end the script silently (seen 2026-09-08,
+# when the companion failed without node_modules and its stderr went to /dev/null).
+trap 'echo "FAIL: exit $? at line $LINENO: $BASH_COMMAND" >&2' ERR
+trap 'rc=$?; [ $rc -eq 0 ] || { stop_all; echo "exit $rc; logs in $RUN_DIR" >&2; }' EXIT
+ensure_bun_deps() { # dir, marker package
+  [ -d "$1/node_modules/$2" ] && return 0
+  say "bun install in $1 (node_modules/$2 missing)"
+  (cd "$1" && bun install --silent) || die "bun install failed in $1; run it by hand and retry"
+}
 
 # ------------------------------------------------------------------ 1. anvil
 anvil --port "$ANVIL_PORT" --silent > "$RUN_DIR/anvil.log" 2>&1 & echo $! >> "$PIDS"
@@ -98,7 +113,11 @@ say "AttestationRegistry $REGISTRY, FundToken $TOKEN, Subscription $SUBSCRIPTION
 NOIR_VERIFIER=""; ISSUER_JSON=""; ISSUER_KEY_PEM=""; ISSUER_CERT_PEM=""
 if [ "$MODE" = noir ]; then
   ISSUER_JSON="$RUN_DIR/issuer.json"
-  ISSUER_HASH=$(cd "$ROOT/companion" && bun run src/cli.ts issuer-key "$ISSUER_JSON" 2>/dev/null | jq -r .issuer_key_hash)
+  ensure_bun_deps "$ROOT/companion" qrcode
+  ISSUER_OUT=$(cd "$ROOT/companion" && bun run src/cli.ts issuer-key "$ISSUER_JSON" 2>"$RUN_DIR/issuer-key.log") \
+    || { tail -20 "$RUN_DIR/issuer-key.log"; die "companion issuer-key failed (see $RUN_DIR/issuer-key.log; bun install in companion/?)"; }
+  ISSUER_HASH=$(echo "$ISSUER_OUT" | jq -r .issuer_key_hash)
+  [ -n "$ISSUER_HASH" ] && [ "$ISSUER_HASH" != null ] || die "companion issuer-key printed no issuer_key_hash: $ISSUER_OUT"
   NOIR_OUT=$(cd "$ROOT/contracts" && DEPLOYER_PRIVATE_KEY=$K0 POLICY_ID=$POLICY REGISTRY_ADDRESS=$REGISTRY PID_ISSUER_KEY_HASH=$ISSUER_HASH \
     forge script script/DeployNoirVerifier.s.sol:DeployNoirVerifier --rpc-url "$RPC" --broadcast 2>&1) || { echo "$NOIR_OUT" | tail -20; die "DeployNoirVerifier.s.sol failed"; }
   NOIR_VERIFIER=$(echo "$NOIR_OUT" | awk '/NoirPidVerifier:/ {print $2}' | head -1)
@@ -113,37 +132,42 @@ else
   MOCK_OUT=$(cd "$ROOT/contracts" && forge create src/test/MockProofVerifier.sol:MockProofVerifier --rpc-url "$RPC" --private-key "$K0" --broadcast --constructor-args true 2>&1) || { echo "$MOCK_OUT" | tail -5; die "MockProofVerifier deploy failed"; }
   MOCK_VERIFIER=$(echo "$MOCK_OUT" | awk '/Deployed to:/ {print $3}')
   cast send "$REGISTRY" "setVerifier(bytes32,address)" "$POLICY" "$MOCK_VERIFIER" --rpc-url "$RPC" --private-key "$K0" >/dev/null
-  [ -d "$ROOT/scripts/e2e/node_modules/jose" ] || (cd "$ROOT/scripts/e2e" && bun install --silent) || die "bun install failed in scripts/e2e"
+  ensure_bun_deps "$ROOT/scripts/e2e" jose
   say "MockProofVerifier $MOCK_VERIFIER set for the policy; e2e issuer key $ISSUER_KEY_PEM"
 fi
 
 # ------------------------------------------------------------------ 3. verifier-service
-VERIFIER_BIN="$VERIFIER_REPO/target/release/verifier-service"
-[ -x "$VERIFIER_BIN" ] || VERIFIER_BIN="$VERIFIER_REPO/target/debug/verifier-service"
 # Always build: cargo is incremental, and a stale release binary silently runs old code (seen 2026-09-08).
-(cd "$VERIFIER_REPO" && cargo build --release -p verifier-service) || die "verifier-service build failed"; VERIFIER_BIN="$VERIFIER_REPO/target/release/verifier-service"
-(cd "$VERIFIER_REPO" && exec env PORT=$VERIFIER_PORT HOST=127.0.0.1 PUBLIC_URL="$VERIFIER_URL/" RESULT_INCLUDES_PRESENTATION=true "$VERIFIER_BIN" > "$RUN_DIR/verifier.log" 2>&1) & echo $! >> "$PIDS"
+[ -d "$VERIFIER_REPO" ] || die "verifier repo not found at $VERIFIER_REPO (set VERIFIER_REPO)"
+VERIFIER_BIN="$VERIFIER_REPO/target/release/verifier-service"
+(cd "$VERIFIER_REPO" && cargo build --release -p verifier-service >"$RUN_DIR/build-verifier.log" 2>&1) || die "verifier-service build failed, see $RUN_DIR/build-verifier.log"
+# The bridge's verifier mode (sp1-mock) reads the raw presentation from /result, so that stack keeps
+# it behind the token; the relay stack (noir) keeps the verifier's default, nothing plaintext.
+VERIFIER_ENV=(PORT=$VERIFIER_PORT HOST=127.0.0.1 PUBLIC_URL="$VERIFIER_URL/" RESULT_TOKEN="$RESULT_TOKEN")
+[ "$MODE" = sp1-mock ] && VERIFIER_ENV+=(RESULT_INCLUDES_PRESENTATION=true)
+(cd "$VERIFIER_REPO" && exec env "${VERIFIER_ENV[@]}" "$VERIFIER_BIN" > "$RUN_DIR/verifier.log" 2>&1) & echo $! >> "$PIDS"
 wait_http "$VERIFIER_URL/" 30 || die "verifier-service did not come up ($RUN_DIR/verifier.log)"
 CLIENT_ID=$(grep -m1 'client_id' "$RUN_DIR/verifier.log" | awk '{print $NF}' || true)
 say "verifier-service on $VERIFIER_URL (client_id ${CLIENT_ID:-?})"
 
 # ------------------------------------------------------------------ 4. bridge
 BRIDGE_BIN="$ROOT/service/target/release/nachweis-bridge"
-(cd "$ROOT/service" && cargo build --release) || die "bridge build failed"
+(cd "$ROOT/service" && cargo build --release >"$RUN_DIR/build-bridge.log" 2>&1) || die "bridge build failed, see $RUN_DIR/build-bridge.log"
 BRIDGE_ENV=(BIND="127.0.0.1:$BRIDGE_PORT" RPC_URL="$RPC" OPERATOR_PRIVATE_KEY=$K0 REGISTRY=$REGISTRY POLICY_ID=nachweis.pid.over18.v1
   REQUIRE_ADDRESS_PROOF=true BRIDGE_ISSUER_TOKEN="$ISSUER_TOKEN" RUST_LOG="${RUST_LOG:-info}")
 if [ "$MODE" = noir ]; then
   BRIDGE_ENV+=(NOIR_VERIFIER=$NOIR_VERIFIER HANDOFF_VERIFIER_URL="$VERIFIER_URL" HANDOFF_BRIDGE_URL="$BRIDGE_URL")
 else
   [ -n "$CLIENT_ID" ] || die "verifier-service did not print its client_id (needed as EXPECTED_AUD)"
-  BRIDGE_ENV+=(VERIFIER_URL="$VERIFIER_URL" PROOF_MODE=mock PROVER_ARTIFACTS="$ROOT/prover-sp1/fixtures" EXPECTED_AUD="$CLIENT_ID")
+  BRIDGE_ENV+=(VERIFIER_URL="$VERIFIER_URL" PROOF_MODE=mock PROVER_ARTIFACTS="$ROOT/prover-sp1/fixtures" EXPECTED_AUD="$CLIENT_ID"
+    VERIFIER_RESULT_TOKEN="$RESULT_TOKEN")
 fi
 (cd "$ROOT/service" && exec env "${BRIDGE_ENV[@]}" "$BRIDGE_BIN" > "$RUN_DIR/bridge.log" 2>&1) & echo $! >> "$PIDS"
 wait_http "$BRIDGE_URL/health" 30 || die "bridge did not come up ($RUN_DIR/bridge.log)"
 say "bridge on $BRIDGE_URL, $(curl -s "$BRIDGE_URL/health" | jq -c '{mode,proof_mode}') ($(basename "$(dirname "$BRIDGE_BIN")") build)"
 
 # ------------------------------------------------------------------ 5. the app (Vite dev server, dev signer)
-[ -d "$ROOT/app/node_modules/vite" ] || (cd "$ROOT/app" && bun install --silent) || die "bun install failed in app"
+ensure_bun_deps "$ROOT/app" vite
 (cd "$ROOT/app" && exec env -u VITE_MOCK VITE_BRIDGE_URL="$BRIDGE_URL" VITE_VERIFIER_URL="$VERIFIER_URL" VITE_CHAIN_ID=31337 VITE_RPC_URL="$RPC" \
   VITE_REGISTRY="$REGISTRY" VITE_FUND_TOKEN="$TOKEN" VITE_SUBSCRIPTION="$SUBSCRIPTION" VITE_POLICY_ID="$POLICY" VITE_REQUIRED_BITS=3 \
   VITE_DEV_PRIVATE_KEY="$K1" VITE_DEV_OPERATOR_KEY="$K0" \
@@ -161,7 +185,7 @@ jq -n --arg mode "$MODE" --arg appUrl "$APP_URL" --arg rpcUrl "$RPC" --arg verif
 say "env for the specs: $ENV_JSON"
 
 if [ $TEST -eq 1 ]; then
-  set +e
+  set +e; trap - ERR
   (cd "$ROOT/app" && APP_E2E_ENV="$ENV_JSON" bunx playwright test)
   rc=$?
   set -e
