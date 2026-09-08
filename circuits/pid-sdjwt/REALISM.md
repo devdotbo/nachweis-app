@@ -56,9 +56,10 @@ What the ERICA captures are and are not: ERICA is a presentation-time re-minter
 digests of the disclosures it presents (2 in VALID, 5 in OVER_DISCLOSURE, different digests
 each time), no nested objects and no `age_equal_or_over` at all (ERICA's PID template uses flat
 `age_over_18`). So the captures fix the header size (the two-certificate x5c, 1855 chars) and
-the KB-JWT shape, but say nothing about a real issuer's payload size. No captured sandbox PID
-payload exists in either repo: the one real phone run (2026-06-25) kept its raw material in an
-uncommitted debug directory, and custom wallets cannot obtain a sandbox PID.
+the KB-JWT shape, but say nothing about a real issuer's payload size. Since the G0 run of
+2026-09-08 (`docs/evidence/g0-2026-09-08.md`) the real Bundesdruckerei sandbox PID has been
+observed through the relay with the official German test wallet; its shapes are in section 8
+and replace the reconstruction below where they differ.
 
 Facts the captures do give:
 
@@ -71,7 +72,8 @@ Facts the captures do give:
   `x` and `y` at prover offsets after `"cnf":{"jwk":{`, order does not matter; the window was
   128 bytes and a long `kid` before `x` could exceed it.
 - Issuer header key order `alg, typ, x5c`, `typ` `dc+sd-jwt`, both in ERICA and in the
-  verifier's synthetic fixture. The BDR sandbox issuer's header is unverified.
+  verifier's synthetic fixture. The BDR sandbox issuer orders its header `x5c, kid, typ, alg`
+  (G0, section 8), which is why the header check became a movable window.
 - ERICA's KB-JWT `nonce` is a UUID (36 chars). Our verifier mints
   hex(sha256(subject || challenge)), 64 chars, which is what the circuit checks.
 
@@ -130,9 +132,10 @@ SP1 statement accept the first two, the circuit accepted only the first):
 2. The KB-JWT header is a private input (`kb_header`, raw JSON, max 128); the circuit
    base64url-encodes it into the KB signing input and requires `"alg":"ES256"` and
    `"typ":"kb+jwt"` at prover offsets inside it. Any key order, `kid` allowed.
-3. The issuer header: the first 128 base64url chars are decoded in-circuit (96 bytes) and must
-   contain `"alg":"ES256"` and `"typ":"dc+sd-jwt"` or `"typ":"vc+sd-jwt"` at prover offsets.
-   Replaces the fixed 40-char prefix (which pinned key order alg, typ).
+3. The issuer header: a 128-char base64url window (96 decoded bytes) is decoded in-circuit
+   and must contain `"alg":"ES256"` and `"typ":"dc+sd-jwt"` or `"typ":"vc+sd-jwt"` at prover
+   offsets. Replaces the fixed 40-char prefix (which pinned key order alg, typ). WP13 fixed
+   the window at the start of the header; WP22 made its start a private input (section 8).
 4. Age object in shapes A, B, C (section 3): inputs `age_obj_disclosed`, `age_leaf_disclosed`,
    `age_obj_disclosure` (raw, max 512), `sd_offset`, `age_obj_digest_offset`,
    `age_sd_offset`, `age_target_offset`. The fixed 46-byte stride and `age_digest_index` are
@@ -182,17 +185,82 @@ nonce, literal aud); its issuer signature verifies natively against the x5c leaf
 what `companion prove` and `gen-prover.ts` do for a real credential (companion test "x5c leaf
 is the signer").
 
-## 7. Still unverified until a real phone run
+## 7. Verified by the G0 run (2026-09-08), what remains open
 
-- The BDR issuer's payload: key order is irrelevant, but the `vct` literal (three values are
-  in circulation: `urn:eudi:pid:de:1`, `urn:eudi:pid:1`,
-  `https://demo.pid-provider.bundesdruckerei.de/credentials/pid/1.0`), the age object shape
-  (A, B or C), whether `exp` is present (the circuit requires it), and the total size against
-  PAYLOAD_MAX_LEN 2304.
-- The issuer header: `alg` and `typ` must sit in the first 96 decoded bytes (true when `x5c`
-  comes last); the two-certificate x5c must fit 2304 base64url chars.
-- Whether the sandbox wallet sets `aud` to the `x509_hash` client_id (spec) or to the literal
-  (ERICA's behaviour), and whether its KB-JWT header carries a `kid`.
-- The sandbox issuer key hash for `NoirPidVerifier` (`PID_ISSUER_KEY_HASH`): sha256 of the
-  SEC1 key of the x5c leaf of a real credential; `companion prove` and `gen-prover.ts` derive
-  the key from the leaf, so the value can be read off the first real presentation.
+The items this section listed as unverified were settled by the official-wallet run recorded in
+`docs/evidence/g0-2026-09-08.md` (shapes only, no personal data):
+
+- Payload: `vct` is `urn:eudi:pid:de:1` (the pinned literal); the age object arrives as shape A
+  (`age_equal_or_over` with nested `_sd`, separate `["salt","18",true]` disclosure); `exp` is
+  present (1790035200, `iat` 1788825600); payload 929 JSON bytes of 2304.
+- Header: 1378 base64url chars of 2304, 1033 decoded bytes, one x5c certificate (824 chars), a
+  156-char `kid`, key order `x5c, kid, typ, alg`, `typ` at byte 1001 and `alg` at byte 1019. This
+  failed the WP13 check (first 96 bytes) and is what section 8 fixes.
+- KB-JWT: `aud` is the `x509_hash` client_id the circuit pins (section 1); the header is the
+  30-byte `{"alg":"ES256","typ":"kb+jwt"}` without a `kid` (40 base64url chars); claims `aud`,
+  `iat`, `nonce`, `sd_hash`, no `exp` (the companion's freshness check is by `iat` now).
+- Sandbox issuer key hash (sha256 of the SEC1 key of the x5c leaf), the value `NoirPidVerifier`
+  must pin as `PID_ISSUER_KEY_HASH` for the preprod PID provider:
+  `0xb4f2bfa1df99f06e588d39931b2cfd517a2befe8737c7f86bfa5c668d2abe079`.
+- The real presentation proves with the WP22 circuit: `companion prove` (statement checks,
+  gen-prover, nargo execute, bb prove 10.2 s, bb verify ok) with public inputs over18 1, expiry
+  1790035200, issuer_key_hash as above.
+
+Still open: the x5c chain to a trust anchor (not checked anywhere, the contract pins the key);
+the status list (trust-boundaries.md gap 3); whether the production issuer keeps the same
+header layout and `vct` literal; the wallet version string (builder to add to the G0 record).
+
+## 8. WP22: the header window follows the fragments
+
+Observed (G0): the BDR issuer header is `{"x5c":[...],"kid":"...","typ":"dc+sd-jwt","alg":"ES256"}`,
+so `alg` and `typ` sit at the end of a 1033-byte header. WP13 decoded a fixed 96-byte prefix and
+therefore rejected it. Decoding the whole header in-circuit (2304 base64url chars, 1728 bytes)
+would cost far more than the 10 k gates of headroom under 2^20.
+
+Design: the circuit still decodes exactly 128 base64url chars (96 bytes), but their start is a
+private input `hdr_window_b64_start` (u32). The circuit asserts `hdr_window_b64_start % 4 == 0`
+and `hdr_window_b64_start + 128 <= issuer_header_b64.len()`, copies
+`issuer_header_b64[start .. start + 128]` with dynamic reads, decodes them, and asserts
+`ALG_FRAGMENT` at `hdr_alg_offset` and the `typ` fragment at `hdr_typ_offset`, both relative to
+the window. A 4-aligned base64url slice decodes to the byte slice
+`[start * 3 / 4, start * 3 / 4 + 96)` of the decoded header, independent of what precedes or
+follows it, because base64 groups of four chars are independent and the header carries no padding
+(its length is not a multiple of four, so the last, partial group can never be inside a window
+that ends at or before `len`).
+
+Soundness: `issuer_header_b64` is the first part of the signing input the circuit hashes and
+verifies under the issuer key, so any window inside `[0, len)` is a slice of the signed header
+and a fragment found there is a fragment of the signed header. The prover cannot gain anything
+by choosing the start: a window that does not contain both fragments fails one of the two
+assertions, and a window that does proves what the fixed prefix proved before (the header
+declares `alg` ES256 and `typ` dc+sd-jwt or vc+sd-jwt somewhere in its signed bytes). What the
+check never established, before or now, is that these are top-level JSON members rather than,
+say, part of a string value; that is unchanged from WP13 and is why the issuer key hash, not
+the header, is the trust anchor. The former `header[0] == '{'` assertion was dropped: it only
+held for a window at offset 0 and carried no security weight (the KB-JWT header keeps its own).
+
+Generator (`tools/gen-prover.ts`, mirrored in `prover-mobile-core/src/inputs.rs`): decode the
+whole header, locate both fragments, take `lo` = the first byte of the earlier fragment and
+`hi` = the end of the later one, set `start = min(floor(lo / 3) * 4, floor((len - 128) / 4) * 4)`
+(the largest 4-aligned start whose window begins at or before `lo`, clamped to the header end),
+and refuse if `hi > start * 3 / 4 + 96` ("alg and typ do not share one 96-byte window"). The two
+fragments are 13 and 17 bytes, so they share a window whenever at most 66 bytes separate them,
+which holds for every observed header (adjacent in ERICA and BDR). The tamper mode `hdr-window`
+moves the window to the other end of the header and keeps the relative offsets; the circuit
+rejects it with "issuer alg is not ES256".
+
+Fixture: `prover-sp1/fixtures/bdr-layout-input.json` / `bdr-layout-over18.sdjwt`, minted by
+`companion mint-fixture --header-layout x5c-first` with the realistic vector's issuer key (same
+issuer_key_hash, subject, challenge and expiry): header `{"x5c":[<772-char leaf>],"kid":<156
+chars>,"typ":"dc+sd-jwt","alg":"ES256"}`, 981 decoded bytes (1308 base64url), `typ` at byte 949,
+`alg` at 967, window start 1180 (byte 885), relative offsets 64 and 82. (The observed header is
+1033 bytes because the BDR leaf is 824 base64 chars; the companion's self-signed leaf is shorter,
+the layout and the window mechanics are the same.)
+
+Cost: 255,170 to 255,559 ACIR opcodes, UltraHonk circuit_size 1,038,584 to 1,039,135 (+551,
+still 2^20, 9,441 gates of headroom). `bb prove` on the real presentation: 10.2 s wall inside the
+companion (with the machine busy; the fixture proves in about 4 s idle). The public input layout
+is unchanged (86 words). New VK, `VK_HASH`
+`0x2e13794a77895882c11e891c641277cede611206c575ca2a35e8fe7724758a64`, regenerated
+`PidSdJwtUltraHonkVerifier.sol` and `contracts/test/fixtures/noir/*` (same public inputs as
+before, new proof and vk_hash).

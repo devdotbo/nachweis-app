@@ -56,7 +56,8 @@ pub global SD_FRAGMENT: [u8; 7] = "\"_sd\":[".as_bytes();
 pub global CNF_FRAGMENT: [u8; 14] = "\"cnf\":{\"jwk\":{".as_bytes();
 pub global EXP_FRAGMENT: [u8; 6] = "\"exp\":".as_bytes();
 
-/// JOSE header fragments (issuer header: decoded first 96 bytes; KB-JWT header: raw input).
+/// JOSE header fragments (issuer header: a decoded 96-byte window at a prover-chosen 4-aligned
+/// base64url offset; KB-JWT header: raw input).
 pub global ALG_FRAGMENT: [u8; 13] = "\"alg\":\"ES256\"".as_bytes();
 /// Issuer typ; byte 7 may be 'd' (dc+sd-jwt) or 'v' (vc+sd-jwt, the earlier media type).
 pub global TYP_SD_JWT_FRAGMENT: [u8; 17] = "\"typ\":\"dc+sd-jwt\"".as_bytes();

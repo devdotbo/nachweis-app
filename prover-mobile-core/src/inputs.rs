@@ -76,11 +76,11 @@ impl Bounds {
 
 /// Circuit constants that are checks, not ABI shapes (constants.nr): the
 /// cnf.jwk x/y must lie within this many bytes after `"cnf":{"jwk":{`, and
-/// alg/typ of the issuer header must lie in the first 96 decoded bytes
-/// (128 base64url chars).
+/// alg/typ of the issuer header must share one 96-byte window (128 base64url
+/// chars) of the decoded header that starts at a 4-aligned base64url offset.
 pub const CNF_WINDOW: usize = 128;
-pub const HEADER_PREFIX_B64: usize = 128;
-pub const HEADER_PREFIX_RAW: usize = 96;
+pub const HEADER_WINDOW_B64: usize = 128;
+pub const HEADER_WINDOW_RAW: usize = 96;
 
 /// The `aud` the circuit pins (AUD_FRAGMENT in constants.nr): the registered
 /// client_id of the verifier. Passed explicitly so a re-registration is a
@@ -122,6 +122,7 @@ pub enum AgeShape {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CircuitInputs {
     pub issuer_header_b64: Vec<u8>,
+    pub hdr_window_b64_start: u32,
     pub hdr_alg_offset: u32,
     pub hdr_typ_offset: u32,
     pub payload: Vec<u8>,
@@ -326,19 +327,30 @@ pub fn derive_with_bounds(input: &ProverInput, bounds: Bounds) -> Result<Circuit
     if sig_b64.len() != 86 {
         return Err(err(format!("issuer signature base64url length {}, expected 86", sig_b64.len())));
     }
-    if header_b64.len() < HEADER_PREFIX_B64 {
-        return Err(err(format!("issuer header shorter than {HEADER_PREFIX_B64} base64url chars")));
+    if header_b64.len() < HEADER_WINDOW_B64 {
+        return Err(err(format!("issuer header shorter than {HEADER_WINDOW_B64} base64url chars")));
     }
 
-    // --- issuer header: alg and typ inside the first 96 decoded bytes ---
-    let header_head = from_b64url(&header_b64[..HEADER_PREFIX_B64])?;
-    let hdr_alg_offset = find(&header_head, b"\"alg\":\"ES256\"", 0)
-        .filter(|&o| o + 13 <= HEADER_PREFIX_RAW)
-        .ok_or_else(|| err(format!("issuer header: \"alg\":\"ES256\" not within the first {HEADER_PREFIX_RAW} decoded bytes")))?;
-    let hdr_typ_offset = find(&header_head, b"\"typ\":\"dc+sd-jwt\"", 0)
-        .or_else(|| find(&header_head, b"\"typ\":\"vc+sd-jwt\"", 0))
-        .filter(|&o| o + 17 <= HEADER_PREFIX_RAW)
-        .ok_or_else(|| err(format!("issuer header: \"typ\":\"dc+sd-jwt\" (or vc+sd-jwt) not within the first {HEADER_PREFIX_RAW} decoded bytes")))?;
+    // --- issuer header: alg and typ inside one 96-byte window of the decoded header ---
+    // Same choice as gen-prover.ts: the largest 4-aligned base64url start whose window begins
+    // at or before the first fragment, clamped to the header end (key order is free).
+    let header_raw = from_b64url(header_b64)?;
+    let hdr_alg_abs = find(&header_raw, b"\"alg\":\"ES256\"", 0).ok_or_else(|| err("issuer header: \"alg\":\"ES256\" not found"))?;
+    let hdr_typ_abs = find(&header_raw, b"\"typ\":\"dc+sd-jwt\"", 0)
+        .or_else(|| find(&header_raw, b"\"typ\":\"vc+sd-jwt\"", 0))
+        .ok_or_else(|| err("issuer header: \"typ\":\"dc+sd-jwt\" (or vc+sd-jwt) not found"))?;
+    let hdr_lo = hdr_alg_abs.min(hdr_typ_abs);
+    let hdr_hi = (hdr_alg_abs + 13).max(hdr_typ_abs + 17);
+    let hdr_max_start = (header_b64.len() - HEADER_WINDOW_B64) / 4 * 4;
+    let hdr_window_b64_start = (hdr_lo / 3 * 4).min(hdr_max_start);
+    let hdr_window_raw = hdr_window_b64_start / 4 * 3;
+    if hdr_hi > hdr_window_raw + HEADER_WINDOW_RAW {
+        return Err(err(format!(
+            "issuer header: \"alg\" (byte {hdr_alg_abs}) and \"typ\" (byte {hdr_typ_abs}) do not share one {HEADER_WINDOW_RAW}-byte window"
+        )));
+    }
+    let hdr_alg_offset = hdr_alg_abs - hdr_window_raw;
+    let hdr_typ_offset = hdr_typ_abs - hdr_window_raw;
 
     // --- issuer payload offsets ---
     let vct_offset = unique_index(&payload_raw, b"\"vct\":\"urn:eudi:pid:de:1\"", "vct fragment")?;
@@ -512,6 +524,7 @@ pub fn derive_with_bounds(input: &ProverInput, bounds: Bounds) -> Result<Circuit
 
     Ok(CircuitInputs {
         issuer_header_b64: bounded("issuer_header_b64", header_b64.as_bytes(), bounds.header_b64_max)?,
+        hdr_window_b64_start: hdr_window_b64_start as u32,
         hdr_alg_offset: hdr_alg_offset as u32,
         hdr_typ_offset: hdr_typ_offset as u32,
         payload: bounded("payload", &payload_raw, bounds.payload_max_len)?,
@@ -576,6 +589,7 @@ impl CircuitInputs {
         let shape = match self.shape { AgeShape::A => "A", AgeShape::B => "B", AgeShape::C => "C" };
         let mut t = format!("# age shape {shape}\n");
         t += &bounded("issuer_header_b64", &self.issuer_header_b64, self.bounds.header_b64_max);
+        t += &format!("hdr_window_b64_start = {}\n", self.hdr_window_b64_start);
         t += &format!("hdr_alg_offset = {}\n", self.hdr_alg_offset);
         t += &format!("hdr_typ_offset = {}\n", self.hdr_typ_offset);
         t += &bounded("payload", &self.payload, self.bounds.payload_max_len);
@@ -620,6 +634,7 @@ impl CircuitInputs {
         use InputValue::*;
         vec![
             ("issuer_header_b64", Bounded(self.issuer_header_b64.clone())),
+            ("hdr_window_b64_start", Scalar(self.hdr_window_b64_start as u64)),
             ("hdr_alg_offset", Scalar(self.hdr_alg_offset as u64)),
             ("hdr_typ_offset", Scalar(self.hdr_typ_offset as u64)),
             ("payload", Bounded(self.payload.clone())),

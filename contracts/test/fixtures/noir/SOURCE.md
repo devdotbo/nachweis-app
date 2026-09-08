@@ -3,7 +3,8 @@
 Copied unchanged from `circuits/pid-sdjwt/out/adapted/` after running the commands in
 `/circuits/README.md` (nargo 1.0.0-beta.21, bb 5.0.0-nightly.20260324) on the realistic PID
 vector `prover-sp1/fixtures/realistic-input.json` (minted by `companion mint-fixture`, see
-`circuits/pid-sdjwt/REALISM.md`):
+`circuits/pid-sdjwt/REALISM.md`; the vector itself is unchanged since WP13, the circuit changed in
+WP22 (movable header window, REALISM.md section 8), so proof and vk_hash were regenerated):
 
     cd circuits/pid-sdjwt
     nargo compile
@@ -17,12 +18,12 @@ vector `prover-sp1/fixtures/realistic-input.json` (minted by `companion mint-fix
 
 | file | bytes | sha256 |
 | --- | --- | --- |
-| proof.bin | 10,304 | f7d9140e26bb5dd72f405eda700d6ddb43a8e981a1a7a92093d2ef75599a646e |
+| proof.bin | 10,304 | a904a488b059e09ab86f6a9f5e7192395bd297f37c1a1702eba8261304f5c3d6 |
 | public_inputs.bin | 2,752 (86 x 32) | 4ea8becf1a1507dea981db42a412477e58c421309d20c8a45f6f90e85de4e43f |
-| vk_hash.bin | 32 | 122056949a46d949216af7b152be097c6d3d4a30bf0196933f1aeca829b5dcde |
+| vk_hash.bin | 32 | 09221f422d4e3b9f26c9401b67521e8f9cd139caa45d11d7e9fd69d7b3d4c3f4 |
 
 `vk_hash.bin` must equal the `VK_HASH` constant in `contracts/src/noir/PidSdJwtUltraHonkVerifier.sol`
-(0x24a16511ee04bb295ce6eab6e21c7847f23c3d342234bd07d3d7940634de7da6); the test asserts this. Decoded
+(0x2e13794a77895882c11e891c641277cede611206c575ca2a35e8fe7724758a64, WP22 header window); the test asserts this. Decoded
 public inputs: subject 0xf99edde971f4e9c88715a79ca78963284a2955dc, issuer_key_hash
 0xb52359580c14e2d79d34605740d86338adc6a0868a22ec648d1896187813fd26 (the companion test issuer whose
 self-signed leaf is the x5c[0] of the vector; its private key is not in the repo, so re-minting the

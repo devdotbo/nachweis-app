@@ -21,10 +21,10 @@ Toolchain decision and versions: `TOOLCHAIN.md`. Measurements: below.
     app/src/main/assets/
       pid_sdjwt.json          compiled circuit (nargo 1.0.0-beta.21), committed
       pid_sdjwt_evm.vk        desktop VK, bb write_vk -t evm, committed (1,888 B)
-      pid_sdjwt_evm.vk_hash   24a16511...7da6, equals VK_HASH in contracts/src/noir/PidSdJwtUltraHonkVerifier.sol
+      pid_sdjwt_evm.vk_hash   2e13794a...8a64, equals VK_HASH in contracts/src/noir/PidSdJwtUltraHonkVerifier.sol
       bn254_g1.dat            SRS, 2^20 + 1 points, 64 MB, gitignored (scripts/prepare-assets.sh)
       bn254_g2.dat            128 B
-      test-vector.json        prover-sp1/fixtures/realistic-input.json (realistic PID presentation, WP13 circuit)
+      test-vector.json        prover-sp1/fixtures/realistic-input.json (realistic PID presentation; circuit assets regenerated for WP22)
     scripts/build-rust.sh     cargo ndk build of the core with a Zig linker wrapper, libc++_shared.so, Kotlin bindings
     scripts/prepare-assets.sh SRS and test vector into assets
 

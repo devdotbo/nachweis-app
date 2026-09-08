@@ -9,7 +9,7 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { generateP256 } from "./crypto";
 import { parseHandoff } from "./handoff";
-import { answerAsWallet, loadOrCreateIssuerKey, mintPresentation, type AgeShape } from "./mint";
+import { answerAsWallet, loadOrCreateIssuerKey, mintPresentation, type AgeShape, type HeaderLayout } from "./mint";
 import { defaultCircuitDir, prove, repoRoot } from "./prove";
 import { terminalQr } from "./qr";
 import { assertRequestIsOurs, createRelayRequest, fetchRequestObject, pickupResponse, relayStatus } from "./relay";
@@ -85,6 +85,7 @@ stand-in for the phone
                --given-name NAME  --family-name NAME  --age-shape nested|disclosed|plain  --minimal
   mint-fixture                    mint the realistic Noir vector (prover-sp1 input.json layout) without a verifier
                --issuer-key FILE  --out DIR (prover-sp1/fixtures)  --name realistic  --age-shape nested|disclosed|plain
+               --header-layout alg-first|x5c-first (x5c-first: x5c, kid, typ, alg as the Bundesdruckerei issuer sends it)
                --address 0x.. --challenge HEX (defaults: the SP1 fixture's, so subject and nonce stay)  --issuer-exp UNIX
 
 env  NACHWEIS_COMPANION_DIR (default ~/.nachweis-companion), NACHWEIS_SESSION, NACHWEIS_CIRCUIT_DIR, NACHWEIS_VK
@@ -238,6 +239,12 @@ async function cmdMint(flags: Flags, tl?: Timeline): Promise<void> {
   else process.stdout.write(JSON.stringify({ posted: r.status, body: r.body }) + "\n");
 }
 
+function headerLayout(flags: Flags): HeaderLayout {
+  const v = str(flags, "header-layout", undefined, "alg-first")!;
+  if (v !== "alg-first" && v !== "x5c-first") fail("--header-layout must be alg-first or x5c-first");
+  return v;
+}
+
 function ageShape(flags: Flags): AgeShape {
   const v = str(flags, "age-shape", "NACHWEIS_AGE_SHAPE", "nested")!;
   if (v !== "nested" && v !== "disclosed" && v !== "plain") fail("--age-shape must be nested, disclosed or plain");
@@ -263,6 +270,7 @@ async function cmdMintFixture(flags: Flags): Promise<void> {
     ageShape: ageShape(flags),
     issuerExp: flags["issuer-exp"] ? Number(flags["issuer-exp"]) : 1819756800,
     minimal: Boolean(flags.minimal),
+    headerLayout: headerLayout(flags),
   });
   const input = {
     presentation,

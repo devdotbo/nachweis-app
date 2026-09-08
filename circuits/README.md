@@ -46,7 +46,7 @@ below. `out/` and `target/` are gitignored.
 | --- | --- | --- | --- |
 | `nargo compile` | 6.0 s, 894 MB RSS | 12.6 s, 942 MB RSS | 15.7 s, 1.69 GB RSS |
 | ACIR opcodes | 92,811 | 135,831 | 255,170 |
-| UltraHonk circuit_size | 453,007 (2^19) | 894,846 (2^20) | 1,038,584 (2^20, 10 k gates of headroom) |
+| UltraHonk circuit_size | 453,007 (2^19) | 894,846 (2^20) | 1,038,584 (2^20, 10 k gates of headroom); 1,039,135 after WP22 (movable header window, 255,559 ACIR opcodes) |
 | `nargo execute` | 0.5 s, 173 MB | 0.6 s, 189 MB | 0.9 s, 226 MB |
 | `bb write_vk` (evm) | 1.5 s, 802 MB | 1.7 s, 1.44 GB | 2.0 s, 1.80 GB |
 | `bb prove` (evm, 16 threads) | 2.1 s wall, 13.6 s user, 1.08 GB | 6.0 s wall, 25.8 s user, 1.84 GB (re-measured 2026-09-07 before the change; 3.5 s on an earlier run) | 4.0 s wall, 26.2 s user, 2.25 GB (4.2 s inside the companion run) |
@@ -88,7 +88,9 @@ bytes of base64 encoding, about 8 k gates).
 | age-disclosure (salt changed; object salt changed in shape C) | rejected: disclosure digest mismatch |
 | nonce (challenge changed) | rejected: KB-JWT nonce mismatch |
 | kb-sig (one bit of s) | rejected: Invalid KB-JWT signature |
+| hdr-window (window moved away from alg and typ, relative offsets kept) | rejected: issuer alg is not ES256 |
 | untampered | witness solves |
+| BDR header order x5c, kid, typ, alg (`prover-sp1/fixtures/bdr-layout-input.json`, alg 967 bytes into the header) | solves; hdr-window tamper rejected |
 | age shape B (object disclosed, nested digests; 630 byte tail), minted fresh | solves; age tamper rejected |
 | age shape C (object disclosed, plain values), minted fresh | solves; age tamper rejected |
 | minimal layout (three top-level digests, no kid), minted fresh | solves; age tamper rejected |
@@ -101,6 +103,18 @@ the disclosure prefix check accepts `["salt","age_equal_or_over",{` and rejects
 a name in the salt position. The Solidity side: `contracts/test/NoirPidVerifier.t.sol`
 (21 tests) verifies the real proof, `attestWithProof` costs 3.02 M gas, a
 flipped over18 reverts.
+
+## Header window (WP22)
+
+The Bundesdruckerei PID issuer orders its header `x5c, kid, typ, alg` (1033
+decoded bytes, `alg` at byte 1019; `docs/evidence/g0-2026-09-08.md`), so the
+fixed 96-byte prefix of WP13 rejected the first real presentation. The circuit
+now takes `hdr_window_b64_start` (private, multiple of 4, window inside the
+header) and checks `alg` and `typ` inside the 96 bytes decoded from
+`issuer_header_b64[start .. start + 128]`; `gen-prover.ts` picks the start.
+Why this is sound and how the start is chosen: `pid-sdjwt/REALISM.md`,
+section 8. VK, `VK_HASH` (`0x2e13794a…8a64`), the Solidity verifier and the
+proof fixtures were regenerated; the public input layout is unchanged.
 
 ## Solidity verifier
 
@@ -128,7 +142,9 @@ regenerate them together with the verifier whenever the circuit changes.
   issuerKeyHash (sha256 of the SEC1 key of the sandbox issuer, read off the x5c
   leaf of the first real credential; `companion prove` and `gen-prover.ts`
   derive the key from the leaf). Of the header only `alg` ES256 and `typ`
-  `dc+sd-jwt` or `vc+sd-jwt` are checked, inside its first 96 decoded bytes.
+  `dc+sd-jwt` or `vc+sd-jwt` are checked, inside a 96-byte window of the
+  decoded header whose 4-aligned start is a private input (any key order, any
+  header length up to the bound; REALISM.md section 8).
 - Status list / revocation, iat, nbf, KB-JWT exp and iat, freshness of the
   challenge (the contract compares the issuer expiry with block.timestamp and
   manages challenges; the bridge checks KB-JWT exp and iat against its clock

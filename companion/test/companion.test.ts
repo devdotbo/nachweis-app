@@ -147,6 +147,34 @@ describe("test issuer and minted presentation", () => {
     expect(toml).toContain("age_leaf_disclosed = 1");
   });
 
+  test("x5c-first header (x5c, kid, typ, alg) is accepted; gen-prover.ts moves the header window", async () => {
+    const issuer = await loadOrCreateIssuerKey(join(dir, "issuer.json"));
+    const { presentation } = await mintPresentation({ issuer, nonce, aud, headerLayout: "x5c-first" });
+    const headerRaw = Buffer.from(presentation.split(".")[0], "base64url");
+    expect(Object.keys(JSON.parse(headerRaw.toString()))).toEqual(["x5c", "kid", "typ", "alg"]);
+    expect(headerRaw.indexOf('"alg":"ES256"')).toBeGreaterThan(900);
+    const v = await verifyPresentation({ presentation, issuerKeySec1: issuerKeyFromX5c(presentation.split("~")[0]), expectedVct: "urn:eudi:pid:de:1", expectedAud: aud, boundAddress: address, challenge });
+    expect(v.over18).toBe(true);
+    const inputPath = join(dir, "input-x5c-first.json");
+    await Bun.write(
+      inputPath,
+      JSON.stringify({ presentation, issuer_key_sec1_hex: issuer.sec1_hex, expected_vct: "urn:eudi:pid:de:1", expected_aud: aud, bound_address_hex: "0x" + hex(address), challenge_hex: hex(challenge) }),
+    );
+    const out = join(dir, "Prover-x5c-first.toml");
+    const r = spawnSync(process.execPath, ["run", join(root, "circuits/tools/gen-prover.ts"), inputPath, out], { encoding: "utf8" });
+    expect(r.status, r.stderr).toBe(0);
+    const start = Number(/hdr_window_b64_start = (\d+)/.exec(readFileSync(out, "utf8"))![1]);
+    expect(start % 4).toBe(0);
+    expect(start).toBeGreaterThan(0);
+    // the window's 96 decoded bytes hold both fragments
+    const win = Buffer.from(presentation.split(".")[0].slice(start, start + 128), "base64url").toString("latin1");
+    expect(win).toContain('"alg":"ES256"');
+    expect(win).toContain('"typ":"dc+sd-jwt"');
+    // and the committed x5c-first fixture is one of these
+    const bdr = JSON.parse(readFileSync(join(root, "prover-sp1/fixtures/bdr-layout-input.json"), "utf8"));
+    expect(Object.keys(JSON.parse(Buffer.from(bdr.presentation.split(".")[0], "base64url").toString()))).toEqual(["x5c", "kid", "typ", "alg"]);
+  });
+
   test("JWE ECDH-ES A128GCM round trip with the ephemeral key", async () => {
     const { privateJwk, publicJwk } = await generateP256();
     const jwe = await encryptJwe(Buffer.from('{"vp_token":{"pid":["a~b~c"]}}'), { ...publicJwk, kid: "relay-enc-key" });
