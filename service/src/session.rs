@@ -63,7 +63,8 @@ pub struct Session {
     pub error: Option<String>,
     /// The bound address signed "nachweis:session:<id>" (EIP-191).
     pub address_verified: bool,
-    /// The presentation as handed to the bridge (server mode). Never serialized.
+    /// The presentation as handed to the bridge (server mode). Never serialized. Cleared as soon
+    /// as the statement input is built and the native run is done (run_pipeline).
     pub presentation: Option<String>,
     pub public_values: Option<Vec<u8>>,
     pub decoded: Option<DecodedPublicValues>,
