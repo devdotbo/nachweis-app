@@ -140,14 +140,18 @@ export async function verifyPresentation(input: StatementInput): Promise<Verifie
   };
 }
 
-/// KB-JWT freshness against the local clock: exp in (now, now + window], iat in [now - window, now + window].
+/// KB-JWT freshness against the local clock: iat in [now - window, now + window]; exp, when present,
+/// in (now, now + window]. exp is optional: the official German test wallet signs KB-JWTs with
+/// aud, iat, nonce and sd_hash only (observed 2026-09-08, G0 run), and the circuit commits the
+/// issuer exp, not the KB exp.
 export function checkKbFreshness(v: Verified, now: number, window: number): void {
-  check(v.kbExp !== undefined, "KB-JWT has no exp");
   check(v.kbIat !== undefined, "KB-JWT has no iat");
-  const exp = v.kbExp!;
   const iat = v.kbIat!;
-  check(exp > now, `KB-JWT expired: exp ${exp} <= now ${now}`);
-  check(exp <= now + window, `KB-JWT exp ${exp} is more than ${window} s ahead of now ${now}`);
+  if (v.kbExp !== undefined) {
+    const exp = v.kbExp;
+    check(exp > now, `KB-JWT expired: exp ${exp} <= now ${now}`);
+    check(exp <= now + window, `KB-JWT exp ${exp} is more than ${window} s ahead of now ${now}`);
+  }
   check(iat + window >= now, `KB-JWT iat ${iat} is more than ${window} s before now ${now}`);
   check(iat <= now + window, `KB-JWT iat ${iat} is more than ${window} s ahead of now ${now}`);
 }
