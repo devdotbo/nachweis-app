@@ -106,6 +106,19 @@ export interface MintOptions {
   kbKid?: boolean;
   /// The older three-digest layout of the SP1 fixture instead of the 23-claim PID (default false).
   minimal?: boolean;
+  /// Issuer header key order. "alg-first": alg, typ, x5c (ERICA and the earlier fixtures).
+  /// "x5c-first": x5c (one certificate), kid (156 chars), typ, alg, as the Bundesdruckerei PID
+  /// issuer sends it (docs/evidence/g0-2026-09-08.md); alg and typ then sit about 1 kB into
+  /// the decoded header, which exercises the circuit's movable header window. Default alg-first.
+  headerLayout?: HeaderLayout;
+}
+
+export type HeaderLayout = "alg-first" | "x5c-first";
+
+/// A 156-char kid in the shape of the observed one (opaque, derived from the leaf).
+export function observedStyleKid(certDerB64: string): string {
+  const h = b64url(sha256(Buffer.from(certDerB64, "base64")));
+  return `${h}${b64url(sha256(Buffer.from(h)))}${b64url(sha256(Buffer.from(h + h)))}${h}`.slice(0, 156);
 }
 
 const disclosure = (name: string, value: unknown): string =>
@@ -187,7 +200,10 @@ export async function mintPresentation(o: MintOptions): Promise<{ presentation: 
         address: { _sd: address.map(digest) },
         place_of_birth: { _sd: placeOfBirth.map(digest) },
       };
-  const header = { alg: "ES256", typ: "dc+sd-jwt", x5c: [o.issuer.cert_der_b64, ...(o.issuer.ca_der_b64 ? [o.issuer.ca_der_b64] : [])] };
+  const header =
+    (o.headerLayout ?? "alg-first") === "x5c-first"
+      ? { x5c: [o.issuer.cert_der_b64], kid: observedStyleKid(o.issuer.cert_der_b64), typ: "dc+sd-jwt", alg: "ES256" }
+      : { alg: "ES256", typ: "dc+sd-jwt", x5c: [o.issuer.cert_der_b64, ...(o.issuer.ca_der_b64 ? [o.issuer.ca_der_b64] : [])] };
   const issuerJwt = await signCompact(o.issuer.jwk, header, payload);
 
   const presented = [given, family, ...(ageObjDisc ? [ageObjDisc] : []), ...(shape === "plain" ? [] : [age18])];

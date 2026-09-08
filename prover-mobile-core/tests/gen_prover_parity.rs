@@ -26,6 +26,26 @@ fn prover_toml_matches_gen_prover_ts() {
     assert_eq!(toml, expected_body);
 }
 
+#[test]
+fn header_window_follows_the_fragments() {
+    // ERICA order (alg, typ, x5c): window at the start of the header.
+    let ci = derive(&input()).unwrap();
+    assert_eq!(ci.hdr_window_b64_start, 0);
+    assert_eq!((ci.hdr_alg_offset, ci.hdr_typ_offset), (1, 15));
+    // Bundesdruckerei order (x5c, kid, typ, alg): alg and typ about 1 kB into the decoded header,
+    // the 4-aligned window starts right before typ; offsets are relative to the window.
+    let bdr: ProverInput = serde_json::from_str(&fixture("prover-sp1/fixtures/bdr-layout-input.json")).unwrap();
+    let ci = derive(&bdr).unwrap();
+    assert_eq!(ci.hdr_window_b64_start % 4, 0);
+    assert!(ci.hdr_window_b64_start > 1000, "window start {}", ci.hdr_window_b64_start);
+    let window_raw = (ci.hdr_window_b64_start / 4 * 3) as usize;
+    let header = bdr.presentation.split('.').next().unwrap();
+    let raw = base64::Engine::decode(&base64::engine::general_purpose::URL_SAFE_NO_PAD, header).unwrap();
+    assert_eq!(&raw[window_raw + ci.hdr_alg_offset as usize..][..13], b"\"alg\":\"ES256\"");
+    assert_eq!(&raw[window_raw + ci.hdr_typ_offset as usize..][..17], b"\"typ\":\"dc+sd-jwt\"");
+    assert!(ci.hdr_typ_offset as usize + 17 <= 96 && ci.hdr_alg_offset as usize + 13 <= 96);
+}
+
 fn artifact() -> serde_json::Value {
     serde_json::from_str(&fixture("circuits/pid-sdjwt/target/pid_sdjwt.json")).unwrap()
 }

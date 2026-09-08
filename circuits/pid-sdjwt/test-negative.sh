@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Negative tests: every tampered witness must fail `nargo execute`; positive controls: the
-# untampered vector and the other age shapes (B: age object disclosed with nested digests,
+# Negative tests: every tampered witness must fail `nargo execute` (signatures, age disclosure,
+# nonce, and a header window that misses the alg fragment); positive controls: the
+# untampered vector, the Bundesdruckerei header key order, and the other age shapes (B: age object disclosed with nested digests,
 # C: disclosed with plain values) and the older minimal layout (no kid) must solve.
 # (nargo -p silently ignores prover names containing a dot, hence Prover_neg_*.)
 # Usage: ./test-negative.sh [input.json]   (default: prover-sp1/fixtures/realistic-input.json)
@@ -9,7 +10,7 @@ export PATH="$HOME/.nargo/bin:$HOME/.bb:$PATH"
 cd "$(dirname "$0")"
 INPUT="${1:-../../prover-sp1/fixtures/realistic-input.json}"
 fail=0
-for mode in issuer-sig age-disclosure nonce kb-sig; do
+for mode in issuer-sig age-disclosure nonce kb-sig hdr-window; do
   name="Prover_neg_${mode//-/_}"; bun run ../tools/gen-prover.ts "$INPUT" "$name.toml" "--tamper=$mode" > /dev/null || { echo "gen failed for $mode"; exit 1; }
   if out=$(nargo execute -p "$name" "neg_${mode//-/_}" 2>&1); then
     echo "FAIL  $mode: witness solved, expected an assertion failure"; fail=1
@@ -21,6 +22,13 @@ done
 # positive controls
 bun run ../tools/gen-prover.ts "$INPUT" Prover.toml > /dev/null
 if nargo execute pid_witness > /dev/null 2>&1; then echo "ok    untampered witness solves"; else echo "FAIL  untampered witness does not solve"; fail=1; fi
+# the Bundesdruckerei header key order (x5c, kid, typ, alg; alg and typ about 1 kB into the decoded
+# header): the committed fixture must solve, and a window that misses alg must fail
+BDR="../../prover-sp1/fixtures/bdr-layout-input.json"
+bun run ../tools/gen-prover.ts "$BDR" Prover_shape-bdr-layout.toml > /dev/null && nargo execute -p Prover_shape-bdr-layout wit_bdr_layout > /dev/null 2>&1 \
+  && echo "ok    bdr-layout (x5c, kid, typ, alg) solves" || { echo "FAIL  bdr-layout does not solve"; fail=1; }
+bun run ../tools/gen-prover.ts "$BDR" Prover_neg_hdr_window_bdr.toml --tamper=hdr-window > /dev/null
+if nargo execute -p Prover_neg_hdr_window_bdr neg_hdr_window_bdr > /dev/null 2>&1; then echo "FAIL  bdr-layout window without alg solved"; fail=1; else echo "ok    bdr-layout window without alg rejected"; fi
 # other age shapes and the minimal layout, minted fresh (a throwaway issuer key in a temp dir)
 tmp=$(mktemp -d)
 for variant in "disclosed" "plain" "nested --minimal"; do
