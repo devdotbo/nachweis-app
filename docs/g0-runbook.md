@@ -115,7 +115,7 @@ anchor check lives in the verify path, handlers.rs:352). For G0 the issuer
 identity is established by the companion from the `x5c` leaf of the live
 presentation (companion/src/statement.ts:38-43) and recorded as the live
 issuer key hash, `sha256(0x04 || x || y)` (statement.ts:136,
-circuits/pid-sdjwt/src/main.nr:317). Turning that hash into a registry
+circuits/pid-sdjwt/src/main.nr:315). Turning that hash into a registry
 entry is after G0.
 
 ## 4. Expose the verifier over HTTPS
@@ -163,7 +163,7 @@ FACT, from the verifier and the fixture:
   `x509_hash:` plus base64url(no pad) of SHA-256 over the leaf DER
   (verifier-service/src/state.rs:190-192 via the upstream
   `X509HashClient`; mirrored in verifier-core/src/crypto.rs:70-75). The
-  wallet metadata advertises only this scheme (state.rs:459-461).
+  wallet metadata advertises only this scheme (state.rs:472-473).
 - For `access-leaf.pem` that hash is
   `VE3qp3vLVkU8JyVmXkjL7CSDVxVoTFdTv5fAEwmjKOI` (recomputed with openssl on
   2026-09-08), so `client_id = x509_hash:VE3qp3vLVkU8JyVmXkjL7CSDVxVoTFdTv5fAEwmjKOI`
