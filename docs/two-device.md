@@ -109,10 +109,8 @@ re-approve reopens all three; the same proof on a second session is refused (reg
 `NonceConsumed`, 502 from the bridge); 0 plaintext markers in the bridge log. Ends with
 `REAL-PROOF-LOCAL PASS`, gas figures and `summary.json` in `RUN_DIR` (default `.e2e/real-proof`).
 
-Known bridge behaviour found by the replay check: after a reverted `attestWithProof` the bridge's
-operator nonce cache is one ahead of the chain (alloy's cached nonce filler); its next transaction
-is queued with a nonce gap and its receipt never arrives (chain nonce 14, revoke queued at 15,
-2026-09-08). The script therefore runs the replay last; a bridge restart resets the cache.
+The replay check found a nonce gap after the reverted `attestWithProof` (alloy's cached nonce
+filler, 2026-09-08); fixed in e8baf6a, the bridge now reads the nonce from the chain before every send.
 
 ## Recorded timeline, companion as the phone
 
