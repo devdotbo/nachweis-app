@@ -18,6 +18,7 @@ contract NoirPidVerifierTest is Test {
     uint256 constant EIP170_LIMIT = 24_576;
 
     address owner = makeAddr("owner");
+    address operator = makeAddr("operator");
     address bob = makeAddr("bob");
 
     AttestationRegistry registry;
@@ -34,6 +35,8 @@ contract NoirPidVerifierTest is Test {
         verifier = new NoirPidVerifier(IHonkVerifier(address(honk)), ISSUER_KEY_HASH, POLICY);
         vm.prank(owner);
         registry.setVerifier(POLICY, verifier);
+        vm.prank(owner);
+        registry.setOperator(POLICY, operator, true);
     }
 
     // ------------------------------------------------------------------
@@ -109,9 +112,15 @@ contract NoirPidVerifierTest is Test {
         assertEq(stored.bits, BITS_BOTH);
         assertEq(stored.expiry, f.expiry);
         assertFalse(stored.revoked);
+        assertTrue(registry.nonceConsumed(keccak256(abi.encode(POLICY, f.nonce))));
+        // evidence only until the issuer approves
+        assertFalse(registry.approved(f.subject, POLICY));
+        assertFalse(registry.isEligible(f.subject, POLICY, verifier.BIT_OVER_18()));
+        assertFalse(registry.isEligible(f.subject, POLICY, verifier.BIT_IDENTITY()));
+        vm.prank(operator);
+        registry.approve(f.subject, POLICY);
         assertTrue(registry.isEligible(f.subject, POLICY, verifier.BIT_OVER_18()));
         assertTrue(registry.isEligible(f.subject, POLICY, verifier.BIT_IDENTITY()));
-        assertTrue(registry.nonceConsumed(keccak256(abi.encode(POLICY, f.nonce))));
     }
 
     function test_directVerifyReturnsTrue() public view {

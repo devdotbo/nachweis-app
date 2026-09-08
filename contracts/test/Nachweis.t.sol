@@ -181,6 +181,12 @@ contract NachweisTest is Test {
         Decision memory d = _decision(REQUIRED, uint64(block.timestamp + 1 days));
         vm.prank(stranger); // permissionless submission
         registry.attestWithProof(alice, d, hex"01", _inputs(alice, d));
+        // evidence only: stored, not approved, not eligible
+        assertEq(registry.decisionOf(alice, POLICY).bits, REQUIRED);
+        assertFalse(registry.approved(alice, POLICY));
+        assertFalse(registry.isEligible(alice, POLICY, REQUIRED));
+        vm.prank(operator);
+        registry.approve(alice, POLICY);
         assertTrue(registry.isEligible(alice, POLICY, REQUIRED));
     }
 
@@ -295,13 +301,154 @@ contract NachweisTest is Test {
 
         registry.attestWithProof(alice, d, proof1, _inputs(alice, d));
         registry.attestWithProof(bob, d, proof2, _inputs(bob, d));
-        assertTrue(registry.isEligible(alice, POLICY, REQUIRED));
-        assertTrue(registry.isEligible(bob, POLICY, REQUIRED));
+        assertEq(registry.decisionOf(alice, POLICY).bits, REQUIRED);
+        assertEq(registry.decisionOf(bob, POLICY).bits, REQUIRED);
 
         vm.expectRevert(
-            abi.encodeWithSelector(AttestationRegistry.NonceConsumed.selector, POLICY, keccak256(bytes("public-values/1")))
+            abi.encodeWithSelector(
+                AttestationRegistry.NonceConsumed.selector, POLICY, keccak256(bytes("public-values/1"))
+            )
         );
         registry.attestWithProof(alice, d, proof1, _inputs(alice, d));
+    }
+
+    // ------------------------------------------------------------------
+    // Issuer approval (evidence plus approval, both required)
+    // ------------------------------------------------------------------
+
+    event Approved(address indexed subject, bytes32 indexed policyId, address indexed operator);
+
+    function _attestWithProof(address subject) internal {
+        vm.prank(owner);
+        registry.setVerifier(POLICY, verifier);
+        Decision memory d = _decision(REQUIRED, uint64(block.timestamp + 365 days));
+        vm.prank(stranger);
+        registry.attestWithProof(subject, d, hex"", _inputs(subject, d));
+    }
+
+    function test_proofAttestedRefusedBeforeApprove() public {
+        _attestWithProof(alice);
+        _attest(bob); // bob holds tokens to send to alice
+        vm.prank(bob);
+        subscription.subscribe();
+
+        (bool hasDecision, bool isApproved, bool isRevoked, uint64 expiry) = registry.statusOf(alice, POLICY);
+        assertTrue(hasDecision);
+        assertFalse(isApproved);
+        assertFalse(isRevoked);
+        assertEq(expiry, uint64(block.timestamp + 365 days));
+        assertFalse(registry.isEligible(alice, POLICY, REQUIRED));
+
+        vm.prank(alice);
+        vm.expectRevert(Subscription.NotEligible.selector);
+        subscription.subscribe();
+        vm.prank(bob);
+        vm.expectRevert(abi.encodeWithSelector(FundToken.NotEligible.selector, alice));
+        token.transfer(alice, 1e18);
+
+        vm.prank(operator);
+        vm.expectEmit(true, true, true, true);
+        emit Approved(alice, POLICY, operator);
+        registry.approve(alice, POLICY);
+
+        (, isApproved,,) = registry.statusOf(alice, POLICY);
+        assertTrue(isApproved);
+        assertTrue(registry.isEligible(alice, POLICY, REQUIRED));
+        vm.prank(alice);
+        subscription.subscribe();
+        vm.prank(bob);
+        token.transfer(alice, 1e18);
+        assertEq(token.balanceOf(alice), DEMO_AMOUNT + 1e18);
+    }
+
+    function test_approveByNonOperatorReverts() public {
+        _attestWithProof(alice);
+        vm.prank(stranger);
+        vm.expectRevert(abi.encodeWithSelector(AttestationRegistry.NotOperator.selector, POLICY, stranger));
+        registry.approve(alice, POLICY);
+        vm.prank(alice); // the subject cannot approve itself
+        vm.expectRevert(abi.encodeWithSelector(AttestationRegistry.NotOperator.selector, POLICY, alice));
+        registry.approve(alice, POLICY);
+        assertFalse(registry.isEligible(alice, POLICY, REQUIRED));
+    }
+
+    function test_approveWithoutDecisionReverts() public {
+        vm.prank(operator);
+        vm.expectRevert(abi.encodeWithSelector(AttestationRegistry.NoDecision.selector, alice, POLICY));
+        registry.approve(alice, POLICY);
+    }
+
+    function test_revokeClearsApproval() public {
+        _attestWithProof(alice);
+        vm.prank(operator);
+        registry.approve(alice, POLICY);
+        vm.prank(operator);
+        registry.revoke(alice, POLICY);
+        (bool hasDecision, bool isApproved, bool isRevoked,) = registry.statusOf(alice, POLICY);
+        assertTrue(hasDecision);
+        assertFalse(isApproved);
+        assertTrue(isRevoked);
+        assertFalse(registry.isEligible(alice, POLICY, REQUIRED));
+    }
+
+    function test_replayedProofCannotReopenAfterRevoke() public {
+        _attestWithProof(alice);
+        vm.prank(operator);
+        registry.approve(alice, POLICY);
+        vm.prank(operator);
+        registry.revoke(alice, POLICY);
+        Decision memory d = _decision(REQUIRED, uint64(block.timestamp + 365 days));
+        // same proof again, and a fresh one with a new nonce: both refused
+        vm.expectRevert(abi.encodeWithSelector(AttestationRegistry.DecisionRevoked.selector, alice, POLICY));
+        registry.attestWithProof(alice, d, hex"", _inputs(alice, d));
+        vm.expectRevert(abi.encodeWithSelector(AttestationRegistry.DecisionRevoked.selector, alice, POLICY));
+        registry.attestWithProof(alice, d, abi.encodePacked(keccak256("fresh"), hex"01"), _inputs(alice, d));
+        assertFalse(registry.approved(alice, POLICY));
+        assertFalse(registry.isEligible(alice, POLICY, REQUIRED));
+    }
+
+    function test_approveAfterRevokeReopens() public {
+        _attestWithProof(alice);
+        vm.prank(operator);
+        registry.approve(alice, POLICY);
+        vm.prank(operator);
+        registry.revoke(alice, POLICY);
+        assertFalse(registry.isEligible(alice, POLICY, REQUIRED));
+        vm.prank(operator);
+        registry.approve(alice, POLICY);
+        (, bool isApproved, bool isRevoked,) = registry.statusOf(alice, POLICY);
+        assertTrue(isApproved);
+        assertFalse(isRevoked);
+        assertFalse(registry.decisionOf(alice, POLICY).revoked);
+        assertTrue(registry.isEligible(alice, POLICY, REQUIRED));
+        vm.prank(alice);
+        subscription.subscribe();
+    }
+
+    function test_attestByOperatorEligibleImmediately() public {
+        vm.prank(operator);
+        vm.expectEmit(true, true, true, true);
+        emit Approved(alice, POLICY, operator);
+        registry.attestByOperator(alice, _decision(REQUIRED, uint64(block.timestamp + 365 days)));
+        assertTrue(registry.approved(alice, POLICY));
+        assertTrue(registry.isEligible(alice, POLICY, REQUIRED));
+    }
+
+    function test_expiredApprovedNotEligible() public {
+        _attestWithProof(alice);
+        vm.prank(operator);
+        registry.approve(alice, POLICY);
+        vm.warp(block.timestamp + 365 days);
+        assertTrue(registry.approved(alice, POLICY));
+        assertFalse(registry.isEligible(alice, POLICY, REQUIRED));
+    }
+
+    function test_statusOfWithoutDecision() public view {
+        (bool hasDecision, bool isApproved, bool isRevoked, uint64 expiry) = registry.statusOf(alice, POLICY);
+        assertFalse(hasDecision);
+        assertFalse(isApproved);
+        assertFalse(isRevoked);
+        assertEq(expiry, 0);
     }
 
     // ------------------------------------------------------------------

@@ -18,6 +18,7 @@ contract Sp1PidVerifierTest is Test {
     uint256 constant BITS_BOTH = 0x3;
 
     address owner = makeAddr("owner");
+    address operator = makeAddr("operator");
     address alice = makeAddr("alice");
     address bob = makeAddr("bob");
 
@@ -32,6 +33,8 @@ contract Sp1PidVerifierTest is Test {
         verifier = new Sp1PidVerifier(gateway, VKEY, ISSUER_KEY_HASH, VCT_HASH, POLICY);
         vm.prank(owner);
         registry.setVerifier(POLICY, verifier);
+        vm.prank(owner);
+        registry.setOperator(POLICY, operator, true);
     }
 
     // ------------------------------------------------------------------
@@ -94,15 +97,23 @@ contract Sp1PidVerifierTest is Test {
         assertEq(d.bits, BITS_BOTH);
         assertEq(d.expiry, pv.expiry);
         assertFalse(d.revoked);
+        assertTrue(registry.nonceConsumed(keccak256(abi.encode(POLICY, pv.nonce))));
+        // evidence only until the issuer approves
+        assertFalse(registry.approved(alice, POLICY));
+        assertFalse(registry.isEligible(alice, POLICY, verifier.BIT_OVER_18()));
+        assertFalse(registry.isEligible(alice, POLICY, verifier.BIT_IDENTITY()));
+        vm.prank(operator);
+        registry.approve(alice, POLICY);
         assertTrue(registry.isEligible(alice, POLICY, verifier.BIT_OVER_18()));
         assertTrue(registry.isEligible(alice, POLICY, verifier.BIT_IDENTITY()));
-        assertTrue(registry.nonceConsumed(keccak256(abi.encode(POLICY, pv.nonce))));
     }
 
     function test_notOver18SetsIdentityBitOnly() public {
         Sp1PidVerifier.PublicValues memory pv = _pv(alice);
         pv.over18 = 0;
         _attest(alice, pv, verifier.BIT_IDENTITY());
+        vm.prank(operator);
+        registry.approve(alice, POLICY);
         assertTrue(registry.isEligible(alice, POLICY, verifier.BIT_IDENTITY()));
         assertFalse(registry.isEligible(alice, POLICY, verifier.BIT_OVER_18()));
     }

@@ -4,6 +4,7 @@ pragma solidity 0.8.28;
 import {Test} from "forge-std/Test.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {AttestationRegistry} from "../src/AttestationRegistry.sol";
+import {MockProofVerifier} from "../src/test/MockProofVerifier.sol";
 import {Decision, IEligibility} from "../src/interfaces/IEligibility.sol";
 import {EudiAllowlistChecker} from "../src/uniswap/EudiAllowlistChecker.sol";
 import {IAllowlistChecker} from "../src/uniswap/interfaces/IAllowlistChecker.sol";
@@ -39,7 +40,9 @@ contract EudiAllowlistCheckerTest is Test {
         vm.prank(operator);
         registry.attestByOperator(
             subject,
-            Decision({policyId: POLICY, bits: bits, tier: 1, expiry: expiry, statusRef: keccak256("status/0"), revoked: false})
+            Decision({
+                policyId: POLICY, bits: bits, tier: 1, expiry: expiry, statusRef: keccak256("status/0"), revoked: false
+            })
         );
     }
 
@@ -73,6 +76,41 @@ contract EudiAllowlistCheckerTest is Test {
         assertEq(PermissionFlag.unwrap(f), bytes2(0x0003));
         // An unrelated address stays at NONE.
         assertEq(_flags(bob), bytes2(0));
+    }
+
+    /// @dev Proof evidence alone never opens the pool; the issuer's approve does, revoke closes it,
+    ///      and only approve reopens it.
+    function test_proofEvidenceNeedsApproval() public {
+        MockProofVerifier verifier = new MockProofVerifier(true);
+        vm.prank(owner);
+        registry.setVerifier(POLICY, verifier);
+        Decision memory d = Decision({
+            policyId: POLICY,
+            bits: REQUIRED,
+            tier: 1,
+            expiry: uint64(block.timestamp + 365 days),
+            statusRef: bytes32(0),
+            revoked: false
+        });
+        bytes32[] memory inputs = new bytes32[](4);
+        inputs[0] = bytes32(uint256(uint160(alice)));
+        inputs[1] = POLICY;
+        inputs[2] = bytes32(REQUIRED);
+        inputs[3] = bytes32(uint256(d.expiry));
+        registry.attestWithProof(alice, d, hex"", inputs);
+        assertEq(_flags(alice), bytes2(0));
+
+        vm.prank(operator);
+        registry.approve(alice, POLICY);
+        assertEq(_flags(alice), bytes2(0x0003));
+
+        vm.prank(operator);
+        registry.revoke(alice, POLICY);
+        assertEq(_flags(alice), bytes2(0));
+
+        vm.prank(operator);
+        registry.approve(alice, POLICY);
+        assertEq(_flags(alice), bytes2(0x0003));
     }
 
     function test_noneAfterRevoke() public {
