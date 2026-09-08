@@ -7,8 +7,9 @@ use crate::session::{new_store, Session, State, Store};
 use crate::statement;
 use crate::verifier::VerifierClient;
 use alloy::primitives::{Address, U256};
-use axum::extract::{Path, State as AxState};
+use axum::extract::{Path, Request, State as AxState};
 use axum::http::{HeaderMap, StatusCode};
+use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
@@ -38,10 +39,31 @@ pub type Shared = Arc<AppState>;
 
 pub struct AppError(StatusCode, String);
 
+/// The error text of an `AppError` response, carried as a response extension so the logging
+/// middleware can print it next to the route and status without re-reading the body.
+#[derive(Clone)]
+struct ErrorText(String);
+
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
-        (self.0, Json(json!({ "error": self.1 }))).into_response()
+        let mut res = (self.0, Json(json!({ "error": self.1.clone() }))).into_response();
+        res.extensions_mut().insert(ErrorText(self.1));
+        res
     }
+}
+
+/// Every non-2xx answer leaves one warn line: method, path, status and the error text (empty for
+/// responses that did not come from an `AppError`, such as a rejected JSON body). Added 2026-09-08
+/// after a 502 in a browser run left no trace in bridge.log.
+async fn log_non_success(req: Request, next: Next) -> Response {
+    let method = req.method().clone();
+    let path = req.uri().path().to_string();
+    let res = next.run(req).await;
+    if !res.status().is_success() {
+        let error = res.extensions().get::<ErrorText>().map(|e| e.0.as_str()).unwrap_or("");
+        tracing::warn!(%method, %path, status = res.status().as_u16(), error, "request refused");
+    }
+    res
 }
 
 fn bad(m: impl Into<String>) -> AppError {
@@ -86,6 +108,7 @@ pub fn router(state: Shared) -> Router {
         .route("/revoke", post(revoke))
         .with_state(state)
         .layer(cors)
+        .layer(middleware::from_fn(log_non_success))
 }
 
 async fn health(AxState(st): AxState<Shared>) -> Json<Value> {
@@ -453,6 +476,11 @@ async fn attest(
     let body = body.map(|b| b.0).unwrap_or_default();
     let ch = chain_of(&st)?;
     let session = with_session(&st, id, |s| s.clone())?;
+    if session.proof_system.as_deref().is_some_and(|p| p.starts_with("noir")) {
+        // The phone's proof is attested by the noir-proof route in the same request; a poll can catch
+        // the session at proved while that transaction is in flight. There is nothing to ask for here.
+        return Err(conflict("this session was proved on the phone (noir-ultrahonk); the noir-proof route attests it, no attest request is needed"));
+    }
     if session.state != State::Proved {
         return Err(conflict(format!("session is {:?}, expected proved", session.state).to_lowercase()));
     }
