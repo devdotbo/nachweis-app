@@ -22,6 +22,10 @@ pub struct Config {
     pub policy_id: B256,
     /// verifier-service base URL (VERIFIER_URL). Unset selects local mode.
     pub verifier_url: Option<String>,
+    /// Shared secret the verifier expects on `GET /result/:id` as `X-Result-Token`
+    /// (VERIFIER_RESULT_TOKEN; the verifier's RESULT_TOKEN). Required in verifier mode, because the
+    /// verifier serves the raw presentation only behind its token.
+    pub verifier_result_token: Option<String>,
     /// PROOF_MODE=mock|execute|compressed|groth16 (default mock).
     pub proof_mode: ProofMode,
     /// Directory with vkey.txt, calldata-groth16.json and optionally the guest ELF (PROVER_ARTIFACTS).
@@ -120,6 +124,7 @@ impl Config {
             noir_verifier,
             policy_id,
             verifier_url: env_opt("VERIFIER_URL").map(|u| u.trim_end_matches('/').to_string()),
+            verifier_result_token: env_opt("VERIFIER_RESULT_TOKEN"),
             proof_mode,
             prover_artifacts,
             prover_elf: env_opt("PROVER_ELF").map(PathBuf::from),

@@ -1,0 +1,1257 @@
+From 86785d400506bec885f73bcab18918c85f38693e Mon Sep 17 00:00:00 2001
+From: devbotbo <7118.eth@proton.me>
+Date: Tue, 8 Sep 2026 20:00:22 +0200
+Subject: [PATCH] Minimize GET /result/:id, gate plaintext behind RESULT_TOKEN,
+ cap and expire bridge sessions
+
+The result endpoint now serves a ResultSummary by default: vct, holder and
+nonce binding, the age_equal_or_over predicate, the credential exp and the
+disclosed claim paths. No disclosed string value and no presentation string
+is kept after verification unless the operator turns on a flag.
+
+RESULT_INCLUDES_PRESENTATION now defaults to false and serves the raw
+presentation (the SP1 route's plaintext boundary). RESULT_INCLUDES_NAMES
+(new, default false) serves the parsed view with its values. Either flag
+requires RESULT_TOKEN: reads must carry a matching X-Result-Token header
+(401 otherwise); with a flag on and no token configured the endpoint
+answers 503 instead of serving plaintext. The wallet-facing and relay
+endpoints stay unauthenticated.
+
+POST /request sessions are capped (BRIDGE_MAX_PENDING, default 1000, 429
+beyond) and dropped with their outcome after BRIDGE_SESSION_TTL_SECS
+(default 900), pruned on the next POST /request.
+
+Regression tests with synthetic data: no response carries the fixture's
+given_name or family_name unless the flag is on and the token is presented;
+missing or wrong token is 401, flag without token is 503; a relay session
+never exposes plaintext; cap and TTL behave.
+---
+ verifier-service/src/bridge.rs        | 254 +++++++++++++++-
+ verifier-service/src/handlers.rs      | 106 ++++++-
+ verifier-service/src/main.rs          |  57 +++-
+ verifier-service/src/relay.rs         |   5 +-
+ verifier-service/src/state.rs         |  31 +-
+ verifier-service/tests/bridge_http.rs | 423 ++++++++++++++++++++++----
+ 6 files changed, 795 insertions(+), 81 deletions(-)
+
+diff --git a/verifier-service/src/bridge.rs b/verifier-service/src/bridge.rs
+index 90098e8..26ac556 100644
+--- a/verifier-service/src/bridge.rs
++++ b/verifier-service/src/bridge.rs
+@@ -19,9 +19,12 @@
+ 
+ use std::collections::HashMap;
+ 
++use serde_json::{Map, Value};
+ use tokio::sync::Mutex;
+ use uuid::Uuid;
+ 
++use verifier_core::VerifiedPid;
++
+ /// Shortest nonce accepted. A 16-character token from the allowed alphabet is
+ /// about 96 bits, the floor for replay protection to mean anything.
+ pub const MIN_NONCE_LEN: usize = 16;
+@@ -57,6 +60,84 @@ pub fn validate_nonce(nonce: &str) -> Result<(), String> {
+     Ok(())
+ }
+ 
++/// Default cap on sessions created through `POST /request` that still wait for
++/// their wallet response. `BRIDGE_MAX_PENDING` overrides it.
++pub const DEFAULT_MAX_PENDING: usize = 1000;
++/// Default lifetime of a bridge session, pending or completed, measured from
++/// its creation. `BRIDGE_SESSION_TTL_SECS` overrides it. Longer than the
++/// bridge's own 10-minute poll timeout, so a slow wallet still gets its result
++/// read before the session is dropped.
++pub const DEFAULT_SESSION_TTL_SECS: i64 = 900;
++
++/// What `GET /result/:id` reports about a verified session by default: the
++/// outcome of every check and the predicate the request asked for, and no
++/// disclosed string value. Names (`given_name`, `family_name`) and the raw
++/// presentation are behind explicit flags and the result token, see
++/// `docs/bridge-mode.md`.
++///
++/// Built once, at verification time, from the parsed presentation; only
++/// booleans, integers and claim PATHS are copied out of the disclosed view, so
++/// no value the wallet disclosed can reach this struct by accident.
++#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
++pub struct ResultSummary {
++    /// The credential type the request asked for and the presentation carried.
++    pub vct: String,
++    /// The KB-JWT was present and verified against the `cnf` key.
++    pub holder_bound: bool,
++    /// The KB-JWT `nonce` matched the request's nonce. Verification rejects a
++    /// mismatch, so this is `true` for every verified session; it is stated so
++    /// a consumer does not have to know that.
++    pub nonce_bound: bool,
++    /// The disclosed `age_equal_or_over` predicates, e.g. `{"18": true}`. Only
++    /// boolean values are copied; absent when the wallet disclosed none.
++    #[serde(skip_serializing_if = "Option::is_none")]
++    pub age_equal_or_over: Option<Map<String, Value>>,
++    /// The issuer JWT `exp`, unix seconds, when the credential has one.
++    /// Verification rejects an expired credential, so a verified session's
++    /// value lies in the future at verification time.
++    #[serde(skip_serializing_if = "Option::is_none")]
++    pub credential_exp: Option<i64>,
++    /// Dotted paths of the disclosed claims (`given_name`,
++    /// `age_equal_or_over.18`, ...): which claims the wallet revealed, never
++    /// what they said.
++    pub disclosed_paths: Vec<String>,
++}
++
++impl ResultSummary {
++    pub fn from_verified(pid: &VerifiedPid) -> Self {
++        let mut age: Map<String, Value> = Map::new();
++        for claim in &pid.view.disclosed {
++            match claim.path.as_slice() {
++                // A nested disclosure: `age_equal_or_over.18 = true`.
++                [root, bound] if root == "age_equal_or_over" => {
++                    if let Value::Bool(b) = claim.value {
++                        age.insert(bound.clone(), Value::Bool(b));
++                    }
++                }
++                // The whole object disclosed at once: `{"18": true, "65": false}`.
++                [root] if root == "age_equal_or_over" => {
++                    if let Value::Object(map) = &claim.value {
++                        for (bound, v) in map {
++                            if let Value::Bool(b) = v {
++                                age.insert(bound.clone(), Value::Bool(*b));
++                            }
++                        }
++                    }
++                }
++                _ => {}
++            }
++        }
++        Self {
++            vct: pid.vct.clone(),
++            holder_bound: pid.holder_bound,
++            nonce_bound: true,
++            age_equal_or_over: (!age.is_empty()).then_some(age),
++            credential_exp: pid.view.claims.get("exp").and_then(Value::as_i64),
++            disclosed_paths: pid.view.disclosed.iter().map(|d| d.key()).collect(),
++        }
++    }
++}
++
+ /// One session created through `POST /request`.
+ #[derive(Debug, Clone)]
+ pub struct BridgeSession {
+@@ -77,12 +158,31 @@ pub enum ClaimError {
+     /// Another session with this nonce is still waiting for its wallet
+     /// response. Mapped to 409 in `handlers.rs`.
+     NonceInUse { session_id: Uuid },
++    /// `max_pending` sessions already wait for a wallet. Mapped to 429.
++    PendingCapReached { max: usize },
+ }
+ 
+ /// The bridge session table.
+-#[derive(Debug, Default)]
++#[derive(Debug)]
+ pub struct BridgeState {
+     sessions: Mutex<HashMap<Uuid, BridgeSession>>,
++    /// Most sessions allowed to wait for a wallet response at once. A caller
++    /// that can create sessions can otherwise grow this table, the results map
++    /// and the openid4vp session store without bound.
++    pub max_pending: usize,
++    /// Seconds after creation at which a session, pending or completed, is
++    /// dropped by `prune_expired`.
++    pub ttl_secs: i64,
++}
++
++impl Default for BridgeState {
++    fn default() -> Self {
++        Self {
++            sessions: Mutex::new(HashMap::new()),
++            max_pending: DEFAULT_MAX_PENDING,
++            ttl_secs: DEFAULT_SESSION_TTL_SECS,
++        }
++    }
+ }
+ 
+ impl BridgeState {
+@@ -90,6 +190,31 @@ impl BridgeState {
+         Self::default()
+     }
+ 
++    /// Drop every session created `ttl_secs` or more before `now` and return
++    /// their ids, so the caller can drop the matching outcomes too. Called from
++    /// `POST /request`, the one place the table grows.
++    pub async fn prune_expired(&self, now: i64) -> Vec<Uuid> {
++        let mut sessions = self.sessions.lock().await;
++        let expired: Vec<Uuid> = sessions
++            .iter()
++            .filter(|(_, s)| now - s.created_at >= self.ttl_secs)
++            .map(|(id, _)| *id)
++            .collect();
++        for id in &expired {
++            sessions.remove(id);
++        }
++        expired
++    }
++
++    pub async fn pending_count(&self) -> usize {
++        self.sessions
++            .lock()
++            .await
++            .values()
++            .filter(|s| !s.completed)
++            .count()
++    }
++
+     /// Register a session under its nonce. Refused when a PENDING session
+     /// already carries the same nonce: two live requests with one nonce would
+     /// let a single presentation answer either of them.
+@@ -104,6 +229,12 @@ impl BridgeState {
+         {
+             return Err(ClaimError::NonceInUse { session_id: *other });
+         }
++        let pending = sessions.values().filter(|s| !s.completed).count();
++        if pending >= self.max_pending {
++            return Err(ClaimError::PendingCapReached {
++                max: self.max_pending,
++            });
++        }
+         sessions.insert(id, session);
+         Ok(())
+     }
+@@ -199,6 +330,127 @@ mod tests {
+         assert_eq!(bridge.complete(Uuid::new_v4()).await, None);
+     }
+ 
++    #[tokio::test]
++    async fn the_pending_cap_counts_pending_sessions_only() {
++        let bridge = BridgeState {
++            max_pending: 2,
++            ..BridgeState::default()
++        };
++        let first = Uuid::new_v4();
++        bridge.claim(first, session("n1")).await.unwrap();
++        bridge.claim(Uuid::new_v4(), session("n2")).await.unwrap();
++        assert_eq!(
++            bridge.claim(Uuid::new_v4(), session("n3")).await.unwrap_err(),
++            ClaimError::PendingCapReached { max: 2 }
++        );
++        assert_eq!(bridge.pending_count().await, 2);
++        bridge.complete(first).await.unwrap();
++        bridge.claim(Uuid::new_v4(), session("n3")).await.unwrap();
++        assert_eq!(bridge.pending_count().await, 2);
++    }
++
++    #[tokio::test]
++    async fn expired_sessions_are_pruned_pending_or_not() {
++        let bridge = BridgeState {
++            ttl_secs: 100,
++            ..BridgeState::default()
++        };
++        let old_pending = Uuid::new_v4();
++        let old_done = Uuid::new_v4();
++        let fresh = Uuid::new_v4();
++        bridge.claim(old_pending, session("n1")).await.unwrap();
++        bridge.claim(old_done, session("n2")).await.unwrap();
++        bridge.complete(old_done).await.unwrap();
++        let mut s = session("n3");
++        s.created_at = 50;
++        bridge.claim(fresh, s).await.unwrap();
++
++        assert!(bridge.prune_expired(99).await.is_empty());
++        let mut pruned = bridge.prune_expired(100).await;
++        pruned.sort();
++        let mut expected = vec![old_pending, old_done];
++        expected.sort();
++        assert_eq!(pruned, expected);
++        assert!(!bridge.is_bridge_session(old_pending).await);
++        assert!(bridge.is_bridge_session(fresh).await);
++        // The pruned nonce is free again.
++        bridge.claim(Uuid::new_v4(), session("n1")).await.unwrap();
++    }
++
++    fn verified(disclosed: Vec<(Vec<&str>, Value)>, exp: Option<i64>) -> VerifiedPid {
++        use verifier_core::disclosure::{DisclosedClaim, RevealedView};
++        let mut claims = serde_json::json!({
++            "iss": "https://issuer.example",
++            "vct": "urn:eudi:pid:de:1",
++            "given_name": "Erika",
++            "family_name": "Mustermann",
++            "age_equal_or_over": { "18": true }
++        });
++        if let Some(exp) = exp {
++            claims["exp"] = Value::from(exp);
++        }
++        VerifiedPid {
++            vct: "urn:eudi:pid:de:1".into(),
++            view: RevealedView {
++                claims,
++                disclosed: disclosed
++                    .into_iter()
++                    .map(|(path, value)| DisclosedClaim {
++                        path: path.into_iter().map(String::from).collect(),
++                        value,
++                    })
++                    .collect(),
++            },
++            status_ref: None,
++            holder_bound: true,
++        }
++    }
++
++    #[test]
++    fn the_summary_carries_predicates_and_paths_but_no_disclosed_value() {
++        let pid = verified(
++            vec![
++                (vec!["age_equal_or_over", "18"], Value::Bool(true)),
++                (vec!["family_name"], Value::from("Mustermann")),
++                (vec!["given_name"], Value::from("Erika")),
++            ],
++            Some(1_900_000_000),
++        );
++        let summary = ResultSummary::from_verified(&pid);
++        let json = serde_json::to_string(&summary).unwrap();
++        assert!(!json.contains("Erika"), "{json}");
++        assert!(!json.contains("Mustermann"), "{json}");
++        assert!(!json.contains("issuer.example"), "{json}");
++        assert_eq!(summary.age_equal_or_over.unwrap()["18"], Value::Bool(true));
++        assert_eq!(summary.credential_exp, Some(1_900_000_000));
++        assert!(summary.nonce_bound && summary.holder_bound);
++        assert_eq!(
++            summary.disclosed_paths,
++            vec!["age_equal_or_over.18", "family_name", "given_name"]
++        );
++    }
++
++    #[test]
++    fn the_summary_reads_a_whole_age_object_and_ignores_non_booleans() {
++        let pid = verified(
++            vec![(
++                vec!["age_equal_or_over"],
++                serde_json::json!({ "18": true, "65": false, "note": "Erika" }),
++            )],
++            None,
++        );
++        let summary = ResultSummary::from_verified(&pid);
++        let age = summary.age_equal_or_over.unwrap();
++        assert_eq!(age.len(), 2);
++        assert_eq!(age["18"], Value::Bool(true));
++        assert_eq!(age["65"], Value::Bool(false));
++        assert_eq!(summary.credential_exp, None);
++
++        let none = ResultSummary::from_verified(&verified(vec![], None));
++        assert_eq!(none.age_equal_or_over, None);
++        assert!(none.disclosed_paths.is_empty());
++    }
++
+     #[tokio::test]
+     async fn complete_returns_the_redirect_uri() {
+         let bridge = BridgeState::new();
+diff --git a/verifier-service/src/handlers.rs b/verifier-service/src/handlers.rs
+index 6e06056..d010b5d 100644
+--- a/verifier-service/src/handlers.rs
++++ b/verifier-service/src/handlers.rs
+@@ -200,16 +200,20 @@ async fn receive_response(
+                             "vct": &verified.vct,
+                             "disclosed": verified.view.disclosed.iter().map(|d| d.key()).collect::<Vec<_>>(),
+                         });
+-                        // The raw string is kept only when the operator wants
+-                        // `GET /result/:id` to serve it; otherwise the parsed
+-                        // summary is all that outlives this callback.
++                        // The minimized summary is all that outlives this
++                        // callback by default. The raw string and the parsed
++                        // view with its disclosed values are kept only when the
++                        // operator turned the matching flag on.
++                        let summary = crate::bridge::ResultSummary::from_verified(&verified);
+                         let presentation = st
+                             .result_includes_presentation
+                             .then_some(presentation);
++                        let pid = st.result_includes_names.then(|| Box::new(verified));
+                         st.results.lock().await.insert(
+                             session.uuid,
+                             SessionResult::Verified {
+-                                pid: Box::new(verified),
++                                summary,
++                                pid,
+                                 presentation,
+                             },
+                         );
+@@ -422,8 +426,8 @@ async fn inspect(
+     let stored = {
+         let results = state.results.lock().await;
+         match results.get(&uuid) {
+-            Some(SessionResult::Verified { pid, .. }) => {
+-                Ok(pid.view.disclosed.iter().map(|d| d.key()).collect())
++            Some(SessionResult::Verified { summary, .. }) => {
++                Ok(summary.disclosed_paths.clone())
+             }
+             Some(SessionResult::Rejected(reason)) => Err(reason.clone()),
+             None => Ok(Vec::new()),
+@@ -1103,6 +1107,24 @@ async fn bridge_request(
+             .map_err(|e| AppError::bad(format!("redirect_uri must be an absolute URL: {e}")))?;
+     }
+ 
++    // The table grows here and nowhere else, so this is where it is pruned:
++    // sessions past their TTL go, and so do their outcomes.
++    let expired = state.bridge.prune_expired(now_unix()).await;
++    if !expired.is_empty() {
++        let mut results = state.results.lock().await;
++        for id in &expired {
++            results.remove(id);
++        }
++    }
++    if state.bridge.pending_count().await >= state.bridge.max_pending {
++        // Checked before the signed request is built, so a flood does not cost
++        // a signature each; `claim` re-checks under its lock.
++        return Err(AppError::TooManyRequests(format!(
++            "{} sessions are already waiting for a wallet response (BRIDGE_MAX_PENDING); retry later",
++            state.bridge.max_pending
++        )));
++    }
++
+     let (session_id, url) = create_request(&state, body.nonce.clone()).await?;
+     state
+         .bridge
+@@ -1122,6 +1144,9 @@ async fn bridge_request(
+             crate::bridge::ClaimError::NonceInUse { session_id } => AppError::Conflict(format!(
+                 "nonce is already in use by pending session {session_id}"
+             )),
++            crate::bridge::ClaimError::PendingCapReached { max } => AppError::TooManyRequests(
++                format!("{max} sessions are already waiting for a wallet response (BRIDGE_MAX_PENDING); retry later"),
++            ),
+         })?;
+ 
+     // `session` / `authorization_request` are the names the bridge client
+@@ -1140,35 +1165,89 @@ async fn bridge_request(
+     ))
+ }
+ 
+-/// The outcome of a default-path session, with the presentation.
++/// Gate on `GET /result/:id`: the shared secret between the verifier and the
++/// bridge.
++///
++/// With `RESULT_TOKEN` set, every read must carry it in `X-Result-Token`
++/// (401 otherwise). Without it, the endpoint serves the minimized summary
++/// only; if the operator also turned on a plaintext flag
++/// (`RESULT_INCLUDES_PRESENTATION`, `RESULT_INCLUDES_NAMES`), the endpoint
++/// refuses with 503 rather than hand plaintext to an unauthenticated caller.
++fn require_result_token(state: &AppState, headers: &axum::http::HeaderMap) -> Result<(), AppError> {
++    let plaintext = state.result_includes_presentation || state.result_includes_names;
++    match state.result_token.as_deref() {
++        None if plaintext => Err(AppError::Unavailable(
++            "RESULT_TOKEN is not set: GET /result/:id refuses to serve plaintext while \
++             RESULT_INCLUDES_PRESENTATION or RESULT_INCLUDES_NAMES is on; set RESULT_TOKEN \
++             (the bridge sends it as X-Result-Token) or turn both flags off"
++                .into(),
++        )),
++        None => Ok(()),
++        Some(expected) => {
++            let presented = headers
++                .get("x-result-token")
++                .and_then(|v| v.to_str().ok())
++                .ok_or_else(|| {
++                    AppError::Unauthorized("X-Result-Token header missing".into())
++                })?;
++            if crate::relay::tokens_match(expected, presented) {
++                Ok(())
++            } else {
++                Err(AppError::Unauthorized("X-Result-Token does not match".into()))
++            }
++        }
++    }
++}
++
++/// The outcome of a default-path session, minimized.
+ ///
+ /// `pending` is only reported for sessions created through `POST /request`; a
+ /// landing-page session with no outcome yet is 404 here, and relay or ZK
+ /// sessions have their own endpoints. A verified outcome is served for any
+ /// default-path session, so the two creation routes share one store.
++///
++/// A verified answer carries `result` (the `ResultSummary`: vct, holder and
++/// nonce binding, the age predicate, credential expiry, disclosed paths) and
++/// nothing the wallet disclosed as a string. `presentation` and `verified_pid`
++/// appear only behind their flags, and then only to a caller that presented
++/// the result token.
+ async fn bridge_result(
+     State(state): State<Arc<AppState>>,
+     Path(id): Path<String>,
++    headers: axum::http::HeaderMap,
+ ) -> Result<Json<Value>, AppError> {
+     let uuid: Uuid = id
+         .parse()
+         .map_err(|_| AppError::bad("invalid session id"))?;
++    require_result_token(&state, &headers)?;
+     let bridge_session = state.bridge.get(uuid).await;
+     let nonce = bridge_session.as_ref().map(|s| s.nonce.clone());
+     let results = state.results.lock().await;
+     match results.get(&uuid) {
+-        Some(SessionResult::Verified { pid, presentation }) => {
++        Some(SessionResult::Verified {
++            summary,
++            pid,
++            presentation,
++        }) => {
+             let mut out = serde_json::json!({
+                 "status": "verified",
+                 "session_id": uuid,
+                 "nonce": nonce,
+-                "verified_pid": pid,
++                "result": summary,
+             });
+             match presentation {
+                 Some(p) => out["presentation"] = Value::from(p.as_str()),
+                 None => {
+                     out["presentation_withheld"] = Value::from(
+-                        "RESULT_INCLUDES_PRESENTATION=false: only the parsed summary is kept",
++                        "RESULT_INCLUDES_PRESENTATION is off: the raw presentation was not kept",
++                    )
++                }
++            }
++            match pid {
++                Some(pid) => out["verified_pid"] = serde_json::to_value(pid).unwrap_or(Value::Null),
++                None => {
++                    out["verified_pid_withheld"] = Value::from(
++                        "RESULT_INCLUDES_NAMES is off: disclosed values were not kept",
+                     )
+                 }
+             }
+@@ -1197,6 +1276,11 @@ pub enum AppError {
+     Internal(String),
+     /// The caller is known but not allowed (a wrong or missing pickup token).
+     Forbidden(String),
++    /// The caller did not present the shared secret the endpoint requires
++    /// (`X-Result-Token`).
++    Unauthorized(String),
++    /// A resource cap (the pending bridge session cap) is reached.
++    TooManyRequests(String),
+     /// The resource existed and was consumed (one-time pickup).
+     Gone(String),
+     /// The action would overwrite state that must stand (a second wallet
+@@ -1228,6 +1312,8 @@ impl IntoResponse for AppError {
+             AppError::Internal(m) => (StatusCode::INTERNAL_SERVER_ERROR, m),
+             AppError::Unavailable(m) => (StatusCode::SERVICE_UNAVAILABLE, m),
+             AppError::Forbidden(m) => (StatusCode::FORBIDDEN, m),
++            AppError::Unauthorized(m) => (StatusCode::UNAUTHORIZED, m),
++            AppError::TooManyRequests(m) => (StatusCode::TOO_MANY_REQUESTS, m),
+             AppError::Gone(m) => (StatusCode::GONE, m),
+             AppError::Conflict(m) => (StatusCode::CONFLICT, m),
+         };
+diff --git a/verifier-service/src/main.rs b/verifier-service/src/main.rs
+index 21b5302..5353ebe 100644
+--- a/verifier-service/src/main.rs
++++ b/verifier-service/src/main.rs
+@@ -69,11 +69,30 @@ struct Args {
+     #[arg(long, env = "RELAY_PICKUP_ONCE", default_value = "true")]
+     relay_pickup_once: bool,
+     /// Verifier mode for the bridge: keep the decrypted SD-JWT presentation of a
+-    /// verified session in memory and return it from `GET /result/:id`. Meant
+-    /// for a bridge on the same host; set to `false` to serve only the parsed
+-    /// summary (the bridge's verifier mode then cannot work).
+-    #[arg(long, env = "RESULT_INCLUDES_PRESENTATION", default_value = "true")]
++    /// verified session in memory and return it from `GET /result/:id`. Off by
++    /// default; the endpoint then serves the minimized summary only. Turning it
++    /// on is the plaintext boundary of the SP1 route and requires RESULT_TOKEN.
++    #[arg(long, env = "RESULT_INCLUDES_PRESENTATION", default_value = "false")]
+     result_includes_presentation: bool,
++    /// Keep the parsed PID view with its disclosed values (given_name,
++    /// family_name, ...) and return it from `GET /result/:id` as
++    /// `verified_pid`. Off by default; turning it on requires RESULT_TOKEN.
++    #[arg(long, env = "RESULT_INCLUDES_NAMES", default_value = "false")]
++    result_includes_names: bool,
++    /// Shared secret for `GET /result/:id`: the bridge sends it as
++    /// `X-Result-Token`. When set, every read of that endpoint needs it. When
++    /// unset while RESULT_INCLUDES_PRESENTATION or RESULT_INCLUDES_NAMES is on,
++    /// the endpoint answers 503 rather than serve plaintext unauthenticated.
++    #[arg(long, env = "RESULT_TOKEN")]
++    result_token: Option<String>,
++    /// Most `POST /request` sessions allowed to wait for a wallet response at
++    /// once; further requests get 429 until one completes or expires.
++    #[arg(long, env = "BRIDGE_MAX_PENDING", default_value = "1000")]
++    bridge_max_pending: usize,
++    /// Seconds after creation at which a `POST /request` session and its
++    /// outcome are dropped (pruned on the next `POST /request`).
++    #[arg(long, env = "BRIDGE_SESSION_TTL_SECS", default_value = "900")]
++    bridge_session_ttl_secs: i64,
+ }
+ 
+ #[tokio::main]
+@@ -146,6 +165,13 @@ async fn main() -> Result<()> {
+     .await?;
+     state.relay.pickup_once = args.relay_pickup_once;
+     state.result_includes_presentation = args.result_includes_presentation;
++    state.result_includes_names = args.result_includes_names;
++    state.result_token = args
++        .result_token
++        .clone()
++        .filter(|t| !t.trim().is_empty());
++    state.bridge.max_pending = args.bridge_max_pending;
++    state.bridge.ttl_secs = args.bridge_session_ttl_secs;
+     let state = std::sync::Arc::new(state);
+ 
+     eprintln!("verifier-service");
+@@ -198,12 +224,27 @@ async fn main() -> Result<()> {
+         }
+     );
+ 
++    let plaintext = state.result_includes_presentation || state.result_includes_names;
+     eprintln!(
+-        "  bridge mode: POST /request + GET /result/:id ({})",
+-        if args.result_includes_presentation {
+-            "presentation served to the caller; RESULT_INCLUDES_PRESENTATION=false to withhold"
++        "  bridge mode: POST /request + GET /result/:id, {} pending max, {}s TTL",
++        state.bridge.max_pending, state.bridge.ttl_secs
++    );
++    eprintln!(
++        "  result     : {}{}{}",
++        if state.result_includes_presentation {
++            "raw presentation served (RESULT_INCLUDES_PRESENTATION)"
++        } else {
++            "minimized summary, no presentation"
++        },
++        if state.result_includes_names {
++            ", disclosed values served (RESULT_INCLUDES_NAMES)"
+         } else {
+-            "presentation withheld; parsed summary only"
++            ", no disclosed values"
++        },
++        match (state.result_token.is_some(), plaintext) {
++            (true, _) => "; X-Result-Token required (RESULT_TOKEN set)",
++            (false, true) => "; RESULT_TOKEN UNSET: GET /result/:id will answer 503",
++            (false, false) => "; unauthenticated (set RESULT_TOKEN to require X-Result-Token)",
+         }
+     );
+ 
+diff --git a/verifier-service/src/relay.rs b/verifier-service/src/relay.rs
+index 4817688..2ea84c9 100644
+--- a/verifier-service/src/relay.rs
++++ b/verifier-service/src/relay.rs
+@@ -170,8 +170,9 @@ pub fn random_token() -> String {
+ }
+ 
+ /// Constant-time equality for tokens of equal length; unequal lengths are
+-/// unequal without leaking where they differ.
+-fn tokens_match(a: &str, b: &str) -> bool {
++/// unequal without leaking where they differ. Shared by the pickup token and
++/// the result token.
++pub(crate) fn tokens_match(a: &str, b: &str) -> bool {
+     let (a, b) = (a.as_bytes(), b.as_bytes());
+     if a.len() != b.len() {
+         return false;
+diff --git a/verifier-service/src/state.rs b/verifier-service/src/state.rs
+index 62c8644..9f13c03 100644
+--- a/verifier-service/src/state.rs
++++ b/verifier-service/src/state.rs
+@@ -106,11 +106,19 @@ pub struct AppState {
+     /// with a caller-supplied nonce, so `GET /result/:id` can report `pending`
+     /// and the nonce can be refused while it is in flight.
+     pub bridge: crate::bridge::BridgeState,
+-    /// When true (the default), a verified session keeps the decrypted SD-JWT
+-    /// presentation string in memory and `GET /result/:id` returns it. Set to
+-    /// false to keep only the parsed summary, which also disables verifier mode
+-    /// for the bridge.
++    /// When true, a verified session keeps the decrypted SD-JWT presentation
++    /// string in memory and `GET /result/:id` returns it (the bridge's verifier
++    /// mode needs this). Off by default: the endpoint then serves the minimized
++    /// `ResultSummary` only. Serving it requires `result_token`.
+     pub result_includes_presentation: bool,
++    /// When true, a verified session keeps the parsed PID view (disclosed
++    /// values, names included) and `GET /result/:id` returns it as
++    /// `verified_pid`. Off by default. Serving it requires `result_token`.
++    pub result_includes_names: bool,
++    /// Shared secret for `GET /result/:id` (`X-Result-Token`). When set, every
++    /// read of that endpoint must present it. When unset while either plaintext
++    /// flag above is on, the endpoint answers 503 instead of serving plaintext.
++    pub result_token: Option<String>,
+ }
+ 
+ pub(crate) enum StatusFetcher {
+@@ -120,11 +128,14 @@ pub(crate) enum StatusFetcher {
+ }
+ 
+ pub(crate) enum SessionResult {
+-    /// The parsed summary, plus the raw presentation string exactly as it came
+-    /// out of the decrypted `vp_token` (issuer JWT, disclosures and KB-JWT).
+-    /// `None` when `result_includes_presentation` is off.
++    /// The minimized summary (always), the parsed PID view with its disclosed
++    /// values (only when `result_includes_names` is on), and the raw
++    /// presentation string exactly as it came out of the decrypted `vp_token`
++    /// (only when `result_includes_presentation` is on). What is not kept here
++    /// does not outlive the verification callback.
+     Verified {
+-        pid: Box<VerifiedPid>,
++        summary: crate::bridge::ResultSummary,
++        pid: Option<Box<VerifiedPid>>,
+         presentation: Option<String>,
+     },
+     Rejected(String),
+@@ -255,7 +266,9 @@ impl AppState {
+             zk,
+             relay: crate::relay::RelayState::new(true),
+             bridge: crate::bridge::BridgeState::new(),
+-            result_includes_presentation: true,
++            result_includes_presentation: false,
++            result_includes_names: false,
++            result_token: None,
+         })
+     }
+ }
+diff --git a/verifier-service/tests/bridge_http.rs b/verifier-service/tests/bridge_http.rs
+index 34543f4..4a7fcdf 100644
+--- a/verifier-service/tests/bridge_http.rs
++++ b/verifier-service/tests/bridge_http.rs
+@@ -31,8 +31,39 @@ use verifier_service::state::{AppState, CertSource};
+ 
+ /// What the bridge sends: hex(sha256(address || challenge)), 64 characters.
+ const NONCE: &str = "538cc3ecfb6325d0f4adb5c784a8caac93bbac1cd69b10701b210ff8e66f84ab";
++/// A second caller nonce, for tests that need two pending sessions.
++const NONCE_2: &str = "0f4adb5c784a8caac93bbac1cd69b10701b210ff8e66f84ab538cc3ecfb6325d";
++/// The shared secret the bridge presents as `X-Result-Token`.
++const TOKEN: &str = "bridge-test-result-token";
++/// The disclosed values the minted presentation carries. No response may
++/// contain them unless the operator turned names on AND the caller presented
++/// the token.
++const GIVEN_NAME: &str = "Erika";
++const FAMILY_NAME: &str = "Mustermann";
++
++/// The operator's knobs for `GET /result/:id`. `Default` is what the service
++/// does with no environment: minimized result, no token.
++#[derive(Default, Clone)]
++struct Knobs {
++    presentation: bool,
++    names: bool,
++    token: Option<&'static str>,
++    max_pending: Option<usize>,
++    ttl_secs: Option<i64>,
++}
+ 
+-async fn app(result_includes_presentation: bool) -> axum::Router {
++impl Knobs {
++    /// The bridge's verifier-mode configuration: raw presentation behind the token.
++    fn verifier_mode() -> Self {
++        Self {
++            presentation: true,
++            token: Some(TOKEN),
++            ..Self::default()
++        }
++    }
++}
++
++async fn app_with(knobs: Knobs) -> axum::Router {
+     let mut state = AppState::new(
+         "http://127.0.0.1:0/".parse().unwrap(),
+         CertSource::Ephemeral,
+@@ -44,10 +75,32 @@ async fn app(result_includes_presentation: bool) -> axum::Router {
+     )
+     .await
+     .expect("build offline app state");
+-    state.result_includes_presentation = result_includes_presentation;
++    state.result_includes_presentation = knobs.presentation;
++    state.result_includes_names = knobs.names;
++    state.result_token = knobs.token.map(str::to_string);
++    if let Some(max) = knobs.max_pending {
++        state.bridge.max_pending = max;
++    }
++    if let Some(ttl) = knobs.ttl_secs {
++        state.bridge.ttl_secs = ttl;
++    }
+     handlers::router(Arc::new(state))
+ }
+ 
++/// The default service: minimized result, no token.
++async fn app() -> axum::Router {
++    app_with(Knobs::default()).await
++}
++
++fn assert_no_plaintext(body: &Value, what: &str) {
++    let text = body.to_string();
++    for needle in [GIVEN_NAME, FAMILY_NAME] {
++        assert!(!text.contains(needle), "{what} leaks {needle}: {text}");
++    }
++    assert!(body.get("presentation").is_none(), "{what} has a presentation: {text}");
++    assert!(body.get("verified_pid").is_none(), "{what} has verified_pid: {text}");
++}
++
+ async fn send(router: &axum::Router, req: Request<Body>) -> (StatusCode, Vec<u8>) {
+     let response = router.clone().oneshot(req).await.unwrap();
+     let status = response.status();
+@@ -69,6 +122,27 @@ async fn get_json(router: &axum::Router, uri: &str) -> (StatusCode, Value) {
+     )
+ }
+ 
++/// `GET` with the result token, the way the bridge reads `/result/:id`.
++async fn get_json_with_token(
++    router: &axum::Router,
++    uri: &str,
++    token: &str,
++) -> (StatusCode, Value) {
++    let (status, bytes) = send(
++        router,
++        Request::builder()
++            .uri(uri)
++            .header("x-result-token", token)
++            .body(Body::empty())
++            .unwrap(),
++    )
++    .await;
++    (
++        status,
++        serde_json::from_slice(&bytes).unwrap_or(Value::Null),
++    )
++}
++
+ async fn post_json(router: &axum::Router, uri: &str, body: Value) -> (StatusCode, Value) {
+     let (status, bytes) = send(
+         router,
+@@ -147,9 +221,10 @@ fn public_jwk(secret_key: &SecretKey) -> Value {
+     })
+ }
+ 
+-/// Mint a German PID SD-JWT VC presentation (`issuer_jwt~disclosure~kb_jwt`)
+-/// with one disclosure (`given_name`), a self-signed issuer leaf in `x5c`, and a
+-/// KB-JWT bound to `nonce` and `aud` at `iat`. Every run uses fresh keys.
++/// Mint a German PID SD-JWT VC presentation (`issuer_jwt~disclosures~kb_jwt`)
++/// with three disclosures (`given_name`, `family_name`, `age_equal_or_over.18`),
++/// an `exp` one day out, a self-signed issuer leaf in `x5c`, and a KB-JWT bound
++/// to `nonce` and `aud` at `iat`. Every run uses fresh keys.
+ fn mint_presentation(nonce: &str, aud: &str, iat: i64) -> String {
+     let issuer_kp = rcgen::KeyPair::generate().unwrap();
+     let mut params =
+@@ -167,23 +242,31 @@ fn mint_presentation(nonce: &str, aud: &str, iat: i64) -> String {
+     let holder_secret = SecretKey::from_pkcs8_der(&holder_kp.serialize_der()).unwrap();
+     let holder_signing: SigningKey = (&holder_secret).into();
+ 
+-    let disclosure = BASE64_URL_SAFE_NO_PAD.encode(
+-        serde_json::to_vec(&json!(["YnJpZGdlLXRlc3Qtc2FsdA", "given_name", "Erika"])).unwrap(),
+-    );
+-    let sd_digest = BASE64_URL_SAFE_NO_PAD.encode(Sha256::digest(disclosure.as_bytes()));
++    let disclose = |salt: &str, name: &str, value: Value| {
++        let d = BASE64_URL_SAFE_NO_PAD
++            .encode(serde_json::to_vec(&json!([salt, name, value])).unwrap());
++        let digest = BASE64_URL_SAFE_NO_PAD.encode(Sha256::digest(d.as_bytes()));
++        (d, digest)
++    };
++    let (given, given_digest) = disclose("YnJpZGdlLXRlc3Qtc2FsdA", "given_name", json!(GIVEN_NAME));
++    let (family, family_digest) =
++        disclose("YnJpZGdlLXRlc3Qtc2FsdB", "family_name", json!(FAMILY_NAME));
++    let (over18, over18_digest) = disclose("YnJpZGdlLXRlc3Qtc2FsdC", "18", json!(true));
+ 
+     let issuer_header = json!({ "alg": "ES256", "typ": "dc+sd-jwt", "x5c": [x5c_leaf] });
+     let issuer_payload = json!({
+         "iss": "https://bridge-test-issuer.example/pid-de",
+         "vct": PID_VCT,
+         "iat": iat,
++        "exp": iat + 86_400,
+         "_sd_alg": "sha-256",
+-        "_sd": [sd_digest],
++        "_sd": [given_digest, family_digest],
++        "age_equal_or_over": { "_sd": [over18_digest] },
+         "cnf": { "jwk": public_jwk(&holder_secret) },
+     });
+     let issuer_jwt = sign_compact_es256(&issuer_signing, &issuer_header, &issuer_payload);
+ 
+-    let sd_jwt_no_kb = format!("{issuer_jwt}~{disclosure}~");
++    let sd_jwt_no_kb = format!("{issuer_jwt}~{given}~{family}~{over18}~");
+     let sd_hash = BASE64_URL_SAFE_NO_PAD.encode(Sha256::digest(sd_jwt_no_kb.as_bytes()));
+     let kb_header = json!({ "alg": "ES256", "typ": "kb+jwt" });
+     let kb_payload = json!({ "iat": iat, "aud": aud, "nonce": nonce, "sd_hash": sd_hash });
+@@ -233,7 +316,7 @@ async fn answer_as_wallet(
+ 
+ #[tokio::test]
+ async fn post_request_signs_the_caller_nonce_and_reports_pending() {
+-    let router = app(true).await;
++    let router = app().await;
+     let (status, created) = post_json(&router, "/request", json!({ "nonce": NONCE })).await;
+     assert_eq!(status, StatusCode::CREATED, "{created}");
+     let session = created["session_id"].as_str().unwrap().to_string();
+@@ -278,7 +361,7 @@ async fn post_request_signs_the_caller_nonce_and_reports_pending() {
+     assert_eq!(status, StatusCode::OK);
+     assert_eq!(result["status"], "pending");
+     assert_eq!(result["nonce"], NONCE);
+-    assert!(result.get("presentation").is_none());
++    assert_no_plaintext(&result, "pending result");
+ 
+     // Not a relay session, not a ZK session.
+     let (status, _) = get_json(&router, &format!("/relay/status/{session}")).await;
+@@ -294,7 +377,7 @@ async fn post_request_signs_the_caller_nonce_and_reports_pending() {
+ 
+ #[tokio::test]
+ async fn bad_nonces_and_a_relative_redirect_are_refused() {
+-    let router = app(true).await;
++    let router = app().await;
+     for (body, expect) in [
+         (json!({ "nonce": "0123456789abcde" }), "at least"),
+         (json!({ "nonce": "a".repeat(129) }), "at most"),
+@@ -324,8 +407,8 @@ async fn bad_nonces_and_a_relative_redirect_are_refused() {
+ }
+ 
+ #[tokio::test]
+-async fn a_verified_response_is_served_with_the_presentation() {
+-    let router = app(true).await;
++async fn a_verified_response_is_minimized_by_default() {
++    let router = app().await;
+     let (_, created) = post_json(
+         &router,
+         "/request",
+@@ -338,32 +421,48 @@ async fn a_verified_response_is_served_with_the_presentation() {
+     assert_eq!(status, StatusCode::OK, "{answer}");
+     assert_eq!(answer["status"], "verified");
+     assert_eq!(answer["redirect_uri"], "nachweis://return");
++    assert_no_plaintext(&answer, "the answer to the wallet");
++    assert!(presentation.contains('~'));
+ 
+     let (status, result) = get_json(&router, &format!("/result/{session}")).await;
+     assert_eq!(status, StatusCode::OK);
+     assert_eq!(result["status"], "verified");
+     assert_eq!(result["session_id"], session);
+     assert_eq!(result["nonce"], NONCE);
++    assert_no_plaintext(&result, "the default result");
++    assert!(result["presentation_withheld"]
++        .as_str()
++        .unwrap()
++        .contains("RESULT_INCLUDES_PRESENTATION"));
++    assert!(result["verified_pid_withheld"]
++        .as_str()
++        .unwrap()
++        .contains("RESULT_INCLUDES_NAMES"));
++
++    // The minimized summary: every check's outcome, the predicate, expiry,
++    // and which claims were disclosed (paths, not values).
++    let summary = &result["result"];
++    assert_eq!(summary["vct"], PID_VCT);
++    assert_eq!(summary["holder_bound"], true);
++    assert_eq!(summary["nonce_bound"], true);
++    assert_eq!(summary["age_equal_or_over"]["18"], true);
++    let exp = summary["credential_exp"].as_i64().unwrap();
++    assert!(exp > now_unix(), "exp {exp} must be in the future");
+     assert_eq!(
+-        result["presentation"], presentation,
+-        "the exact string the wallet put in the vp_token, KB-JWT included"
+-    );
+-    assert_eq!(
+-        result["presentation"].as_str().unwrap().split('~').count(),
+-        3
++        summary["disclosed_paths"],
++        json!(["age_equal_or_over.18", "family_name", "given_name"])
+     );
+-    assert_eq!(result["verified_pid"]["vct"], PID_VCT);
+-    assert_eq!(result["verified_pid"]["holder_bound"], true);
+     assert!(result.get("error").is_none());
+ 
+-    // The result is stable across reads, and the nonce is free again.
++    // Stable across reads, and the nonce is free again.
+     let (_, again) = get_json(&router, &format!("/result/{session}")).await;
+-    assert_eq!(again["presentation"], presentation);
++    assert_eq!(again, result);
+     let (status, reused) = post_json(&router, "/request", json!({ "nonce": NONCE })).await;
+     assert_eq!(status, StatusCode::CREATED, "{reused}");
+     assert_ne!(reused["session_id"], session);
+ 
+-    // The existing inspector view still works off the same store.
++    // The existing inspector view still works off the same store: it reports
++    // which claims were disclosed, never their values.
+     let (status, bytes) = send(
+         &router,
+         Request::builder()
+@@ -373,12 +472,251 @@ async fn a_verified_response_is_served_with_the_presentation() {
+     )
+     .await;
+     assert_eq!(status, StatusCode::OK);
+-    assert!(String::from_utf8(bytes).unwrap().contains("given_name"));
++    let html = String::from_utf8(bytes).unwrap();
++    assert!(html.contains("given_name"));
++    assert!(!html.contains(GIVEN_NAME), "the inspector leaks the given name");
++    assert!(!html.contains(FAMILY_NAME), "the inspector leaks the family name");
++}
++
++#[tokio::test]
++async fn verifier_mode_serves_the_presentation_to_the_token_holder_only() {
++    let router = app_with(Knobs::verifier_mode()).await;
++    let (_, created) = post_json(&router, "/request", json!({ "nonce": NONCE })).await;
++    let session = created["session_id"].as_str().unwrap().to_string();
++    let url = format!("/result/{session}");
++
++    // Pending is gated too: with RESULT_TOKEN set, the endpoint is closed to
++    // anyone without it, whatever the state.
++    let (status, body) = get_json(&router, &url).await;
++    assert_eq!(status, StatusCode::UNAUTHORIZED, "{body}");
++    assert!(body["error"].as_str().unwrap().contains("X-Result-Token"));
++    let (status, body) = get_json_with_token(&router, &url, TOKEN).await;
++    assert_eq!(status, StatusCode::OK, "{body}");
++    assert_eq!(body["status"], "pending");
++
++    let (presentation, status, answer) = answer_as_wallet(&router, &session, None).await;
++    assert_eq!(status, StatusCode::OK, "{answer}");
++    assert_no_plaintext(&answer, "the answer to the wallet");
++
++    // No token, wrong token, token of the wrong length: 401, and no plaintext.
++    for wrong in [None, Some("wrong-token-of-any-length"), Some("bridge-test-result-tokeN")] {
++        let (status, body) = match wrong {
++            None => get_json(&router, &url).await,
++            Some(t) => get_json_with_token(&router, &url, t).await,
++        };
++        assert_eq!(status, StatusCode::UNAUTHORIZED, "{wrong:?}: {body}");
++        assert_no_plaintext(&body, "a 401 body");
++    }
++
++    let (status, result) = get_json_with_token(&router, &url, TOKEN).await;
++    assert_eq!(status, StatusCode::OK);
++    assert_eq!(result["status"], "verified");
++    assert_eq!(
++        result["presentation"], presentation,
++        "the exact string the wallet put in the vp_token, KB-JWT included"
++    );
++    assert_eq!(
++        result["presentation"].as_str().unwrap().split('~').count(),
++        5
++    );
++    assert_eq!(result["result"]["vct"], PID_VCT);
++    // The presentation carries the names (that is the SP1 route's plaintext
++    // boundary), but the parsed view is still withheld: names are a separate flag.
++    assert!(result.get("verified_pid").is_none());
++    assert!(result["verified_pid_withheld"].is_string());
++}
++
++#[tokio::test]
++async fn names_are_served_only_behind_their_flag_and_the_token() {
++    let router = app_with(Knobs {
++        names: true,
++        token: Some(TOKEN),
++        ..Knobs::default()
++    })
++    .await;
++    let (_, created) = post_json(&router, "/request", json!({ "nonce": NONCE })).await;
++    let session = created["session_id"].as_str().unwrap().to_string();
++    let url = format!("/result/{session}");
++    let (_, status, _) = answer_as_wallet(&router, &session, None).await;
++    assert_eq!(status, StatusCode::OK);
++
++    let (status, body) = get_json(&router, &url).await;
++    assert_eq!(status, StatusCode::UNAUTHORIZED, "{body}");
++    assert_no_plaintext(&body, "a 401 body");
++
++    let (status, result) = get_json_with_token(&router, &url, TOKEN).await;
++    assert_eq!(status, StatusCode::OK);
++    assert_eq!(result["verified_pid"]["vct"], PID_VCT);
++    assert_eq!(result["verified_pid"]["holder_bound"], true);
++    assert_eq!(result["verified_pid"]["view"]["claims"]["given_name"], GIVEN_NAME);
++    assert_eq!(
++        result["verified_pid"]["view"]["claims"]["family_name"],
++        FAMILY_NAME
++    );
++    // Names on, presentation off: the raw string is still not kept.
++    assert!(result.get("presentation").is_none());
++    assert!(result["presentation_withheld"].is_string());
++}
++
++#[tokio::test]
++async fn a_plaintext_flag_without_a_token_closes_the_endpoint() {
++    for knobs in [
++        Knobs {
++            presentation: true,
++            ..Knobs::default()
++        },
++        Knobs {
++            names: true,
++            ..Knobs::default()
++        },
++    ] {
++        let router = app_with(knobs).await;
++        let (_, created) = post_json(&router, "/request", json!({ "nonce": NONCE })).await;
++        let session = created["session_id"].as_str().unwrap().to_string();
++        let url = format!("/result/{session}");
++
++        let (status, body) = get_json(&router, &url).await;
++        assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE, "{body}");
++        assert!(body["error"].as_str().unwrap().contains("RESULT_TOKEN"));
++
++        let (_, status, answer) = answer_as_wallet(&router, &session, None).await;
++        assert_eq!(status, StatusCode::OK, "{answer}");
++        assert_no_plaintext(&answer, "the answer to the wallet");
++
++        // Verified now, and still closed: a header does not help when the
++        // service has no token to compare it with.
++        for with_token in [false, true] {
++            let (status, body) = if with_token {
++                get_json_with_token(&router, &url, TOKEN).await
++            } else {
++                get_json(&router, &url).await
++            };
++            assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE, "{body}");
++            assert_no_plaintext(&body, "a 503 body");
++        }
++    }
++}
++
++#[tokio::test]
++async fn a_relay_session_never_exposes_plaintext_on_the_result_endpoint() {
++    // Even with every plaintext flag on and the token presented: a relay
++    // session is stored unopened, so there is nothing to serve.
++    let router = app_with(Knobs {
++        presentation: true,
++        names: true,
++        token: Some(TOKEN),
++        ..Knobs::default()
++    })
++    .await;
++    let (status, created) = post_json(
++        &router,
++        "/relay/request",
++        json!({
++            "client_jwk": {
++                "kty": "EC", "crv": "P-256", "alg": "ECDH-ES", "use": "enc",
++                "x": "RbFwxbDib5s9Q9u7oFFkV5NNxJK7dyHgug8JMgbj9dY",
++                "y": "2BJYVUDsqw2xoD4tB3o7QeIIdd89wQ82oTTrDy8H8Bs",
++            },
++            "bound_address": "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
++            "challenge": "0x00112233445566778899aabbccddeeff",
++        }),
++    )
++    .await;
++    assert_eq!(status, StatusCode::CREATED, "{created}");
++    let session = created["session_id"].as_str().unwrap().to_string();
++
++    // Answer it the way a wallet does. The service cannot decrypt it (the key
++    // is the client's), so this is a stored ciphertext, not an outcome.
++    let payload = request_object_payload(&router, &session).await;
++    let aud = payload["client_id"].as_str().unwrap();
++    let nonce = payload["nonce"].as_str().unwrap();
++    let query_id = payload["dcql_query"]["credentials"][0]["id"]
++        .as_str()
++        .unwrap();
++    let presentation = mint_presentation(nonce, aud, now_unix());
++    let jwe = encrypt_to(
++        &payload["client_metadata"]["jwks"]["keys"][0],
++        &json!({ "vp_token": { query_id: [presentation] } }),
++    );
++    let (status, answer) = post_form(
++        &router,
++        &format!("/response/{session}"),
++        format!("response={jwe}"),
++    )
++    .await;
++    assert!(status.is_success(), "{status} {answer}");
++    assert_no_plaintext(&answer, "the relay answer to the wallet");
++
++    for (status, body) in [
++        get_json(&router, &format!("/result/{session}")).await,
++        get_json_with_token(&router, &format!("/result/{session}"), TOKEN).await,
++        get_json(&router, &format!("/relay/status/{session}")).await,
++    ] {
++        assert_no_plaintext(&body, "a relay session read");
++        assert_ne!(body["status"], "verified", "{status} {body}");
++    }
++    let (status, _) = get_json_with_token(&router, &format!("/result/{session}"), TOKEN).await;
++    assert_eq!(status, StatusCode::NOT_FOUND);
++}
++
++#[tokio::test]
++async fn pending_sessions_are_capped() {
++    let router = app_with(Knobs {
++        max_pending: Some(2),
++        ..Knobs::default()
++    })
++    .await;
++    let (status, first) = post_json(&router, "/request", json!({ "nonce": NONCE })).await;
++    assert_eq!(status, StatusCode::CREATED, "{first}");
++    let (status, _) = post_json(&router, "/request", json!({ "nonce": NONCE_2 })).await;
++    assert_eq!(status, StatusCode::CREATED);
++    let third = "a".repeat(32);
++    let (status, body) = post_json(&router, "/request", json!({ "nonce": third })).await;
++    assert_eq!(status, StatusCode::TOO_MANY_REQUESTS, "{body}");
++    assert!(body["error"].as_str().unwrap().contains("BRIDGE_MAX_PENDING"));
++
++    // Completing one frees a slot.
++    let session = first["session_id"].as_str().unwrap().to_string();
++    let (_, status, _) = answer_as_wallet(&router, &session, None).await;
++    assert_eq!(status, StatusCode::OK);
++    let (status, body) = post_json(&router, "/request", json!({ "nonce": third })).await;
++    assert_eq!(status, StatusCode::CREATED, "{body}");
++}
++
++#[tokio::test]
++async fn expired_sessions_are_dropped_with_their_outcome() {
++    // TTL 0: every session is expired by the next `POST /request`.
++    let router = app_with(Knobs {
++        ttl_secs: Some(0),
++        ..Knobs::default()
++    })
++    .await;
++    let (_, created) = post_json(&router, "/request", json!({ "nonce": NONCE })).await;
++    let session = created["session_id"].as_str().unwrap().to_string();
++    let (_, status, _) = answer_as_wallet(&router, &session, None).await;
++    assert_eq!(status, StatusCode::OK);
++    let (status, result) = get_json(&router, &format!("/result/{session}")).await;
++    assert_eq!(status, StatusCode::OK);
++    assert_eq!(result["status"], "verified");
++
++    let (status, _) = post_json(&router, "/request", json!({ "nonce": NONCE_2 })).await;
++    assert_eq!(status, StatusCode::CREATED);
++    let (status, _) = get_json(&router, &format!("/result/{session}")).await;
++    assert_eq!(status, StatusCode::NOT_FOUND, "the outcome went with the session");
++    // The pruned session's nonce is free (it was completed anyway); a pending
++    // one is pruned the same way.
++    let (status, pending) = post_json(&router, "/request", json!({ "nonce": NONCE })).await;
++    assert_eq!(status, StatusCode::CREATED);
++    let pending = pending["session_id"].as_str().unwrap().to_string();
++    let (status, _) = post_json(&router, "/request", json!({ "nonce": NONCE })).await;
++    assert_eq!(status, StatusCode::CREATED, "the pending session expired first");
++    let (status, _) = get_json(&router, &format!("/result/{pending}")).await;
++    assert_eq!(status, StatusCode::NOT_FOUND);
+ }
+ 
+ #[tokio::test]
+ async fn a_rejected_response_is_reported_with_the_error() {
+-    let router = app(true).await;
++    let router = app().await;
+     let (_, created) = post_json(&router, "/request", json!({ "nonce": NONCE })).await;
+     let session = created["session_id"].as_str().unwrap().to_string();
+ 
+@@ -395,34 +733,16 @@ async fn a_rejected_response_is_reported_with_the_error() {
+     let error = result["error"].as_str().unwrap();
+     assert!(error.contains("nonce"), "{error}");
+     assert_eq!(result["reason"], error, "the bridge client reads `reason`");
+-    assert!(result.get("presentation").is_none());
++    assert_no_plaintext(&result, "a rejected result");
+ 
+     // A rejection completes the session too: the nonce is free again.
+     let (status, _) = post_json(&router, "/request", json!({ "nonce": NONCE })).await;
+     assert_eq!(status, StatusCode::CREATED);
+ }
+ 
+-#[tokio::test]
+-async fn the_presentation_can_be_withheld_by_configuration() {
+-    let router = app(false).await;
+-    let (_, created) = post_json(&router, "/request", json!({ "nonce": NONCE })).await;
+-    let session = created["session_id"].as_str().unwrap().to_string();
+-    let (_, status, _) = answer_as_wallet(&router, &session, None).await;
+-    assert_eq!(status, StatusCode::OK);
+-
+-    let (_, result) = get_json(&router, &format!("/result/{session}")).await;
+-    assert_eq!(result["status"], "verified");
+-    assert!(result.get("presentation").is_none());
+-    assert!(result["presentation_withheld"]
+-        .as_str()
+-        .unwrap()
+-        .contains("RESULT_INCLUDES_PRESENTATION"));
+-    assert_eq!(result["verified_pid"]["vct"], PID_VCT);
+-}
+-
+ #[tokio::test]
+ async fn a_landing_page_session_is_not_pending_here_but_its_outcome_is_served() {
+-    let router = app(true).await;
++    let router = app().await;
+     let (status, bytes) = send(
+         &router,
+         Request::builder().uri("/").body(Body::empty()).unwrap(),
+@@ -442,12 +762,13 @@ async fn a_landing_page_session_is_not_pending_here_but_its_outcome_is_served()
+     assert_eq!(status, StatusCode::NOT_FOUND);
+ 
+     // Once verified, the outcome is served all the same (one store).
+-    let (presentation, status, _) = answer_as_wallet(&router, &session, None).await;
++    let (_, status, _) = answer_as_wallet(&router, &session, None).await;
+     assert_eq!(status, StatusCode::OK);
+     let (status, result) = get_json(&router, &format!("/result/{session}")).await;
+     assert_eq!(status, StatusCode::OK);
+     assert_eq!(result["status"], "verified");
+-    assert_eq!(result["presentation"], presentation);
++    assert_no_plaintext(&result, "a landing-page result");
++    assert_eq!(result["result"]["vct"], PID_VCT);
+     assert_eq!(
+         result["nonce"],
+         Value::Null,

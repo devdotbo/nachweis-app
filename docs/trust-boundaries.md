@@ -1,0 +1,58 @@
+# Trust boundaries per proof route
+
+Status: written 2026-09-08 against app worktree `wp17-service-boundaries` (from
+`0fd7312`) and verifier worktree `nachweis-relay` at `7262a32`. Every row is
+FACT with a `file:line` citation read for this document, or says "unverified".
+Paths are relative to `/Users/bioharz/git/ethglobal/nachweis-app-wt-sp1`
+(app) or `/Users/bioharz/git/ethglobal/nachweis-verifier-relay` (verifier,
+prefixed `verifier/`).
+
+The two routes are not identical and are not described as such here. The SP1
+route is: wallet, verifier-service in verifier mode, bridge, SP1 prover,
+`Sp1PidVerifier`. The Noir companion route is: wallet, verifier-service blind
+relay (ciphertext only), companion on the holder's machine, bridge
+(`POST /sessions/:id/noir-proof`), `NoirPidVerifier`. Local mode (bridge
+`VERIFIER_URL` unset, presentation posted directly) is the SP1 route without
+the verifier in front and is noted where it differs.
+
+## Contract table
+
+| Property | SP1 route (verifier mode) | Noir companion route |
+|---|---|---|
+| Who sees the plaintext presentation (names included) | The verifier process decrypts and verifies it (`verifier/verifier-service/src/handlers.rs:324`, `verify_vp_token`). By default it keeps only a minimized summary (`verifier/verifier-service/src/bridge.rs:82`, `ResultSummary`); the raw presentation is served only with `RESULT_INCLUDES_PRESENTATION=true` (`verifier/verifier-service/src/main.rs:75`) and to a caller presenting `RESULT_TOKEN` as `X-Result-Token` (`verifier/verifier-service/src/main.rs:86`, `verifier/verifier-service/src/handlers.rs:1176`). The bridge receives it (`service/src/api.rs:182`), stores it in the session (`service/src/api.rs:340`) and passes it to the prover as private input (`service/src/statement.rs:30`, `prover-sp1/lib/src/lib.rs:43-45`). The SP1 prover host (local CPU, or the Succinct network when `SP1_PROVER=network`, `service/README.md` env table) sees it too. The chain sees public values only (`prover-sp1/lib/src/lib.rs:27-39`). | The verifier stores the wallet's JWE unopened (`verifier/verifier-service/src/handlers.rs:945`, `receive_relay_response`; `verifier/docs/blind-relay.md`). Only the companion on the holder's machine decrypts it (`companion/README.md`, `pickup` row). The bridge receives proof bytes and 86 public inputs only (`service/src/api.rs:462-491`; `service/README.md`, `noir-proof` row). The chain sees the public inputs. |
+| KB-JWT freshness (`iat`/`exp` window), enforced where and by whom | Verifier: KB-JWT `iat` no older than 300 s (`verifier/verifier-core/src/verify.rs:61`, `DEFAULT_MAX_AGE_SECS`; check at `:220`), issuer `exp` not passed (`:124-128`). Bridge: after the native statement run, `exp` in `(now, now+window]` and `iat` in `[now-window, now+window]` with `KB_JWT_WINDOW_SECS` (default 600, `service/src/config.rs:60`; call `service/src/statement.rs:69`; rule `prover-sp1/lib/src/lib.rs:67-70`). The guest has no clock; KB-JWT `exp` is not committed (`prover-sp1/lib/src/lib.rs:36`). Chain: credential `exp` against `block.timestamp` only (`contracts/src/sp1/Sp1PidVerifier.sol:85`). Local mode: the bridge check only. | Verifier: none (ciphertext). Companion: the same `iat`/`exp` window rule, client-side, `--kb-window` default 600, `0` disables (`companion/src/prove.ts:71`, `companion/src/statement.ts:144`, `companion/src/cli.ts:180`). Bridge: none. `POST /sessions/:id/noir-proof` checks state, address proof, subject, nonce, over18 and credential expiry (`service/src/api.rs:470-489`) and no time claim of the KB-JWT; the KB-JWT is not in the public inputs (`circuits/pid-sdjwt/src/main.nr:348`). Chain: credential `exp` against `block.timestamp` only (`contracts/src/noir/NoirPidVerifier.sol:98`). The only freshness enforcement on this route is therefore performed by the holder's own tool. |
+| Session age | Verifier: bridge sessions expire 900 s after creation (`verifier/verifier-service/src/bridge.rs:70`, pruned at `:196`); the bridge stops polling after 600 s (`service/src/api.rs:170`). Nothing binds the proof to a session age at attest time. | Handoff data can be fetched for 600 s after session creation (`service/src/api.rs:204`, checked at `:258`). `noir-proof` itself performs no session-age check (`service/src/api.rs:470-489`). |
+| Audience and relying-party identity | Verifier: KB-JWT `aud` must equal the request's `client_id` (`verifier/verifier-service/src/handlers.rs:390`, `request_binding`). Guest: `aud` must equal `expected_aud`, a PRIVATE prover input (`prover-sp1/lib/src/lib.rs:49`, assert at `:238`), supplied from the bridge's `EXPECTED_AUD` (`service/src/statement.rs:41`, `service/src/config.rs:39`) and absent from the committed public values (`prover-sp1/lib/src/lib.rs:27-39`). Accepting party for the audience: the bridge operator. The chain cannot tell which audience was checked. | Circuit: `aud` must match the compiled constant `AUD_FRAGMENT`, the verifier's registered `x509_hash` client_id (`circuits/pid-sdjwt/src/constants.nr:69`, used at `circuits/pid-sdjwt/src/main.nr:511`); the header comment states a new registrar leaf changes the constant and the VK (`constants.nr:66-68`). Accepting party: the compiled circuit, fixed on chain by the HonkVerifier's verification key (`contracts/src/noir/NoirPidVerifier.sol:100`). |
+| Issuer-key pinning | Guest commits `issuerKeyHash = sha256(SEC1 key)` (`prover-sp1/lib/src/lib.rs:32`); the key comes from the `x5c` leaf or the `ISSUER_KEY_SEC1_HEX` override (`service/src/statement.rs:14`, `service/src/config.rs:40-43`). `Sp1PidVerifier` compares it with the immutable `ISSUER_KEY_HASH` (`contracts/src/sp1/Sp1PidVerifier.sol:55`, `:75`) and also pins `vctHash` (`:76`). | Circuit computes `issuer_key_hash = digest(sec1)` from a private input (`circuits/pid-sdjwt/src/main.nr:400`) and returns it as a public output (`:348`); the companion takes the key from the `x5c` leaf (`companion/src/statement.ts:37`). `NoirPidVerifier` compares it with the immutable `ISSUER_KEY_HASH` (`contracts/src/noir/NoirPidVerifier.sol:72`, `:89`), set at deployment from `PID_ISSUER_KEY_HASH` (`contracts/script/DeployNoirVerifier.s.sol:35`, `:43`). The vct is a compiled constant checked in-circuit (`circuits/pid-sdjwt/src/main.nr:402-409`), not a public output. |
+| Trust chain (x5c to anchor) and status list | Verifier only, and only when configured: issuer chain to `TRUST_ANCHOR_PATH` (`verifier/verifier-service/src/main.rs:42`, applied at `handlers.rs:352`), status list when `LIVE_STATUS=true` and an anchor is set (`main.rs:47`, `handlers.rs:357`). Both are off by default. Bridge and guest: neither (`prover-sp1/lib/src/lib.rs:6`; `service/src/statement.rs:14` extracts the leaf key only). Local mode: nobody. | Nobody. The verifier holds ciphertext; the companion extracts the leaf key only (`companion/src/statement.ts:37`); the circuit has no chain or status logic; the bridge receives no credential to check. `grep -rn status_list service/src companion/src prover-sp1/lib/src circuits/pid-sdjwt/src` finds only the companion's test issuer minting the claim (`companion/src/mint.ts`). |
+| Replay protection | Nonce = lowercase hex `sha256(subject20 || challenge32)` (`prover-sp1/lib/src/lib.rs:291`), challenge random per session (`service/src/api.rs:119-128`). The registry consumes `keccak256(policyId, nonce)` once (`contracts/src/AttestationRegistry.sol:61`, `:145-149`). The verifier refuses a second pending session with the same nonce (`verifier/verifier-service/src/bridge.rs`, `claim`). | Same formula in-circuit (`circuits/pid-sdjwt/src/main.nr:514`); the bridge checks `nonce == session.nonce` (`service/src/api.rs:482`); the registry consumes it the same way (`contracts/src/AttestationRegistry.sol:145-149`). |
+| What the chain trusts | The SP1 gateway and the pinned program vkey (`contracts/src/sp1/Sp1PidVerifier.sol:87`), the immutables (issuer key hash, vct hash, policy id), `subject`, `expiry` equality and `expiry > block.timestamp` (`:79`, `:84-85`), nonce consumption. | The HonkVerifier for the compiled circuit (`contracts/src/noir/NoirPidVerifier.sol:100`), the immutable issuer key hash and policy id, `subject`, `expiry` equality and `expiry > block.timestamp` (`:92`, `:97-98`), nonce consumption. |
+| What the chain does not verify | Audience (not committed), KB-JWT freshness, session age, trust chain, status list, and whether the operator's bridge ran with the intended `EXPECTED_AUD` and `KB_JWT_WINDOW_SECS`. `attestByOperator` and `revoke` are gated by `onlyOperator` on chain (`contracts/src/AttestationRegistry.sol:88-101`); the bridge's HTTP endpoints for them (`service/src/api.rs:559`, `:596`) carry no HTTP authorization (no `Authorization` handling in `service/src/api.rs`), so anyone who reaches the bridge can exercise the configured operator key (`service/src/config.rs:15`). | KB-JWT freshness (the companion's check is not attested), session age, trust chain, status list, vct as a separate public value (compiled in instead). Same operator-endpoint remark. |
+| Explicitly NOT claimed | The routes are not identical: plaintext boundary, audience binding and vct pinning differ (rows above). Not all verification is independent of the operator: on this route the operator's bridge chooses the audience and the freshness window and holds the plaintext; the SP1 prover host also sees the plaintext. Circuit or JSON-parser soundness is not established by this document. | Not all verification is independent of the operator either: the bridge decides which sessions it submits and holds the operator key. Freshness on this route is enforced by nobody the relying party controls. Circuit soundness and the companion's decryption path on a real wallet response are not established by this document (`docs/two-device.md`, stub wallet). |
+
+## Gaps
+
+1. Noir route has no relying-party-side freshness. Fix: check session age at
+   `POST /sessions/:id/noir-proof` against `created_at + HANDOFF_TTL_SECS`
+   (small, `service/src/api.rs`, one condition); binding the KB-JWT `iat` or
+   `exp` would need new public outputs in the circuit and adapter (large).
+   Until then, state that freshness on this route is the companion's check.
+2. SP1 audience is a private input, not committed. Fix: commit
+   `sha256(expected_aud)` in `PublicValuesStruct` and pin it in
+   `Sp1PidVerifier` (medium: guest, adapter, fixtures, vkey regeneration), or
+   narrow the claim to "audience checked by the operator's bridge".
+3. No trust-chain or status-list check on the Noir route, and none in local
+   mode. Fix: companion checks the `x5c` chain against a bundled anchor
+   (medium) and the status list over the network (medium); or state the gap.
+   For the SP1 route in verifier mode, set `TRUST_ANCHOR_PATH` and
+   `LIVE_STATUS=true` on the verifier in the runbook (small, configuration).
+4. Bridge issuer endpoints (`attest-operator`, `revoke`) have no HTTP
+   authorization. Fix: shared secret or signer-based auth on those two routes
+   (small to medium, `service/src/api.rs`, owned by another teammate).
+5. Plaintext lifetime in the bridge: the presentation stays in the session
+   struct after proving (`service/src/api.rs:340`); whether it is cleared later
+   is unverified. Fix: drop it once the proof exists (small).
+6. Verifier session id is the only secret on the wallet-facing endpoints, by
+   design; the result endpoint is now token-gated. Keep the verifier bound to
+   localhost or behind a proxy that exposes `/request/:id` and
+   `/response/:id` only (documentation, no code).

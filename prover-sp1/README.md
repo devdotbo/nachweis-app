@@ -1,6 +1,6 @@
 # prover-sp1
 
-SP1 6.1.0 guest and host for the Nachweis statement: an SD-JWT PID presentation (German EUDI sandbox, `urn:eudi:pid:de:1`) is valid, its holder proved key binding for one Ethereum address, and the credential asserts `age_equal_or_over.18`. The proof goes on chain through `Sp1PidVerifier` (`/contracts`); the bridge (`/service`) runs the same statement natively before proving.
+SP1 6.1.0 guest and host for the Attestat PID statement (crate names keep the nachweis prefix): an SD-JWT PID presentation (German EUDI sandbox, `urn:eudi:pid:de:1`) is valid, its holder proved key binding for one Ethereum address, and the credential asserts `age_equal_or_over.18`. The proof goes on chain through `Sp1PidVerifier` (`/contracts`); the bridge (`/service`) runs the same statement natively before proving.
 
 ## Layout
 

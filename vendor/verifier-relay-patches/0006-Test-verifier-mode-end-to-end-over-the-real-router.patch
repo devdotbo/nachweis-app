@@ -1,0 +1,499 @@
+From 79a80f69261dee0f5b61c225d489e38294400c7c Mon Sep 17 00:00:00 2001
+From: devbotbo <7118.eth@proton.me>
+Date: Mon, 7 Sep 2026 20:59:31 +0200
+Subject: [PATCH] Test verifier mode end to end over the real router
+
+Create a request with the bridge's nonce, read the signed request object back
+the way a wallet does and check it carries that nonce and the service's own
+encryption key, then answer it like a wallet: mint a fresh SD-JWT VC
+presentation (self-signed issuer leaf in x5c, KB-JWT bound to the request's
+nonce and client_id at the current time), encrypt it to the advertised key and
+POST the form. GET /result/:id must return the exact presentation string.
+
+Also covered: pending before the response, 409 on a nonce that is still in
+flight and its release after a verified or rejected outcome, rejection with the
+error text, the RESULT_INCLUDES_PRESENTATION=false shape, and that a
+landing-page session is not pending here but its outcome is served.
+
+josekit joins the dev-dependencies for the encrypt half (verifier-core only
+decrypts).
+---
+ verifier-service/Cargo.toml           |   4 +
+ verifier-service/tests/bridge_http.rs | 456 ++++++++++++++++++++++++++
+ 2 files changed, 460 insertions(+)
+ create mode 100644 verifier-service/tests/bridge_http.rs
+
+diff --git a/verifier-service/Cargo.toml b/verifier-service/Cargo.toml
+index 49d1bc4..91039fc 100644
+--- a/verifier-service/Cargo.toml
++++ b/verifier-service/Cargo.toml
+@@ -51,3 +51,7 @@ mdoc-zk-runtime = { git = "https://github.com/google/longfellow-zk", rev = "3dfa
+ runtime-random = { git = "https://github.com/google/longfellow-zk", rev = "3dfaac72abed4a6fbcd0ab8688b39168bb224133", features = ["testonly"] }
+ tower = { version = "0.5", features = ["util"] }
+ chrono.workspace = true
++# The bridge-mode HTTP test answers a request the way a wallet does: it encrypts
++# the presentation to the key the signed request advertises. verifier-core only
++# decrypts, so the test needs the encrypt half.
++josekit.workspace = true
+diff --git a/verifier-service/tests/bridge_http.rs b/verifier-service/tests/bridge_http.rs
+new file mode 100644
+index 0000000..34543f4
+--- /dev/null
++++ b/verifier-service/tests/bridge_http.rs
+@@ -0,0 +1,456 @@
++//! End-to-end HTTP tests for verifier mode (the bridge's two endpoints).
++//!
++//! These drive the real router with no ZK path configured: create a request
++//! with a caller-supplied nonce, read the signed request object back the way a
++//! wallet would and check it carries THAT nonce, answer it the way a wallet does
++//! (a freshly minted SD-JWT VC presentation, KB-JWT bound to the request's nonce
++//! and `client_id`, encrypted to the key the request advertises), and read the
++//! outcome from `GET /result/:id`.
++//!
++//! The presentation is minted here rather than read from a fixture because the
++//! verifier checks freshness against the wall clock and binds `aud` to the
++//! ephemeral certificate's `client_id`, neither of which a stored fixture can
++//! satisfy. The minting mirrors `verifier-core/examples/gen_status_fixtures.rs`.
++
++use std::sync::Arc;
++
++use axum::body::Body;
++use axum::http::{Request, StatusCode};
++use base64::prelude::*;
++use p256::ecdsa::{signature::Signer, Signature, SigningKey};
++use p256::elliptic_curve::sec1::ToEncodedPoint;
++use p256::pkcs8::DecodePrivateKey;
++use p256::SecretKey;
++use serde_json::{json, Value};
++use sha2::{Digest, Sha256};
++use tower::ServiceExt;
++
++use verifier_core::PID_VCT;
++use verifier_service::handlers;
++use verifier_service::state::{AppState, CertSource};
++
++/// What the bridge sends: hex(sha256(address || challenge)), 64 characters.
++const NONCE: &str = "538cc3ecfb6325d0f4adb5c784a8caac93bbac1cd69b10701b210ff8e66f84ab";
++
++async fn app(result_includes_presentation: bool) -> axum::Router {
++    let mut state = AppState::new(
++        "http://127.0.0.1:0/".parse().unwrap(),
++        CertSource::Ephemeral,
++        "event_checkin",
++        None,
++        false,
++        None,
++        None,
++    )
++    .await
++    .expect("build offline app state");
++    state.result_includes_presentation = result_includes_presentation;
++    handlers::router(Arc::new(state))
++}
++
++async fn send(router: &axum::Router, req: Request<Body>) -> (StatusCode, Vec<u8>) {
++    let response = router.clone().oneshot(req).await.unwrap();
++    let status = response.status();
++    let bytes = axum::body::to_bytes(response.into_body(), 4 * 1024 * 1024)
++        .await
++        .unwrap();
++    (status, bytes.to_vec())
++}
++
++async fn get_json(router: &axum::Router, uri: &str) -> (StatusCode, Value) {
++    let (status, bytes) = send(
++        router,
++        Request::builder().uri(uri).body(Body::empty()).unwrap(),
++    )
++    .await;
++    (
++        status,
++        serde_json::from_slice(&bytes).unwrap_or(Value::Null),
++    )
++}
++
++async fn post_json(router: &axum::Router, uri: &str, body: Value) -> (StatusCode, Value) {
++    let (status, bytes) = send(
++        router,
++        Request::builder()
++            .method("POST")
++            .uri(uri)
++            .header("content-type", "application/json")
++            .body(Body::from(body.to_string()))
++            .unwrap(),
++    )
++    .await;
++    (
++        status,
++        serde_json::from_slice(&bytes).unwrap_or(Value::Null),
++    )
++}
++
++async fn post_form(router: &axum::Router, uri: &str, body: String) -> (StatusCode, Value) {
++    let (status, bytes) = send(
++        router,
++        Request::builder()
++            .method("POST")
++            .uri(uri)
++            .header("content-type", "application/x-www-form-urlencoded")
++            .body(Body::from(body))
++            .unwrap(),
++    )
++    .await;
++    (
++        status,
++        serde_json::from_slice(&bytes).unwrap_or(Value::Null),
++    )
++}
++
++/// The payload of the signed request object, the way a wallet reads it.
++async fn request_object_payload(router: &axum::Router, session: &str) -> Value {
++    let (status, bytes) = send(
++        router,
++        Request::builder()
++            .uri(format!("/request/{session}"))
++            .body(Body::empty())
++            .unwrap(),
++    )
++    .await;
++    assert_eq!(status, StatusCode::OK);
++    let jwt = String::from_utf8(bytes).unwrap();
++    let payload = jwt.split('.').nth(1).expect("compact JWS has a payload");
++    serde_json::from_slice(&BASE64_URL_SAFE_NO_PAD.decode(payload).unwrap()).unwrap()
++}
++
++fn now_unix() -> i64 {
++    std::time::SystemTime::now()
++        .duration_since(std::time::UNIX_EPOCH)
++        .unwrap()
++        .as_secs() as i64
++}
++
++fn sign_compact_es256(signing_key: &SigningKey, header: &Value, payload: &Value) -> String {
++    let header_b64 = BASE64_URL_SAFE_NO_PAD.encode(serde_json::to_vec(header).unwrap());
++    let payload_b64 = BASE64_URL_SAFE_NO_PAD.encode(serde_json::to_vec(payload).unwrap());
++    let signing_input = format!("{header_b64}.{payload_b64}");
++    let sig: Signature = signing_key.sign(signing_input.as_bytes());
++    format!(
++        "{signing_input}.{}",
++        BASE64_URL_SAFE_NO_PAD.encode(sig.to_bytes())
++    )
++}
++
++fn public_jwk(secret_key: &SecretKey) -> Value {
++    let point = secret_key.public_key().to_encoded_point(false);
++    json!({
++        "kty": "EC",
++        "crv": "P-256",
++        "x": BASE64_URL_SAFE_NO_PAD.encode(point.x().unwrap()),
++        "y": BASE64_URL_SAFE_NO_PAD.encode(point.y().unwrap()),
++    })
++}
++
++/// Mint a German PID SD-JWT VC presentation (`issuer_jwt~disclosure~kb_jwt`)
++/// with one disclosure (`given_name`), a self-signed issuer leaf in `x5c`, and a
++/// KB-JWT bound to `nonce` and `aud` at `iat`. Every run uses fresh keys.
++fn mint_presentation(nonce: &str, aud: &str, iat: i64) -> String {
++    let issuer_kp = rcgen::KeyPair::generate().unwrap();
++    let mut params =
++        rcgen::CertificateParams::new(vec!["bridge-test-issuer.example".to_string()]).unwrap();
++    params.distinguished_name.push(
++        rcgen::DnType::CommonName,
++        "Bridge test PID issuer (TEST ONLY)",
++    );
++    let issuer_cert = params.self_signed(&issuer_kp).unwrap();
++    let issuer_secret = SecretKey::from_pkcs8_der(&issuer_kp.serialize_der()).unwrap();
++    let issuer_signing: SigningKey = (&issuer_secret).into();
++    let x5c_leaf = BASE64_STANDARD.encode(issuer_cert.der().as_ref());
++
++    let holder_kp = rcgen::KeyPair::generate().unwrap();
++    let holder_secret = SecretKey::from_pkcs8_der(&holder_kp.serialize_der()).unwrap();
++    let holder_signing: SigningKey = (&holder_secret).into();
++
++    let disclosure = BASE64_URL_SAFE_NO_PAD.encode(
++        serde_json::to_vec(&json!(["YnJpZGdlLXRlc3Qtc2FsdA", "given_name", "Erika"])).unwrap(),
++    );
++    let sd_digest = BASE64_URL_SAFE_NO_PAD.encode(Sha256::digest(disclosure.as_bytes()));
++
++    let issuer_header = json!({ "alg": "ES256", "typ": "dc+sd-jwt", "x5c": [x5c_leaf] });
++    let issuer_payload = json!({
++        "iss": "https://bridge-test-issuer.example/pid-de",
++        "vct": PID_VCT,
++        "iat": iat,
++        "_sd_alg": "sha-256",
++        "_sd": [sd_digest],
++        "cnf": { "jwk": public_jwk(&holder_secret) },
++    });
++    let issuer_jwt = sign_compact_es256(&issuer_signing, &issuer_header, &issuer_payload);
++
++    let sd_jwt_no_kb = format!("{issuer_jwt}~{disclosure}~");
++    let sd_hash = BASE64_URL_SAFE_NO_PAD.encode(Sha256::digest(sd_jwt_no_kb.as_bytes()));
++    let kb_header = json!({ "alg": "ES256", "typ": "kb+jwt" });
++    let kb_payload = json!({ "iat": iat, "aud": aud, "nonce": nonce, "sd_hash": sd_hash });
++    let kb_jwt = sign_compact_es256(&holder_signing, &kb_header, &kb_payload);
++    format!("{sd_jwt_no_kb}{kb_jwt}")
++}
++
++/// Encrypt a `direct_post.jwt` payload to the JWK the signed request advertises
++/// (ECDH-ES, A128GCM), the way a wallet does.
++fn encrypt_to(jwk: &Value, payload: &Value) -> String {
++    let jwk = josekit::jwk::Jwk::from_map(jwk.as_object().unwrap().clone()).unwrap();
++    let encrypter = josekit::jwe::ECDH_ES
++        .encrypter_from_jwk::<p256::NistP256>(&jwk)
++        .unwrap();
++    let mut header = josekit::jwe::JweHeader::new();
++    header.set_content_encryption("A128GCM");
++    josekit::jwe::serialize_compact(payload.to_string().as_bytes(), &header, &encrypter).unwrap()
++}
++
++/// Answer a session the way a wallet does: read the signed request, mint a
++/// presentation bound to the nonce it carries (or `nonce_override`) and its
++/// `client_id`, encrypt it to the advertised key, POST the form.
++async fn answer_as_wallet(
++    router: &axum::Router,
++    session: &str,
++    nonce_override: Option<&str>,
++) -> (String, StatusCode, Value) {
++    let payload = request_object_payload(router, session).await;
++    let aud = payload["client_id"].as_str().unwrap();
++    let nonce = nonce_override.unwrap_or_else(|| payload["nonce"].as_str().unwrap());
++    let query_id = payload["dcql_query"]["credentials"][0]["id"]
++        .as_str()
++        .unwrap();
++    let presentation = mint_presentation(nonce, aud, now_unix());
++    let jwe = encrypt_to(
++        &payload["client_metadata"]["jwks"]["keys"][0],
++        &json!({ "vp_token": { query_id: [presentation.clone()] } }),
++    );
++    let (status, answer) = post_form(
++        router,
++        &format!("/response/{session}"),
++        format!("response={jwe}"),
++    )
++    .await;
++    (presentation, status, answer)
++}
++
++#[tokio::test]
++async fn post_request_signs_the_caller_nonce_and_reports_pending() {
++    let router = app(true).await;
++    let (status, created) = post_json(&router, "/request", json!({ "nonce": NONCE })).await;
++    assert_eq!(status, StatusCode::CREATED, "{created}");
++    let session = created["session_id"].as_str().unwrap().to_string();
++    assert_eq!(
++        created["session"], session,
++        "the bridge client's name for it"
++    );
++    assert_eq!(created["nonce"], NONCE);
++    assert_eq!(
++        created["request_uri"],
++        format!("http://127.0.0.1:0/request/{session}")
++    );
++    assert_eq!(
++        created["result_url"],
++        format!("http://127.0.0.1:0/result/{session}")
++    );
++    let deep_link = created["openid4vp_uri"].as_str().unwrap();
++    assert_eq!(created["authorization_request"], deep_link);
++    assert!(deep_link.starts_with("openid4vp://"), "{deep_link}");
++    assert!(deep_link.contains(&session), "{deep_link}");
++
++    // The signed request object carries the caller's nonce, the registered
++    // minimal query and the service's OWN encryption key (not a client key).
++    let payload = request_object_payload(&router, &session).await;
++    assert_eq!(payload["nonce"], NONCE);
++    assert_eq!(payload["response_mode"], "direct_post.jwt");
++    let keys = payload["client_metadata"]["jwks"]["keys"]
++        .as_array()
++        .unwrap();
++    assert_eq!(keys.len(), 1);
++    assert_eq!(keys[0]["kid"], "enc-key-1");
++    let claims = payload["dcql_query"]["credentials"][0]["claims"]
++        .as_array()
++        .unwrap();
++    assert_eq!(
++        claims.len(),
++        3,
++        "given_name, family_name, age_equal_or_over.18"
++    );
++
++    let (status, result) = get_json(&router, &format!("/result/{session}")).await;
++    assert_eq!(status, StatusCode::OK);
++    assert_eq!(result["status"], "pending");
++    assert_eq!(result["nonce"], NONCE);
++    assert!(result.get("presentation").is_none());
++
++    // Not a relay session, not a ZK session.
++    let (status, _) = get_json(&router, &format!("/relay/status/{session}")).await;
++    assert_eq!(status, StatusCode::NOT_FOUND);
++    let (status, _) = get_json(&router, &format!("/zk/result/{session}")).await;
++    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
++
++    // The nonce is taken while the session is pending.
++    let (status, body) = post_json(&router, "/request", json!({ "nonce": NONCE })).await;
++    assert_eq!(status, StatusCode::CONFLICT, "{body}");
++    assert!(body["error"].as_str().unwrap().contains(&session));
++}
++
++#[tokio::test]
++async fn bad_nonces_and_a_relative_redirect_are_refused() {
++    let router = app(true).await;
++    for (body, expect) in [
++        (json!({ "nonce": "0123456789abcde" }), "at least"),
++        (json!({ "nonce": "a".repeat(129) }), "at most"),
++        (json!({ "nonce": "0123456789abcdef+" }), "may only contain"),
++        (
++            json!({ "nonce": "0x00112233445566778899aabbccddeeff!" }),
++            "may only contain",
++        ),
++        (
++            json!({ "nonce": NONCE, "redirect_uri": "/return" }),
++            "absolute URL",
++        ),
++    ] {
++        let (status, answer) = post_json(&router, "/request", body.clone()).await;
++        assert_eq!(status, StatusCode::BAD_REQUEST, "{body} -> {answer}");
++        assert!(
++            answer["error"].as_str().unwrap().contains(expect),
++            "{body} -> {answer}"
++        );
++    }
++    let (status, _) = post_json(&router, "/request", json!({})).await;
++    assert!(status.is_client_error(), "missing nonce: {status}");
++    let (status, _) = get_json(&router, "/result/not-a-uuid").await;
++    assert_eq!(status, StatusCode::BAD_REQUEST);
++    let (status, _) = get_json(&router, "/result/00000000-0000-0000-0000-000000000000").await;
++    assert_eq!(status, StatusCode::NOT_FOUND);
++}
++
++#[tokio::test]
++async fn a_verified_response_is_served_with_the_presentation() {
++    let router = app(true).await;
++    let (_, created) = post_json(
++        &router,
++        "/request",
++        json!({ "nonce": NONCE, "redirect_uri": "nachweis://return" }),
++    )
++    .await;
++    let session = created["session_id"].as_str().unwrap().to_string();
++
++    let (presentation, status, answer) = answer_as_wallet(&router, &session, None).await;
++    assert_eq!(status, StatusCode::OK, "{answer}");
++    assert_eq!(answer["status"], "verified");
++    assert_eq!(answer["redirect_uri"], "nachweis://return");
++
++    let (status, result) = get_json(&router, &format!("/result/{session}")).await;
++    assert_eq!(status, StatusCode::OK);
++    assert_eq!(result["status"], "verified");
++    assert_eq!(result["session_id"], session);
++    assert_eq!(result["nonce"], NONCE);
++    assert_eq!(
++        result["presentation"], presentation,
++        "the exact string the wallet put in the vp_token, KB-JWT included"
++    );
++    assert_eq!(
++        result["presentation"].as_str().unwrap().split('~').count(),
++        3
++    );
++    assert_eq!(result["verified_pid"]["vct"], PID_VCT);
++    assert_eq!(result["verified_pid"]["holder_bound"], true);
++    assert!(result.get("error").is_none());
++
++    // The result is stable across reads, and the nonce is free again.
++    let (_, again) = get_json(&router, &format!("/result/{session}")).await;
++    assert_eq!(again["presentation"], presentation);
++    let (status, reused) = post_json(&router, "/request", json!({ "nonce": NONCE })).await;
++    assert_eq!(status, StatusCode::CREATED, "{reused}");
++    assert_ne!(reused["session_id"], session);
++
++    // The existing inspector view still works off the same store.
++    let (status, bytes) = send(
++        &router,
++        Request::builder()
++            .uri(format!("/inspect/{session}"))
++            .body(Body::empty())
++            .unwrap(),
++    )
++    .await;
++    assert_eq!(status, StatusCode::OK);
++    assert!(String::from_utf8(bytes).unwrap().contains("given_name"));
++}
++
++#[tokio::test]
++async fn a_rejected_response_is_reported_with_the_error() {
++    let router = app(true).await;
++    let (_, created) = post_json(&router, "/request", json!({ "nonce": NONCE })).await;
++    let session = created["session_id"].as_str().unwrap().to_string();
++
++    let wrong = "0000000000000000000000000000000000000000000000000000000000000000";
++    let (_, status, answer) = answer_as_wallet(&router, &session, Some(wrong)).await;
++    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{answer}");
++    assert_eq!(answer["status"], "rejected");
++    assert!(answer.get("redirect_uri").is_none());
++
++    let (status, result) = get_json(&router, &format!("/result/{session}")).await;
++    assert_eq!(status, StatusCode::OK);
++    assert_eq!(result["status"], "rejected");
++    assert_eq!(result["nonce"], NONCE);
++    let error = result["error"].as_str().unwrap();
++    assert!(error.contains("nonce"), "{error}");
++    assert_eq!(result["reason"], error, "the bridge client reads `reason`");
++    assert!(result.get("presentation").is_none());
++
++    // A rejection completes the session too: the nonce is free again.
++    let (status, _) = post_json(&router, "/request", json!({ "nonce": NONCE })).await;
++    assert_eq!(status, StatusCode::CREATED);
++}
++
++#[tokio::test]
++async fn the_presentation_can_be_withheld_by_configuration() {
++    let router = app(false).await;
++    let (_, created) = post_json(&router, "/request", json!({ "nonce": NONCE })).await;
++    let session = created["session_id"].as_str().unwrap().to_string();
++    let (_, status, _) = answer_as_wallet(&router, &session, None).await;
++    assert_eq!(status, StatusCode::OK);
++
++    let (_, result) = get_json(&router, &format!("/result/{session}")).await;
++    assert_eq!(result["status"], "verified");
++    assert!(result.get("presentation").is_none());
++    assert!(result["presentation_withheld"]
++        .as_str()
++        .unwrap()
++        .contains("RESULT_INCLUDES_PRESENTATION"));
++    assert_eq!(result["verified_pid"]["vct"], PID_VCT);
++}
++
++#[tokio::test]
++async fn a_landing_page_session_is_not_pending_here_but_its_outcome_is_served() {
++    let router = app(true).await;
++    let (status, bytes) = send(
++        &router,
++        Request::builder().uri("/").body(Body::empty()).unwrap(),
++    )
++    .await;
++    assert_eq!(status, StatusCode::OK);
++    let html = String::from_utf8(bytes).unwrap();
++    let session = html
++        .split("request/")
++        .nth(1)
++        .and_then(|rest| rest.get(..36))
++        .expect("landing page links its request_uri")
++        .to_string();
++
++    // No caller nonce, so not a bridge session: nothing to report yet.
++    let (status, _) = get_json(&router, &format!("/result/{session}")).await;
++    assert_eq!(status, StatusCode::NOT_FOUND);
++
++    // Once verified, the outcome is served all the same (one store).
++    let (presentation, status, _) = answer_as_wallet(&router, &session, None).await;
++    assert_eq!(status, StatusCode::OK);
++    let (status, result) = get_json(&router, &format!("/result/{session}")).await;
++    assert_eq!(status, StatusCode::OK);
++    assert_eq!(result["status"], "verified");
++    assert_eq!(result["presentation"], presentation);
++    assert_eq!(
++        result["nonce"],
++        Value::Null,
++        "the landing page's UUID nonce is not tracked"
++    );
++}

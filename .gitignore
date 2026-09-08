@@ -21,3 +21,4 @@ prover-sp1/**/*.log
 
 # local e2e run state (scripts/e2e-local.sh)
 .e2e/
+target/

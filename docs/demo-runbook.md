@@ -1,6 +1,6 @@
 # Demo runbook
 
-The exact local sequence for the Nachweis demo, in order, each step with the command and the expected output, followed by the Sepolia real run. Written 2026-09-07 against main at `4c1a7fd` on the builder's Mac (M3 Max, 16 cores, 128 GB, macOS 25.6).
+The exact local sequence for the Attestat demo (formerly Nachweis), in order, each step with the command and the expected output, followed by the Sepolia real run. Written 2026-09-07 against main at `4c1a7fd` on the builder's Mac (M3 Max, 16 cores, 128 GB, macOS 25.6).
 
 Each step carries one of two labels:
 
@@ -308,7 +308,7 @@ SEPOLIA_RPC_URL=$SEPOLIA_RPC_URL forge test --match-contract PermissionedPoolSwa
 
 ## 8. The app
 
-Mock mode (verified locally 2026-09-07: `bun run dev` prints `VITE v8.2.2 ready`, `http://localhost:5173/` answers 200 with title `Nachweis demo`):
+Mock mode (verified locally 2026-09-07: `bun run dev` prints `VITE v8.2.2 ready`, `http://localhost:5173/` answers 200 with title `Attestat demo` (was `Nachweis demo` before the rename)):
 
 ```
 cd $W/app && VITE_MOCK=1 bun run dev

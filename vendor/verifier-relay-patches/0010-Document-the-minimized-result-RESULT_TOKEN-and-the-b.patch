@@ -1,0 +1,318 @@
+From 7262a323286656d6887d1171b1f1ef4472beba47 Mon Sep 17 00:00:00 2001
+From: devbotbo <7118.eth@proton.me>
+Date: Tue, 8 Sep 2026 20:00:22 +0200
+Subject: [PATCH] Document the minimized result, RESULT_TOKEN and the bridge
+ session bounds
+
+bridge-mode.md: privacy note rewritten around the default minimized result,
+the two plaintext flags and the token; result shapes; the RESULT_* and
+BRIDGE_* variables; limits. blind-relay.md and README.md: cross-references
+updated.
+---
+ README.md           |  13 ++--
+ docs/blind-relay.md |  15 +++-
+ docs/bridge-mode.md | 166 ++++++++++++++++++++++++++++++++------------
+ 3 files changed, 143 insertions(+), 51 deletions(-)
+
+diff --git a/README.md b/README.md
+index 4a8f0d4..1f1184b 100644
+--- a/README.md
++++ b/README.md
+@@ -140,11 +140,14 @@ presentation. Request and response shapes, the address-binding nonce formula,
+ and the trust statement are in `docs/blind-relay.md`.
+ 
+ Verifier mode for the Nachweis bridge (`POST /request`, `GET /result/:id`):
+-the default request with a caller-supplied nonce, and the verified SD-JWT
+-presentation served back to a bridge on the same host. Here the verifier does
+-see the plaintext; the blind relay is the alternative when it must not.
+-Shapes, the privacy note and `RESULT_INCLUDES_PRESENTATION` are in
+-`docs/bridge-mode.md`.
++the default request with a caller-supplied nonce, and a minimized result
++(vct, holder and nonce binding, age predicate, credential expiry, disclosed
++paths; no names) served back. A bridge on the same host can additionally get
++the verified SD-JWT presentation behind `RESULT_INCLUDES_PRESENTATION=true`
++and the `RESULT_TOKEN` shared secret (`X-Result-Token`); that is the SP1
++route's plaintext boundary. The blind relay is the alternative when the
++verifier must not see the plaintext at all. Shapes, the privacy note and the
++`RESULT_*` and `BRIDGE_*` variables are in `docs/bridge-mode.md`.
+ 
+ The real RP private key lives outside this repo, in the sibling `../secrets`
+ directory, and is never committed. The leaf certificate is public
+diff --git a/docs/blind-relay.md b/docs/blind-relay.md
+index d43ec1d..d0b19b0 100644
+--- a/docs/blind-relay.md
++++ b/docs/blind-relay.md
+@@ -10,8 +10,11 @@ In the default flow (`GET /`) the service generates the ECDH-ES key pair that
+ the wallet encrypts its `direct_post.jwt` response to, decrypts the response,
+ verifies the SD-JWT presentation, and renders the inspector. The service sees
+ the plaintext PID claims. Verifier mode for the bridge (`docs/bridge-mode.md`)
+-is that same flow with a caller-supplied nonce and the presentation served
+-back; it is the non-private counterpart of what follows.
++is that same flow with a caller-supplied nonce and, behind
++`RESULT_INCLUDES_PRESENTATION` plus the `RESULT_TOKEN` shared secret, the
++presentation served back; by default its `GET /result/:id` serves a minimized
++summary with no disclosed value. It is the non-private counterpart of what
++follows: there the verifier process sees the plaintext, here it cannot.
+ 
+ In blind-relay mode the CLIENT (the investor's browser, or a companion prover
+ app) generates the ephemeral P-256 key pair and sends the service only the
+@@ -299,7 +302,13 @@ key, which loses the blindness property but not the demo.
+ ## Limits
+ 
+ - Sessions live in memory and are never expired; a restart forgets them.
+-  Fine for the event, not for a deployment.
++  Fine for the event, not for a deployment. (Bridge-mode sessions from
++  `POST /request` are capped and expired, see `docs/bridge-mode.md`; the relay
++  table is not.)
++- A relay session has no entry on `GET /result/:id` (404, token or not): the
++  service holds only ciphertext for it, so there is no outcome to serve.
++  `verifier-service/tests/bridge_http.rs` checks this with every plaintext
++  flag on.
+ - The service does not check that the stored string is a JWE at all; it
+   stores what the wallet sent. A malformed post shows up as a decryption
+   failure on the client.
+diff --git a/docs/bridge-mode.md b/docs/bridge-mode.md
+index 1ba25ca..eb99dc2 100644
+--- a/docs/bridge-mode.md
++++ b/docs/bridge-mode.md
+@@ -9,8 +9,9 @@ statement subset in the zkVM.
+ ## What it is
+ 
+ The default flow (`GET /`) mints its own UUID nonce and keeps, after
+-verification, only the parsed `VerifiedPid` (disclosed claims, vct, holder
+-binding). The bridge needs two things the default flow does not offer:
++verification, the minimized `ResultSummary` (vct, holder and nonce binding,
++age predicate, expiry, disclosed paths). The bridge needs two things the
++default flow does not offer:
+ 
+ 1. the nonce has to be ITS nonce, `hex(sha256(address20 || challenge))`, so the
+    KB-JWT the wallet signs is bound to the EVM address (same formula as the
+@@ -30,18 +31,43 @@ nonce source and what is kept afterwards differ.
+ ## Privacy note, stated plainly
+ 
+ In verifier mode the verifier decrypts the presentation, so it sees the
+-plaintext PID claims (as it does on the landing-page path today), and it
+-additionally keeps the presentation string in memory and hands it to the
+-bridge. Verifier and bridge are meant to run on the SAME host; the endpoint is
+-not designed to be exposed to a third party, and `GET /result/:id` carries no
+-authentication beyond the session id (a random UUID). Two consequences:
+-
+-- Do not put `GET /result/:id` on a public origin. Bind the verifier to
+-  localhost, or front it with a reverse proxy that exposes `/request/:id` and
+-  `/response/:id` to the wallet and nothing else.
+-- `RESULT_INCLUDES_PRESENTATION=false` keeps only the parsed summary; the
+-  endpoint then answers `verified` with `presentation_withheld` instead of
+-  `presentation`, and the bridge's verifier mode cannot work.
++plaintext PID claims (as it does on the landing-page path today). What it
++KEEPS after verification, and what `GET /result/:id` serves, is minimized by
++default:
++
++- Default (no flags): only the `ResultSummary` outlives the verification
++  callback: vct, holder binding, nonce binding, the `age_equal_or_over`
++  predicate, the credential `exp`, and the PATHS of the disclosed claims. No
++  disclosed string value (`given_name`, `family_name`) and no presentation
++  string is kept or served. This is the WP0 criterion: names the service
++  received do not appear in any response.
++- `RESULT_INCLUDES_PRESENTATION=true`: the raw presentation string is kept and
++  served as `presentation`. The bridge's verifier mode needs this, because the
++  zkVM statement re-verifies the presentation itself. The presentation carries
++  the disclosed names, so this flag IS the plaintext boundary of the SP1 route:
++  with it on, the bridge process sees the names.
++- `RESULT_INCLUDES_NAMES=true`: the parsed PID view with its disclosed values
++  is kept and served as `verified_pid`. Off by default; nothing on the bridge
++  path needs it. It exists for an operator who wants the parsed values
++  without re-parsing the presentation, and it is documented here so nobody
++  turns it on by accident.
++
++Either flag makes the endpoint a plaintext transfer, so either flag requires
++`RESULT_TOKEN`. The bridge presents it as `X-Result-Token` on every read.
++Without a matching header the endpoint answers 401; with a plaintext flag on
++and no `RESULT_TOKEN` configured, it answers 503 with a message naming the
++variable, rather than serving plaintext to whoever knows the session id.
++When `RESULT_TOKEN` is set, every read of `GET /result/:id` needs it, the
++minimized ones included; when it is unset and both flags are off, the
++minimized result is served without authentication (it contains nothing the
++wallet disclosed as a value).
++
++Verifier and bridge are still meant to run on the SAME host. The token
++protects against a caller who learned a session id (it is in the QR code the
++wallet scans); it does not make the endpoint a public API. Bind the verifier
++to localhost, or front it with a reverse proxy that exposes `/request/:id` and
++`/response/:id` to the wallet and nothing else. Those two, and the relay
++endpoints, stay unauthenticated by design: the wallet has no token.
+ 
+ The blind relay (`docs/blind-relay.md`) is the privacy-preserving alternative:
+ there the client holds the decryption key and the server stores the wallet's
+@@ -77,16 +103,17 @@ render QR / open openid4vp_uri  - - - - - - - - - - - - - - - - - - - ->  scan /
+                                    POST /response/:id                <-
+                                      response=<JWE>
+                                    decrypt, verify (as on GET /)
+-                                   store {VerifiedPid, presentation string}
++                                   store {summary, presentation if flagged}
+                                    bridge table: completed (nonce free again)
+                                    -> 200 { status: verified, inspect
+                                             [, redirect_uri] }
+                                       or 422 { status: rejected, reason }
+ GET /result/:id (poll)          ->
++  X-Result-Token: <RESULT_TOKEN>
+                                 <- 200 { status: pending }
+                                    ...
+-                                <- 200 { status: verified, presentation,
+-                                         verified_pid, nonce }
++                                <- 200 { status: verified, nonce, result,
++                                         presentation (flag + token) }
+ native statement + zkVM proof over `presentation`
+ ```
+ 
+@@ -138,10 +165,19 @@ caller nonces.
+ 
+ ### `GET /result/:id`
+ 
+-Always `200` for a session this endpoint knows; the `status` field carries
+-the state. `400` for a non-UUID id, `404` for a session with no outcome that
+-was not created through `POST /request` (a landing-page session before its
+-response, a relay or ZK session, an unknown id).
++Header: `X-Result-Token: <RESULT_TOKEN>`. Required for every read when
++`RESULT_TOKEN` is set (401 `X-Result-Token header missing` or `X-Result-Token
++does not match` otherwise, compared in constant time). When `RESULT_TOKEN` is
++unset and a plaintext flag is on, every read answers 503 `RESULT_TOKEN is not
++set: GET /result/:id refuses to serve plaintext ...`, pending sessions
++included, so a misconfigured bridge fails on its first poll with the variable
++named, not after the wallet has answered.
++
++Otherwise always `200` for a session this endpoint knows; the `status` field
++carries the state. `400` for a non-UUID id, `404` for a session with no
++outcome that was not created through `POST /request` (a landing-page session
++before its response, a relay or ZK session, an unknown id) and for a session
++dropped by the TTL.
+ 
+ Pending:
+ 
+@@ -149,26 +185,52 @@ Pending:
+ { "status": "pending", "session_id": "3f2c…", "nonce": "538cc3ec…84ab" }
+ ```
+ 
+-Verified:
++Verified, default configuration (minimized):
+ 
+ ```json
+ {
+   "status": "verified",
+   "session_id": "3f2c…",
+   "nonce": "538cc3ec…84ab",
+-  "presentation": "<issuer JWT>~<disclosure>~…~<KB-JWT>",
+-  "verified_pid": { "vct": "urn:eudi:pid:de:1", "view": { … }, "holder_bound": true }
++  "result": {
++    "vct": "urn:eudi:pid:de:1",
++    "holder_bound": true,
++    "nonce_bound": true,
++    "age_equal_or_over": { "18": true },
++    "credential_exp": 1789000000,
++    "disclosed_paths": ["age_equal_or_over.18", "family_name", "given_name"]
++  },
++  "presentation_withheld": "RESULT_INCLUDES_PRESENTATION is off: the raw presentation was not kept",
++  "verified_pid_withheld": "RESULT_INCLUDES_NAMES is off: disclosed values were not kept"
+ }
+ ```
+ 
+-`presentation` is the SD-JWT VC presentation exactly as it appeared in the
+-decrypted `vp_token`: issuer JWT, the disclosures the wallet chose, and the
+-KB-JWT, `~`-separated, byte for byte. A consumer that re-verifies it sees the
+-same bytes this verifier verified. With `RESULT_INCLUDES_PRESENTATION=false`
+-the key is absent and `presentation_withheld` explains why.
++`result` is built once, at verification time, and only booleans, integers and
++claim paths are copied out of the disclosed view. `holder_bound` and
++`nonce_bound` are the outcomes of the KB-JWT checks; both are `true` for every
++verified session (a failure is a rejection), and they are stated so a
++consumer does not have to know that. `age_equal_or_over` lists the disclosed
++predicates by bound; it is absent when the wallet disclosed none.
++`credential_exp` is the issuer JWT `exp` (absent when the credential has
++none); an expired credential is rejected, so a verified session's value lies
++in the future at verification time. `disclosed_paths` says WHICH claims the
++wallet revealed, never what they said.
++
++With `RESULT_INCLUDES_PRESENTATION=true` (and the token presented) the answer
++also carries:
+ 
+-`verified_pid` is the same parsed summary the inspector view uses. `nonce` is
+-`null` for a landing-page session (its UUID nonce is not tracked).
++```json
++  "presentation": "<issuer JWT>~<disclosure>~…~<KB-JWT>"
++```
++
++the SD-JWT VC presentation exactly as it appeared in the decrypted
++`vp_token`: issuer JWT, the disclosures the wallet chose, and the KB-JWT,
++`~`-separated, byte for byte. A consumer that re-verifies it sees the same
++bytes this verifier verified. With `RESULT_INCLUDES_NAMES=true` (and the
++token) the answer also carries `verified_pid`, the parsed view the inspector
++uses (`vct`, `view.claims`, `view.disclosed` with values, `holder_bound`).
++Each flag replaces its `*_withheld` note. `nonce` is `null` for a
++landing-page session (its UUID nonce is not tracked).
+ 
+ Rejected:
+ 
+@@ -183,34 +245,52 @@ Rejected:
+ ```
+ 
+ `error` and `reason` carry the same text; the bridge client reads `reason`.
++A rejection carries no claim data in any configuration.
++
++### Other endpoints and plaintext
++
++`GET /inspect/:id` reports which claims a session disclosed (paths) against
++the registered scope; it does not render values. `POST /response/:id` answers
++the wallet with the status, the inspect URL and the redirect. The ZK
++endpoints and the relay endpoints belong to other sessions (`GET /result/:id`
++is 404 for them). No other endpoint of this service returns a disclosed value
++or a presentation, so the token is required on `GET /result/:id` only.
+ 
+ ### Unchanged
+ 
+ `GET /`, `GET /request/:id`, `GET /inspect/:id`, the ZK endpoints
+ (`GET /zk/result/:id` included) and the relay endpoints behave as before. The
+-only change on the shared response path is that a verified default-path
+-session now also keeps its presentation string (in memory, same lifetime as
+-the parsed result, gated by the flag).
++change on the shared response path is what a verified default-path session
++keeps: the minimized summary always, the presentation string and the parsed
++view only behind their flags (in memory, same lifetime as the summary).
+ 
+ ## Configuration
+ 
+ | variable | default | effect |
+ |---|---|---|
+-| `RESULT_INCLUDES_PRESENTATION` | `true` | keep the decrypted presentation of a verified session and serve it from `GET /result/:id`; `false` keeps the parsed summary only |
++| `RESULT_TOKEN` | unset | shared secret for `GET /result/:id`, presented as `X-Result-Token`; required whenever a plaintext flag is on (503 otherwise); when set, required on every read |
++| `RESULT_INCLUDES_PRESENTATION` | `false` | keep the decrypted presentation of a verified session and serve it as `presentation`; the bridge's verifier mode needs `true`; the SP1 route's plaintext boundary |
++| `RESULT_INCLUDES_NAMES` | `false` | keep the parsed PID view with its disclosed values and serve it as `verified_pid` |
++| `BRIDGE_MAX_PENDING` | `1000` | most `POST /request` sessions allowed to wait for a wallet at once; further requests get 429 until one completes or expires |
++| `BRIDGE_SESSION_TTL_SECS` | `900` | seconds after creation at which a `POST /request` session and its outcome are dropped; pruned on the next `POST /request` |
+ 
+-Nothing else is needed: the endpoints are always mounted, the nonce table is
+-in memory, and sessions live as long as the process (no pruning, as for the
+-relay table and the results map today).
++The bridge's verifier mode therefore runs with `RESULT_INCLUDES_PRESENTATION=true`
++and `RESULT_TOKEN=<secret>` on the verifier, and `VERIFIER_RESULT_TOKEN=<same
++secret>` on the bridge (`nachweis-app/service`, see its README). The endpoints
++are always mounted and the tables are in memory.
+ 
+ ## Limits
+ 
+-- No pruning: the bridge table and the results map grow with the number of
+-  sessions until restart. Same as the rest of the service today.
++- Pruning covers the bridge table and the outcomes of bridge sessions only,
++  and runs on `POST /request`. Landing-page outcomes, the relay table and the
++  openid4vp session store still grow until restart; the cap bounds what a
++  caller of `POST /request` can add, not the rest.
+ - One outcome per session: a second wallet POST to a completed session is
+   refused at the openid4vp session-store layer, and the first outcome stands.
+-- `GET /result/:id` is unauthenticated beyond the session id. See the privacy
+-  note: same host only.
++- The token is a shared secret between two processes on one host, sent in a
++  header. It is not a substitute for keeping the endpoint off a public
++  origin. See the privacy note.
+ - Transport-level failures on the wallet's POST (a malformed form body, a
+   session the store refuses) are not recorded as a rejection; the session stays
+   `pending` and the wallet may retry. The bridge's own poll timeout (10 min)
+-  bounds the wait.
++  bounds the wait; the TTL (15 min) drops the session afterwards.

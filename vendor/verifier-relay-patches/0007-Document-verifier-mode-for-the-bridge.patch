@@ -1,0 +1,273 @@
+From fa2100405d774eb5e5d7348b3bb45a0afb33e22c Mon Sep 17 00:00:00 2001
+From: devbotbo <7118.eth@proton.me>
+Date: Mon, 7 Sep 2026 21:00:51 +0200
+Subject: [PATCH] Document verifier mode for the bridge
+
+docs/bridge-mode.md: what the two endpoints are for, the sequence, the exact
+JSON shapes of POST /request and GET /result/:id (pending, verified, rejected,
+withheld), the 409 rule for in-flight nonces, RESULT_INCLUDES_PRESENTATION,
+and the privacy note: in verifier mode the verifier and the bridge on the
+same host see the presentation; the blind relay is the privacy-preserving
+alternative. README and blind-relay.md point at it.
+---
+ README.md           |   7 ++
+ docs/blind-relay.md |   4 +-
+ docs/bridge-mode.md | 216 ++++++++++++++++++++++++++++++++++++++++++++
+ 3 files changed, 226 insertions(+), 1 deletion(-)
+ create mode 100644 docs/bridge-mode.md
+
+diff --git a/README.md b/README.md
+index 4343877..4a8f0d4 100644
+--- a/README.md
++++ b/README.md
+@@ -139,6 +139,13 @@ and hands it to the client for pickup; the service cannot read the
+ presentation. Request and response shapes, the address-binding nonce formula,
+ and the trust statement are in `docs/blind-relay.md`.
+ 
++Verifier mode for the Nachweis bridge (`POST /request`, `GET /result/:id`):
++the default request with a caller-supplied nonce, and the verified SD-JWT
++presentation served back to a bridge on the same host. Here the verifier does
++see the plaintext; the blind relay is the alternative when it must not.
++Shapes, the privacy note and `RESULT_INCLUDES_PRESENTATION` are in
++`docs/bridge-mode.md`.
++
+ The real RP private key lives outside this repo, in the sibling `../secrets`
+ directory, and is never committed. The leaf certificate is public
+ (`fixtures/live/access-leaf.pem`). For live work against the local interop
+diff --git a/docs/blind-relay.md b/docs/blind-relay.md
+index 7cc3916..d43ec1d 100644
+--- a/docs/blind-relay.md
++++ b/docs/blind-relay.md
+@@ -9,7 +9,9 @@ see "Open question for the live test" below.
+ In the default flow (`GET /`) the service generates the ECDH-ES key pair that
+ the wallet encrypts its `direct_post.jwt` response to, decrypts the response,
+ verifies the SD-JWT presentation, and renders the inspector. The service sees
+-the plaintext PID claims.
++the plaintext PID claims. Verifier mode for the bridge (`docs/bridge-mode.md`)
++is that same flow with a caller-supplied nonce and the presentation served
++back; it is the non-private counterpart of what follows.
+ 
+ In blind-relay mode the CLIENT (the investor's browser, or a companion prover
+ app) generates the ephemeral P-256 key pair and sends the service only the
+diff --git a/docs/bridge-mode.md b/docs/bridge-mode.md
+new file mode 100644
+index 0000000..1ba25ca
+--- /dev/null
++++ b/docs/bridge-mode.md
+@@ -0,0 +1,216 @@
++# Verifier mode for the bridge: caller nonce in, presentation out
++
++Status: implemented and tested offline (`verifier-service/src/bridge.rs`,
++`verifier-service/tests/bridge_http.rs`). Consumed by the Nachweis bridge
++(`nachweis-app/service`, `VERIFIER_URL` set), which creates the request, lets
++the wallet answer it, fetches the verified presentation and proves the
++statement subset in the zkVM.
++
++## What it is
++
++The default flow (`GET /`) mints its own UUID nonce and keeps, after
++verification, only the parsed `VerifiedPid` (disclosed claims, vct, holder
++binding). The bridge needs two things the default flow does not offer:
++
++1. the nonce has to be ITS nonce, `hex(sha256(address20 || challenge))`, so the
++   KB-JWT the wallet signs is bound to the EVM address (same formula as the
++   blind relay, see `docs/blind-relay.md`, "Nonce formula");
++2. the raw SD-JWT presentation afterwards, because the zkVM statement
++   re-verifies the issuer signature, the disclosures, `sd_hash` and the
++   KB-JWT nonce binding itself.
++
++Verifier mode is the default path with two JSON doors for exactly that. The
++request is the same registered minimal ask (`given_name`, `family_name`,
++`age_equal_or_over.18`), signed with the same registrar leaf, encrypted to the
++service's own key, answered on the same `POST /response/:id`, verified by the
++same code (decrypt, issuer signature, trust anchor if configured, status list
++if configured, vct, holder binding, nonce, aud, sd_hash, freshness). Only the
++nonce source and what is kept afterwards differ.
++
++## Privacy note, stated plainly
++
++In verifier mode the verifier decrypts the presentation, so it sees the
++plaintext PID claims (as it does on the landing-page path today), and it
++additionally keeps the presentation string in memory and hands it to the
++bridge. Verifier and bridge are meant to run on the SAME host; the endpoint is
++not designed to be exposed to a third party, and `GET /result/:id` carries no
++authentication beyond the session id (a random UUID). Two consequences:
++
++- Do not put `GET /result/:id` on a public origin. Bind the verifier to
++  localhost, or front it with a reverse proxy that exposes `/request/:id` and
++  `/response/:id` to the wallet and nothing else.
++- `RESULT_INCLUDES_PRESENTATION=false` keeps only the parsed summary; the
++  endpoint then answers `verified` with `presentation_withheld` instead of
++  `presentation`, and the bridge's verifier mode cannot work.
++
++The blind relay (`docs/blind-relay.md`) is the privacy-preserving alternative:
++there the client holds the decryption key and the server stores the wallet's
++JWE unopened, so the server never sees the presentation. It costs the client a
++key pair and the decrypt-and-verify step; verifier mode costs the user the
++verifier's view of the plaintext. The two modes coexist on one service; a
++session belongs to exactly one of them, decided by which endpoint created it.
++
++## Sequence
++
++```text
++bridge (same host)                 verifier-service                  wallet (phone)
++-------------------------------    ------------------------------    --------------------
++challenge = 32 random bytes
++nonce = hex(sha256(addr20 || challenge))
++POST /request { nonce [, redirect_uri] } ->
++                                   validate nonce (16..128, [A-Za-z0-9_-])
++                                   409 if a PENDING session has this nonce
++                                   build JAR: nonce, direct_post.jwt,
++                                     client_metadata.jwks = [own enc key],
++                                     dcql_query = registered minimal ask
++                                   sign with the registrar leaf (x509_hash)
++                                   bridge table: {nonce, pending}
++                                <- 201 { session_id, request_uri,
++                                         openid4vp_uri, nonce, result_url }
++render QR / open openid4vp_uri  - - - - - - - - - - - - - - - - - - - ->  scan / open
++                                   GET /request/:id                  <-
++                                   -> JAR (application/oauth-authz-req+jwt)
++                                                                     verify JAR, consent,
++                                                                     vp_token + KB-JWT
++                                                                       (nonce, aud=client_id),
++                                                                     JWE to the service key
++                                   POST /response/:id                <-
++                                     response=<JWE>
++                                   decrypt, verify (as on GET /)
++                                   store {VerifiedPid, presentation string}
++                                   bridge table: completed (nonce free again)
++                                   -> 200 { status: verified, inspect
++                                            [, redirect_uri] }
++                                      or 422 { status: rejected, reason }
++GET /result/:id (poll)          ->
++                                <- 200 { status: pending }
++                                   ...
++                                <- 200 { status: verified, presentation,
++                                         verified_pid, nonce }
++native statement + zkVM proof over `presentation`
++```
++
++## HTTP surface
++
++### `POST /request`
++
++Body (JSON):
++
++```json
++{
++  "nonce": "538cc3ecfb6325d0f4adb5c784a8caac93bbac1cd69b10701b210ff8e66f84ab",
++  "redirect_uri": "nachweis://return"
++}
++```
++
++- `nonce` (required): 16 to 128 characters of `[A-Za-z0-9_-]`. Lowercase hex
++  (the bridge), base64url and UUIDs all fit; anything else is 400. The value
++  goes into the signed request object verbatim.
++- `redirect_uri` (optional): an absolute URL, custom scheme allowed. Returned
++  verbatim to the wallet in the answer to a VERIFIED `POST /response/:id`
++  (OpenID4VP 1.0, section 8.2), so a same-device flow comes back to the app.
++
++Answer `201 Created`:
++
++```json
++{
++  "session_id": "3f2c…",
++  "session": "3f2c…",
++  "request_uri": "https://verifier.example/request/3f2c…",
++  "openid4vp_uri": "openid4vp://?client_id=x509_hash%3A…&request_uri=…",
++  "authorization_request": "openid4vp://?client_id=x509_hash%3A…&request_uri=…",
++  "nonce": "538cc3ec…84ab",
++  "result_url": "https://verifier.example/result/3f2c…"
++}
++```
++
++`session` and `authorization_request` are the names the bridge client reads;
++`session_id` and `openid4vp_uri` match `POST /relay/request`. The pairs carry
++identical values. The bridge session id IS the verifier session id, so the app
++polls one id.
++
++Errors: `400` (nonce shape, relative `redirect_uri`, unparseable body),
++`409` when another session created through this endpoint still waits for its
++wallet response with the same nonce (the body names that session). A nonce is
++released once its session is verified or rejected. Landing-page sessions
++(`GET /`) are not in the table, so their UUID nonces are not checked against
++caller nonces.
++
++### `GET /result/:id`
++
++Always `200` for a session this endpoint knows; the `status` field carries
++the state. `400` for a non-UUID id, `404` for a session with no outcome that
++was not created through `POST /request` (a landing-page session before its
++response, a relay or ZK session, an unknown id).
++
++Pending:
++
++```json
++{ "status": "pending", "session_id": "3f2c…", "nonce": "538cc3ec…84ab" }
++```
++
++Verified:
++
++```json
++{
++  "status": "verified",
++  "session_id": "3f2c…",
++  "nonce": "538cc3ec…84ab",
++  "presentation": "<issuer JWT>~<disclosure>~…~<KB-JWT>",
++  "verified_pid": { "vct": "urn:eudi:pid:de:1", "view": { … }, "holder_bound": true }
++}
++```
++
++`presentation` is the SD-JWT VC presentation exactly as it appeared in the
++decrypted `vp_token`: issuer JWT, the disclosures the wallet chose, and the
++KB-JWT, `~`-separated, byte for byte. A consumer that re-verifies it sees the
++same bytes this verifier verified. With `RESULT_INCLUDES_PRESENTATION=false`
++the key is absent and `presentation_withheld` explains why.
++
++`verified_pid` is the same parsed summary the inspector view uses. `nonce` is
++`null` for a landing-page session (its UUID nonce is not tracked).
++
++Rejected:
++
++```json
++{
++  "status": "rejected",
++  "session_id": "3f2c…",
++  "nonce": "538cc3ec…84ab",
++  "error": "KB-JWT nonce does not match the request",
++  "reason": "KB-JWT nonce does not match the request"
++}
++```
++
++`error` and `reason` carry the same text; the bridge client reads `reason`.
++
++### Unchanged
++
++`GET /`, `GET /request/:id`, `GET /inspect/:id`, the ZK endpoints
++(`GET /zk/result/:id` included) and the relay endpoints behave as before. The
++only change on the shared response path is that a verified default-path
++session now also keeps its presentation string (in memory, same lifetime as
++the parsed result, gated by the flag).
++
++## Configuration
++
++| variable | default | effect |
++|---|---|---|
++| `RESULT_INCLUDES_PRESENTATION` | `true` | keep the decrypted presentation of a verified session and serve it from `GET /result/:id`; `false` keeps the parsed summary only |
++
++Nothing else is needed: the endpoints are always mounted, the nonce table is
++in memory, and sessions live as long as the process (no pruning, as for the
++relay table and the results map today).
++
++## Limits
++
++- No pruning: the bridge table and the results map grow with the number of
++  sessions until restart. Same as the rest of the service today.
++- One outcome per session: a second wallet POST to a completed session is
++  refused at the openid4vp session-store layer, and the first outcome stands.
++- `GET /result/:id` is unauthenticated beyond the session id. See the privacy
++  note: same host only.
++- Transport-level failures on the wallet's POST (a malformed form body, a
++  session the store refuses) are not recorded as a rejection; the session stays
++  `pending` and the wallet may retry. The bridge's own poll timeout (10 min)
++  bounds the wait.
