@@ -184,7 +184,7 @@ Pinned values for the fixture (`test/fixtures/noir`, same PID vector as the SP1 
 
 | name | value |
 |---|---|
-| HonkVerifier `VK_HASH` | `0x24a16511ee04bb295ce6eab6e21c7847f23c3d342234bd07d3d7940634de7da6` (constant in the generated file, equals `bb write_vk` `vk_hash`) |
+| HonkVerifier `VK_HASH` | `0x2e13794a77895882c11e891c641277cede611206c575ca2a35e8fe7724758a64` (constant in the generated file, equals `bb write_vk` `vk_hash`) |
 | issuerKeyHash = sha256(issuer P-256 key, SEC1 uncompressed) | `0xb52359580c14e2d79d34605740d86338adc6a0868a22ec648d1896187813fd26` (companion test issuer of the realistic Noir vector; a real deployment pins the sandbox issuer's key, see `circuits/pid-sdjwt/REALISM.md`) |
 | policyId (default in the deploy script) | `keccak256("nachweis.pid.over18.v1")` |
 
