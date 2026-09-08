@@ -7,9 +7,10 @@
 #   -> nachweis-bridge in verifier mode with PROOF_MODE from --mode
 #   -> a synthetic wallet (scripts/e2e/wallet.ts) mints a fresh SD-JWT PID presentation for the
 #      session nonce and posts it encrypted, like the sandbox wallet does
-#   -> bridge: native statement, proof, attestWithProof against the fork
-#   -> cast: subscribe as the investor, balance > 0, isEligible true; revoke via the bridge;
-#      subscribe reverts NotEligible, isEligible false
+#   -> bridge: native statement, proof, attestWithProof against the fork (evidence only)
+#   -> cast: isEligible false and subscribe reverts before the issuer approves; POST /sessions/:id/approve
+#      with the issuer token; subscribe as the investor, balance > 0, isEligible true; revoke via the
+#      bridge; subscribe reverts NotEligible, isEligible false
 #
 # Usage: scripts/e2e-local.sh [--mode mock|execute|groth16] [--keep] [--fork-url URL]
 #   --mode     mock (fixture proof, MockProofVerifier), execute (guest run, no proof: attestation
@@ -50,6 +51,7 @@ done
 DEPLOYER_KEY=0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
 DEPLOYER=0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266
 INVESTOR_KEY=0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d
+ISSUER_TOKEN="${BRIDGE_ISSUER_TOKEN:-local-issuer-token}"   # bearer token for the bridge's issuer routes (approve, revoke, attest-operator)
 INVESTOR=0x70997970C51812dc3A010C7d01b50e0d17dc79C8
 POLICY_ID=0xd27260f1ca509ba75dea6cd27b2985a96e423550e16db3350d2945e215e3d05f  # keccak256("nachweis.pid.over18.v1")
 REQUIRED_BITS=3
@@ -203,7 +205,8 @@ mark verifier-service "$VERIFIER_URL client_id $CLIENT_ID"
 # from the x5c leaf (ISSUER_KEY_SEC1_HEX unset), KB_JWT_WINDOW_SECS stays at the default 600.
 BRIDGE_ENV=(BIND="127.0.0.1:$BPORT" RPC_URL="$RPC_URL" OPERATOR_PRIVATE_KEY="$DEPLOYER_KEY" REGISTRY="$REGISTRY" POLICY_ID="$POLICY_ID"
   VERIFIER_URL="$VERIFIER_URL" PROOF_MODE="$MODE" PROVER_ARTIFACTS="$ROOT/prover-sp1/fixtures" PROVER_ELF="$GUEST_ELF"
-  EXPECTED_AUD="$CLIENT_ID" REQUIRE_ADDRESS_PROOF=true CORS_ORIGINS="http://localhost:5173" RUST_LOG="${RUST_LOG:-info}")
+  EXPECTED_AUD="$CLIENT_ID" REQUIRE_ADDRESS_PROOF=true CORS_ORIGINS="http://localhost:5173" RUST_LOG="${RUST_LOG:-info}"
+  BRIDGE_ISSUER_TOKEN="$ISSUER_TOKEN")
 [ "$MODE" = groth16 ] && BRIDGE_ENV+=(SP1_PROVER=cpu)
 (cd "$ROOT/service" && exec env "${BRIDGE_ENV[@]}" "$RUN_DIR/bin/e2e-nachweis-bridge") >"$RUN_DIR/bridge.log" 2>&1 &
 BRIDGE_PID=$!
@@ -248,9 +251,13 @@ for i in $(seq 1 "$WAIT"); do
 done
 [ "$STATE" = proved ] || die "session did not reach proved within ${WAIT}s (state $STATE)"
 
-# Attest. execute mode has no proof (proof_hex null), so the operator fallback attests there.
+# Attest. execute mode has no proof (proof_hex null), so the operator fallback attests there (and
+# approves in the same transaction: the operator signed the decision). The proof path stores evidence
+# only; the issuer approves in a separate step below.
 if [ "$MODE" = execute ]; then
-  ATTEST=$(curl -s -w '\n%{http_code}' -X POST "$BRIDGE_URL/sessions/$SID/attest-operator" -H 'content-type: application/json' -d '{}')
+  NOAUTH=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BRIDGE_URL/sessions/$SID/attest-operator" -H 'content-type: application/json' -d '{}')
+  [ "$NOAUTH" = 401 ] || die "attest-operator without the issuer token answered $NOAUTH, expected 401"
+  ATTEST=$(curl -s -w '\n%{http_code}' -X POST "$BRIDGE_URL/sessions/$SID/attest-operator" -H "authorization: Bearer $ISSUER_TOKEN" -H 'content-type: application/json' -d '{}')
   ATTEST_PATH="attestByOperator (operator fallback, execute mode has no proof)"
 else
   ATTEST=$(curl -s -w '\n%{http_code}' -X POST "$BRIDGE_URL/sessions/$SID/attest" -H 'content-type: application/json' -d '{}')
@@ -271,17 +278,42 @@ if [ "$MODE" != execute ]; then
   fi
 fi
 
+if [ "$MODE" != execute ]; then
+  # Evidence on chain, not approved: isEligible false, subscribe reverts, the session says attested.
+  ELIG0=$(cast call "$REGISTRY" "isEligible(address,bytes32,uint256)(bool)" "$INVESTOR" "$POLICY_ID" "$REQUIRED_BITS" --rpc-url "$RPC_URL")
+  [ "$ELIG0" = false ] || die "isEligible right after attestWithProof is $ELIG0, expected false before the issuer approves"
+  APPROVED0=$(cast call "$REGISTRY" "approved(address,bytes32)(bool)" "$INVESTOR" "$POLICY_ID" --rpc-url "$RPC_URL")
+  [ "$APPROVED0" = false ] || die "approved right after attestWithProof is $APPROVED0"
+  set +e
+  SUB0=$(cast send "$SUBSCRIPTION" "subscribe()" --rpc-url "$RPC_URL" --private-key "$INVESTOR_KEY" --json 2>&1); SUB0_RC=$?
+  set -e
+  [ $SUB0_RC -ne 0 ] || die "subscribe() succeeded before the issuer approved"
+  S0=$(curl -sf "$BRIDGE_URL/sessions/$SID")
+  [ "$(echo "$S0" | jq -r .state)" = attested ] && [ "$(echo "$S0" | jq -r .approved)" = false ] || die "session after attest: $(echo "$S0" | jq -c '{state,approved}')"
+  mark awaiting-approval "isEligible false, approved false, subscribe() reverts, session attested (awaiting issuer approval)"
+  # The issuer approves: bearer token required.
+  NOAUTH=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BRIDGE_URL/sessions/$SID/approve")
+  [ "$NOAUTH" = 401 ] || die "approve without the issuer token answered $NOAUTH, expected 401"
+  APPR=$(curl -s -w '\n%{http_code}' -X POST "$BRIDGE_URL/sessions/$SID/approve" -H "authorization: Bearer $ISSUER_TOKEN")
+  [ "$(echo "$APPR" | tail -1)" = 200 ] || die "approve answered: $APPR"
+  APPR_TX=$(echo "$APPR" | sed '$d' | jq -r .tx_hash)
+  mark "state:approved" "registry.approve tx $APPR_TX gas $(cast receipt "$APPR_TX" --rpc-url "$RPC_URL" gasUsed | xargs cast to-dec)"
+fi
+
 ELIG=$(cast call "$REGISTRY" "isEligible(address,bytes32,uint256)(bool)" "$INVESTOR" "$POLICY_ID" "$REQUIRED_BITS" --rpc-url "$RPC_URL")
-[ "$ELIG" = true ] || die "isEligible after attest is $ELIG"
-SUB=$(cast send "$SUBSCRIPTION" "subscribe()" --rpc-url "$RPC_URL" --private-key "$INVESTOR_KEY" --json) || die "subscribe() reverted right after attest"
+[ "$ELIG" = true ] || die "isEligible after approve is $ELIG"
+SUB=$(cast send "$SUBSCRIPTION" "subscribe()" --rpc-url "$RPC_URL" --private-key "$INVESTOR_KEY" --json) || die "subscribe() reverted right after approve"
 SUB_GAS=$(echo "$SUB" | jq -r .gasUsed | xargs cast to-dec)
 BAL=$(cast call "$TOKEN" "balanceOf(address)(uint256)" "$INVESTOR" --rpc-url "$RPC_URL" | awk '{print $1}')
 [ "$BAL" != "0" ] || die "FundToken balance is 0 after subscribe"
 mark subscribe "isEligible true, subscribe() gas $SUB_GAS, balance $(cast from-wei "$BAL") NDF"
 
-REV=$(curl -s -w '\n%{http_code}' -X POST "$BRIDGE_URL/revoke" -H 'content-type: application/json' -d "{\"subject\":\"$INVESTOR\"}")
+NOAUTH=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BRIDGE_URL/revoke" -H 'content-type: application/json' -d "{\"subject\":\"$INVESTOR\"}")
+[ "$NOAUTH" = 401 ] || die "revoke without the issuer token answered $NOAUTH, expected 401"
+REV=$(curl -s -w '\n%{http_code}' -X POST "$BRIDGE_URL/revoke" -H "authorization: Bearer $ISSUER_TOKEN" -H 'content-type: application/json' -d "{\"subject\":\"$INVESTOR\"}")
 [ "$(echo "$REV" | tail -1)" = 200 ] || die "revoke answered: $REV"
 mark revoke "tx $(echo "$REV" | sed '$d' | jq -r .tx_hash)"
+[ "$(curl -sf "$BRIDGE_URL/sessions/$SID" | jq -r .state)" = revoked ] || die "session after revoke is not revoked"
 
 ELIG2=$(cast call "$REGISTRY" "isEligible(address,bytes32,uint256)(bool)" "$INVESTOR" "$POLICY_ID" "$REQUIRED_BITS" --rpc-url "$RPC_URL")
 [ "$ELIG2" = false ] || die "isEligible after revoke is $ELIG2"
@@ -293,6 +325,13 @@ SEL_TOKEN=$(cast sig "NotEligible(address)"); SEL_SUB=$(cast sig "NotEligible()"
 echo "$SUB2" | grep -qiE "NotEligible|${SEL_TOKEN#0x}|${SEL_SUB#0x}" || die "subscribe() failed after revoke, but not with NotEligible: $SUB2"
 REVERT_DATA=$(echo "$SUB2" | grep -oE '0x[0-9a-f]{8,}' | head -1)
 mark subscribe-blocked "isEligible false, subscribe() reverts NotEligible (${REVERT_DATA:-see output})"
+
+# Re-approval needs the issuer: approve reopens the revoked record, subscribe works again.
+REAP=$(curl -s -w '\n%{http_code}' -X POST "$BRIDGE_URL/sessions/$SID/approve" -H "authorization: Bearer $ISSUER_TOKEN")
+[ "$(echo "$REAP" | tail -1)" = 200 ] || die "re-approve answered: $REAP"
+ELIG3=$(cast call "$REGISTRY" "isEligible(address,bytes32,uint256)(bool)" "$INVESTOR" "$POLICY_ID" "$REQUIRED_BITS" --rpc-url "$RPC_URL")
+[ "$ELIG3" = true ] || die "isEligible after re-approve is $ELIG3"
+mark re-approve "registry.approve after revoke: isEligible true again, tx $(echo "$REAP" | sed '$d' | jq -r .tx_hash)"
 
 # ---------------------------------------------------------------- summary
 echo

@@ -8,8 +8,9 @@
 #      investor key, POST /sessions/:id/address-proof, GET /sessions/:id/handoff
 #   -> "phone":   companion handoff <handoff JSON> --stub-wallet (request with the SAME challenge, wait,
 #      pickup, prove with bb, POST /sessions/<id>/noir-proof)
-#   -> assert: GET /sessions/:id is attested, isEligible(investor, POLICY, 3) is true, an unrelated
-#      address is false.
+#   -> assert: GET /sessions/:id is attested (evidence only), isEligible(investor, POLICY, 3) is false;
+#      POST /sessions/:id/approve with the issuer token; isEligible true, an unrelated address is false;
+#      POST /sessions/:id/revoke closes it, approve again reopens it.
 #
 # Usage: scripts/two-device-local.sh [--keep] [--phone] [--phone-timeout SECS]
 #   --keep    leave anvil, verifier and bridge running afterwards (URLs and pids are printed)
@@ -52,6 +53,7 @@ K1=0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d   # anvil 
 INVESTOR=0x70997970C51812dc3A010C7d01b50e0d17dc79C8
 STRANGER=0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC                      # anvil 2, never attested
 POLICY=0xd27260f1ca509ba75dea6cd27b2985a96e423550e16db3350d2945e215e3d05f # keccak256("nachweis.pid.over18.v1")
+ISSUER_TOKEN="${BRIDGE_ISSUER_TOKEN:-local-issuer-token}"   # bearer token for the bridge's issuer routes (approve, revoke, attest-operator)
 RPC="http://127.0.0.1:$ANVIL_PORT"
 VERIFIER_URL="http://127.0.0.1:$VERIFIER_PORT"
 BRIDGE_URL="http://127.0.0.1:$BRIDGE_PORT"
@@ -119,7 +121,7 @@ start_bridge() { # require_address_proof, noir verifier, handoff verifier url, h
   [ -n "$BRIDGE_PID" ] && { kill "$BRIDGE_PID" 2>/dev/null || true; sleep 0.3; }
   BIND="127.0.0.1:$BRIDGE_PORT" RPC_URL="$RPC" OPERATOR_PRIVATE_KEY=$K0 REGISTRY=$REGISTRY NOIR_VERIFIER=$2 \
     POLICY_ID=nachweis.pid.over18.v1 REQUIRE_ADDRESS_PROOF=$1 HANDOFF_VERIFIER_URL="$3" HANDOFF_BRIDGE_URL="$4" \
-    RUST_LOG=info "$BRIDGE_BIN" >> "$RUN_DIR/bridge.log" 2>&1 & BRIDGE_PID=$!
+    BRIDGE_ISSUER_TOKEN="$ISSUER_TOKEN" RUST_LOG=info "$BRIDGE_BIN" >> "$RUN_DIR/bridge.log" 2>&1 & BRIDGE_PID=$!
   echo $BRIDGE_PID >> "$PIDS"
   wait_http "$BRIDGE_URL/health" 20 || die "bridge did not come up ($RUN_DIR/bridge.log)"
 }
@@ -152,16 +154,32 @@ sed -n '/^timeline/,$p' "$COMPANION_LOG" | sed 's/^/    /'
 # ------------------------------------------------------------------ 7. assertions, independent of the companion's own output
 STATE=$(curl -fs "$BRIDGE_URL/sessions/$SID" | jq -r .state)
 [ "$STATE" = "attested" ] || die "bridge session is $STATE, expected attested"
+[ "$(curl -fs "$BRIDGE_URL/sessions/$SID" | jq -r .approved)" = "false" ] || die "session reports approved before the issuer approved"
 TX=$(curl -fs "$BRIDGE_URL/sessions/$SID" | jq -r .tx_hash)
 PS=$(curl -fs "$BRIDGE_URL/sessions/$SID" | jq -r .proof_system)
+# Evidence only: the proof never opens a door by itself.
+ELIGIBLE0=$(cast call --rpc-url "$RPC" "$REGISTRY" "isEligible(address,bytes32,uint256)(bool)" "$INVESTOR" "$POLICY" 3)
+[ "$ELIGIBLE0" = "false" ] || die "isEligible($INVESTOR) is $ELIGIBLE0 before the issuer approved, expected false"
+NOAUTH=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BRIDGE_URL/sessions/$SID/approve")
+[ "$NOAUTH" = "401" ] || die "approve without the issuer token answered $NOAUTH, expected 401"
+APPR=$(curl -fs -X POST -H "authorization: Bearer $ISSUER_TOKEN" "$BRIDGE_URL/sessions/$SID/approve") || die "approve failed"
+say "assert: attested, isEligible(investor) false before approval; approve without token 401; issuer approved in $(echo "$APPR" | jq -r .tx_hash)"
+[ "$(curl -fs "$BRIDGE_URL/sessions/$SID" | jq -r .state)" = "approved" ] || die "session is not approved after approve"
 ELIGIBLE=$(cast call --rpc-url "$RPC" "$REGISTRY" "isEligible(address,bytes32,uint256)(bool)" "$INVESTOR" "$POLICY" 3)
-[ "$ELIGIBLE" = "true" ] || die "isEligible($INVESTOR) is $ELIGIBLE"
+[ "$ELIGIBLE" = "true" ] || die "isEligible($INVESTOR) is $ELIGIBLE after approve"
 OTHER=$(cast call --rpc-url "$RPC" "$REGISTRY" "isEligible(address,bytes32,uint256)(bool)" "$STRANGER" "$POLICY" 3)
 [ "$OTHER" = "false" ] || die "isEligible($STRANGER) is $OTHER, expected false"
 HO_AFTER=$(curl -s -o /dev/null -w '%{http_code}' "$BRIDGE_URL/sessions/$SID/handoff")
 [ "$HO_AFTER" = "409" ] || die "handoff after attestation answered $HO_AFTER, expected 409"
 GAS=$(cast receipt --rpc-url "$RPC" "$TX" gasUsed 2>/dev/null || echo "?")
-say "assert: session $SID attested ($PS) in $TX, gas $GAS; isEligible(investor) true, isEligible(stranger) false; handoff now 409"
+say "assert: session $SID attested ($PS) in $TX, gas $GAS; after approve isEligible(investor) true, isEligible(stranger) false; handoff now 409"
+# Revoke closes it; a proof cannot reopen it (registry: DecisionRevoked); re-approval needs the issuer.
+curl -fs -X POST -H "authorization: Bearer $ISSUER_TOKEN" "$BRIDGE_URL/sessions/$SID/revoke" >/dev/null || die "revoke failed"
+[ "$(cast call --rpc-url "$RPC" "$REGISTRY" "isEligible(address,bytes32,uint256)(bool)" "$INVESTOR" "$POLICY" 3)" = "false" ] || die "isEligible true after revoke"
+[ "$(curl -fs "$BRIDGE_URL/sessions/$SID" | jq -r .state)" = "revoked" ] || die "session is not revoked after revoke"
+curl -fs -X POST -H "authorization: Bearer $ISSUER_TOKEN" "$BRIDGE_URL/sessions/$SID/approve" >/dev/null || die "re-approve failed"
+[ "$(cast call --rpc-url "$RPC" "$REGISTRY" "isEligible(address,bytes32,uint256)(bool)" "$INVESTOR" "$POLICY" 3)" = "true" ] || die "isEligible false after re-approve"
+say "assert: revoke closes (isEligible false, session revoked); re-approve by the issuer reopens (isEligible true)"
 PLAINTEXT=$( (grep -ci 'erika\|mustermann\|vp_token\|given_name\|eyJ' "$RUN_DIR/verifier.log" "$RUN_DIR/bridge.log" || true) | awk -F: '{s+=$2} END {print s+0}')
 say "assert: plaintext markers in verifier and bridge logs: $PLAINTEXT"
 [ "$PLAINTEXT" = "0" ] || die "a plaintext marker leaked into a server log"
@@ -198,8 +216,11 @@ if [ $PHONE -eq 1 ]; then
   [ "$ST" = "attested" ] || die "phone session is $ST after $PHONE_TIMEOUT s"
   TX2=$(curl -fs "$BRIDGE_URL/sessions/$SID2" | jq -r .tx_hash)
   EL2=$(cast call --rpc-url "$RPC" "$REGISTRY" "isEligible(address,bytes32,uint256)(bool)" "$VEC_ADDR" "$POLICY" 3)
-  [ "$EL2" = "true" ] || die "isEligible($VEC_ADDR) is $EL2"
-  say "assert: phone session $SID2 attested in $TX2, gas $(cast receipt --rpc-url "$RPC" "$TX2" gasUsed 2>/dev/null || echo '?'); isEligible($VEC_ADDR) true"
+  [ "$EL2" = "false" ] || die "isEligible($VEC_ADDR) is $EL2 before the issuer approved"
+  curl -fs -X POST -H "authorization: Bearer $ISSUER_TOKEN" "$BRIDGE_URL/sessions/$SID2/approve" >/dev/null || die "approve of the phone session failed"
+  EL2=$(cast call --rpc-url "$RPC" "$REGISTRY" "isEligible(address,bytes32,uint256)(bool)" "$VEC_ADDR" "$POLICY" 3)
+  [ "$EL2" = "true" ] || die "isEligible($VEC_ADDR) is $EL2 after approve"
+  say "assert: phone session $SID2 attested in $TX2, gas $(cast receipt --rpc-url "$RPC" "$TX2" gasUsed 2>/dev/null || echo '?'); isEligible($VEC_ADDR) false before and true after the issuer approved"
   echo "TWO-DEVICE (emulator) OK"
 fi
 
