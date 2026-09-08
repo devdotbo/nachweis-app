@@ -101,8 +101,57 @@ presentation.
 
 ## Measured numbers
 
-Filled in at the end of the work package; see the section "Results" below.
+Measured 2026-09-08 on the M3 Max (16 logical cores) against the local stack of
+`scripts/app-e2e-local.sh --mode browser` (anvil, verifier-service in relay mode, bridge in local
+mode with `NoirPidVerifier`, Vite dev server). Every run is cold: a fresh browser profile, so the
+CRS (67 MB) is downloaded inside `bb_init`. All worker timings in ms; "click to submitted" is
+from the button to the bridge's 200 on `noir-proof`, "click to attested" until the app's poll
+showed `attested`.
+
+| run | browser | witness | bb_init | prove | verify | click to submitted | click to attested | result |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| A | Playwright Chromium 153 headless (dev server) | 1,280 | 9,512 | 11,118 | 3,976 | 29.1 s | 32.3 s | spec passed |
+| B | Google Chrome 152 headed, driven by the same spec (dev server) | 1,289 | 9,569 | 10,880 | 3,956 | 28.7 s | 32.0 s | all flow assertions passed; see note |
+| C | Playwright Chromium 153 headless, production bundle on `vite preview` | 1,300 | 10,471 | 11,325 | 4,057 | 30.3 s | 32.2 s | spec passed |
+
+`jwe_decrypt`, `precheck` and `gen_inputs` take 1 to 8 ms each. Proof: 10,304 bytes, 86 public
+inputs, `verifyProof` true in the tab in every run; the bridge's `NoirPidVerifier.verify` dry run
+passed and `attestWithProof` was mined (receipt status 1, `to` = registry) in every run.
+Requests recorded by the spec between the click and `attested` (identical sets in A, B, C):
+`POST {verifier}/relay/request` 1, `GET {verifier}/request/:id` 1, `GET {verifier}/relay/status/:id` 2,
+`GET {verifier}/relay/response/:id` 1, `GET {crs}/g1.dat`, `g2.dat`, `grumpkin_g1.dat` 1 each,
+`POST {bridge}/sessions/:id/noir-proof` 1, plus the app's existing `GET {bridge}/sessions/:id`
+poll (30 to 32) and the RPC reads (16 `POST {rpc}/`). Nothing else left the tab.
+
+Note on run B: the first headed Chrome run failed only on the spec's "no console errors" check
+with `Failed to load resource: the server responded with a status of 404`; the trace was
+overwritten before the URL was read. A headed browser requests `/favicon.ico`, which the app did
+not have; `index.html` now links an empty icon. The rerun after that change is recorded below.
+
+Bundle (`bun run build`, Vite 8.2.2): main chunk 654 kB (197 kB gzip; the prover is not in it),
+prover worker 182 kB, bb.js 3.7 MB threaded plus 3.7 MB single-threaded (each inlines its wasm),
+acvm_js 2.6 MB wasm (755 kB gzip), noirc_abi 0.6 MB wasm (244 kB gzip), circuit artifact
+2.9 MB (`dist/circuits/pid_sdjwt.json`), CRS 67 MB at runtime.
 
 ## Results
 
-(pending)
+- Acceptance 1: `bun run typecheck` and `bun run build` clean (build output above).
+- Acceptance 2: `scripts/app-e2e-local.sh --mode browser --test` passes (run A, 42 s Playwright
+  time including issuer approval and Subscribe).
+- Acceptance 3: the attest transaction receipt has status 1 against the deployed registry in every
+  run; the bridge only sends it after its `NoirPidVerifier.verify` dry run.
+- Acceptance 4: `bun test` in `companion/` 22 pass, 0 fail; `tsc` in `companion/` clean;
+  `Prover.toml` from the refactored `gen-prover.ts` byte-identical to the committed one and to the
+  pre-refactor generator for both fixtures in all six tamper modes;
+  `circuits/pid-sdjwt/test-negative.sh` all `ok` (shapes A, B, C and the five tamper modes).
+- Acceptance 5: numbers above; the manual Chrome measurement is the same spec run in the installed
+  Google Chrome (`PW_CHANNEL=chrome PW_HEADED=1`), not a hand-clicked session.
+- `scripts/app-e2e-local.sh --mode noir --test` (the phone path through the companion) still
+  passes after the card 2b change (37.6 s).
+- CORS: the verifier's router applies `CorsLayer::permissive()` to every route including the three
+  relay routes, so the `X-Pickup-Token` preflight and the cross-origin `POST /relay/request` pass;
+  the bridge allows any origin by default. No Vite proxy was needed.
+
+Unverified: mobile Safari, Android Chrome, Firefox, a non-isolated host (the card then shows the
+reason and the handoff paths), the renderer memory peak in this integration (the spike measured
+2.9 GB for the same proof), and a hand-clicked run.
