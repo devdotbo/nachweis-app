@@ -50,7 +50,14 @@ function useRegistryStatusMock(subject?: Address): RegistryStatus {
   return subject ? mockStatusOf(s, subject, POLICY_ID) : EMPTY_STATUS
 }
 
-function useRegistryEventsMock(): { events: RegistryEvent[]; loading: boolean } {
+export interface EventsRead {
+  events: RegistryEvent[]
+  loading: boolean
+  /** Last fetch error (RPC down, wrong address); the previous events stay on screen. */
+  error?: string
+}
+
+function useRegistryEventsMock(): EventsRead {
   return { events: useMockState().events, loading: false }
 }
 
@@ -144,10 +151,11 @@ function useFundBalanceChain(holder?: Address): bigint | undefined {
   return q.data as bigint | undefined
 }
 
-function useRegistryEventsChain(): { events: RegistryEvent[]; loading: boolean } {
+function useRegistryEventsChain(): EventsRead {
   const client = usePublicClient()
   const [events, setEvents] = useState<RegistryEvent[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string>()
   useEffect(() => {
     if (!client) return
     let alive = true
@@ -174,9 +182,13 @@ function useRegistryEventsChain(): { events: RegistryEvent[]; loading: boolean }
           out.push({ kind: 'Revoked', subject: a.subject as Address, policyId: a.policyId as Hex, actor: a.operator as Address, txHash: l.transactionHash, blockNumber: l.blockNumber })
         }
         out.sort((x, y) => (y.blockNumber > x.blockNumber ? 1 : y.blockNumber < x.blockNumber ? -1 : 0))
-        if (alive) setEvents(out)
+        if (alive) {
+          setEvents(out)
+          setError(undefined)
+        }
       } catch (e) {
         console.warn('event log fetch failed', e)
+        if (alive) setError(shortError(e))
       } finally {
         if (alive) setLoading(false)
       }
@@ -188,7 +200,7 @@ function useRegistryEventsChain(): { events: RegistryEvent[]; loading: boolean }
       clearInterval(t)
     }
   }, [client])
-  return { events, loading }
+  return { events, loading, error }
 }
 
 function useRegistryTxChain(actor?: Address): RegistryTx {
@@ -226,6 +238,6 @@ function shortError(e: unknown): string {
 export const useDecision: (subject?: Address) => DecisionRead = MOCK ? useDecisionMock : useDecisionChain
 export const useEligible: (subject?: Address) => boolean | undefined = MOCK ? useEligibleMock : useEligibleChain
 export const useRegistryStatus: (subject?: Address) => RegistryStatus = MOCK ? useRegistryStatusMock : useRegistryStatusChain
-export const useRegistryEvents: () => { events: RegistryEvent[]; loading: boolean } = MOCK ? useRegistryEventsMock : useRegistryEventsChain
+export const useRegistryEvents: () => EventsRead = MOCK ? useRegistryEventsMock : useRegistryEventsChain
 export const useFundBalance: (holder?: Address) => bigint | undefined = MOCK ? useFundBalanceMock : useFundBalanceChain
 export const useRegistryTx: (actor?: Address) => RegistryTx = MOCK ? useRegistryTxMock : useRegistryTxChain

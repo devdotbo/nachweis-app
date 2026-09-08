@@ -37,6 +37,8 @@ export interface Session {
   handoffError?: string
   /** "Prove in this browser": progress of the tab's own relay request and proof (src/lib/browserProver.ts). */
   browser?: BrowserProve
+  /** Where the investor chose to make the proof (the picker on the prove step). */
+  provePath?: 'browser' | 'phone' | 'companion'
 }
 
 let sessions: Session[] = []
