@@ -6,6 +6,7 @@ SP1 6.1.0 guest and host for the Attestat PID statement (crate names keep the na
 
 - `lib/`: shared verification, runs natively (bridge, host) and in the guest
 - `program/`: SP1 guest, reads `GuestInput`, calls `prove_statement`, commits the ABI-encoded public values
+- `hostlib/`: host-only companions, never in the guest: `check_kb_freshness` (KB-JWT `iat` window, `exp` optional) and `synth` (synthetic presentations for tests)
 - `script/`: host binary `nachweis-pid` (`--check-fixture`, `--synth`, `--execute`, `--prove`, `--verify`) and `vkey`
 - `fixtures/`: synthetic vector, `input.json`, proofs, logs, calldata (the SP1 vector); `realistic-input.json` and `realistic-over18.sdjwt`, the 23-claim vector the Noir circuit and its fixtures use (minted by `companion mint-fixture`, see `circuits/pid-sdjwt/REALISM.md`; the SP1 statement is unchanged, so the SP1 proof stays on the older, shorter vector)
 
@@ -21,7 +22,7 @@ All checks are asserts in the guest; any failure aborts the proof.
 6. KB-JWT `nonce` equals lowercase hex of `sha256(subject || challenge)`: the presentation is bound to the address.
 7. `expiry` is the issuer credential `exp` (0 if absent). The guest has no clock; the contract compares it with `block.timestamp`.
 
-Not in the guest: x5c chain to a trust anchor (the contract pins `issuerKeyHash`), status list, KB-JWT freshness (checked by the host and the bridge). Full text in `NOTES.md`, "Statement proved".
+Not in the guest: x5c chain to a trust anchor (the contract pins `issuerKeyHash`), status list, KB-JWT freshness (checked by the host and the bridge: `iat` within the window, `exp` too when the wallet signs one; the official German test wallet signs no KB-JWT `exp`, see `docs/evidence/g0-2026-09-08.md`). The guest parses JWT headers as JSON objects, so the issuer header's key order and size (x5c first, alg last, about 1 KB) do not matter. Full text in `NOTES.md`, "Statement proved".
 
 ## Public values
 
@@ -54,7 +55,9 @@ ABI encoded, 192 bytes, decoded by `Sp1PidVerifier` as
 
 ## Fixture caveat
 
-The synthetic fixture in `fixtures/` (`synthetic-over18.sdjwt`, `input.json`) carries ERICA's `x5c` chain in the issuer JWT header but is signed with a fresh issuer key (`issuer_key_sec1_hex` in `input.json`), so the bridge (`service`) must be given that key via `ISSUER_KEY_SEC1_HEX` for the fixture, while a real ERICA credential needs no override because the key is taken from the `x5c` leaf certificate. Its KB-JWT expired five minutes after minting (exp = iat + 300, as the sandbox wallet does): the host needs `--allow-stale-kb` for `--execute`/`--prove` and the bridge `KB_JWT_WINDOW_SECS=0`. The committed `expiry` is the issuer credential `exp` (1819756800, 2027-09-01); see `NOTES.md`, "Expiry decision".
+The synthetic fixture in `fixtures/` (`synthetic-over18.sdjwt`, `input.json`) carries ERICA's `x5c` chain in the issuer JWT header but is signed with a fresh issuer key (`issuer_key_sec1_hex` in `input.json`), so the bridge (`service`) must be given that key via `ISSUER_KEY_SEC1_HEX` for the fixture, while a real ERICA credential needs no override because the key is taken from the `x5c` leaf certificate. Its KB-JWT expired five minutes after minting (exp = iat + 300, as the sandbox wallet does; the official test wallet signs no KB-JWT exp, and the check then uses iat alone): the host needs `--allow-stale-kb` for `--execute`/`--prove` and the bridge `KB_JWT_WINDOW_SECS=0`. Unit tests (`cargo test -p nachweis-pid-hostlib`) mint synthetic presentations with and without KB-JWT exp through `hostlib/src/synth.rs` (also used by the bridge's tests).
+
+Guest stability: the ELF and the vkey depend on every byte compiled into `lib/` (including host helpers that the guest never calls, and the `file:line` of each panic site), so host-only logic goes into `hostlib/`. `lib::check_kb_freshness` (KB-JWT `exp` required) is frozen with the deployed ELF and superseded by `hostlib::check_kb_freshness`; a change to `lib/` or `program/` means a new vkey, new `fixtures/`, and a new `Sp1PidVerifier` pin. The committed `expiry` is the issuer credential `exp` (1819756800, 2027-09-01); see `NOTES.md`, "Expiry decision".
 
 ## Measurements
 

@@ -47,9 +47,11 @@ issuer exp 2095795065), so the on-chain Decision expired five minutes after the 
 and Sp1PidVerifier reverted Expired almost immediately. Now both proofs (this guest and the
 Noir circuit) commit the issuer exp only: the credential's lifetime is what the chain should
 enforce. KB-JWT freshness is a property of the presentation and is enforced off chain by the
-host that sees the presentation: `nachweis_pid_lib::check_kb_freshness(&facts, now, window)`
-requires exp in (now, now + window] and iat in [now - window, now + window], both claims
-present. The bridge (service) runs it after the native statement run with KB_JWT_WINDOW_SECS
+host that sees the presentation: `nachweis_pid_hostlib::check_kb_freshness(&facts, now, window)`
+requires iat in [now - window, now + window] and, when the KB-JWT carries one, exp in
+(now, now + window]; exp is optional since the official German test wallet signs aud, iat,
+nonce and sd_hash only (G0 2026-09-08). The older `nachweis_pid_lib::check_kb_freshness`
+(exp required) stays in lib untouched because any edit to lib changes the guest ELF and vkey. The bridge (service) runs it after the native statement run with KB_JWT_WINDOW_SECS
 (default 600) and rejects with 422 before proving; this host runs it before --execute/--prove
 (--kb-window, --allow-stale-kb for stored fixtures). The guest has no clock, so the KB-JWT
 exp cannot be enforced inside the proof without a public "now" input, which would have to be

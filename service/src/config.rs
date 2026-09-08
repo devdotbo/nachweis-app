@@ -44,9 +44,10 @@ pub struct Config {
     /// Issuer P-256 key, SEC1 uncompressed hex (ISSUER_KEY_SEC1_HEX). When unset the key is
     /// taken from the x5c leaf certificate in the issuer JWT header.
     pub issuer_key_sec1: Option<Vec<u8>>,
-    /// KB-JWT freshness window in seconds (KB_JWT_WINDOW_SECS, default 600): the KB-JWT `exp`
-    /// must lie within the window ahead of now and `iat` must not be older than the window.
-    /// `None` (env value 0) disables the check; only for stored fixtures whose KB-JWT is stale.
+    /// KB-JWT freshness window in seconds (KB_JWT_WINDOW_SECS, default 600): the KB-JWT `iat`
+    /// must not be older than the window; `exp`, when the wallet signs one, must lie within the
+    /// window ahead of now (the official German test wallet signs no `exp`). `None` (env value 0)
+    /// disables the check; only for stored fixtures whose KB-JWT is stale.
     pub kb_jwt_window_secs: Option<u64>,
     /// Verifier (blind relay) base URL the phone prover should call, as advertised by
     /// `GET /sessions/:id/handoff` (HANDOFF_VERIFIER_URL; falls back to VERIFIER_URL).
@@ -59,7 +60,8 @@ pub struct Config {
     pub issuer_token: Option<String>,
 }
 
-/// Default KB-JWT freshness window (10 minutes): sandbox wallets mint KB-JWTs with exp = iat + 300.
+/// Default KB-JWT freshness window (10 minutes): sandbox wallets mint KB-JWTs with exp = iat + 300;
+/// the official test wallet signs iat only.
 pub const DEFAULT_KB_JWT_WINDOW_SECS: u64 = 600;
 
 /// Default policy: keccak256("nachweis.pid.over18.v1") = 0xd27260f1ca509ba75dea6cd27b2985a96e423550e16db3350d2945e215e3d05f.

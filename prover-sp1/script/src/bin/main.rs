@@ -8,14 +8,16 @@
 //!   --verify <proof.bin>      verify a saved proof with the SP1 verifier
 //!
 //! --execute and --prove first run the statement natively and check KB-JWT freshness against
-//! the wall clock (--kb-window, default 600 s), as the bridge does; --allow-stale-kb skips that
-//! check for stored fixtures whose KB-JWT has long expired. The guest itself has no clock.
+//! the wall clock (--kb-window, default 600 s: iat within the window, exp within the window when
+//! the wallet signs one), as the bridge does; --allow-stale-kb skips that check for stored
+//! fixtures whose KB-JWT has long expired. The guest itself has no clock.
 use alloy_sol_types::SolType;
 use base64::engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD};
 use base64::Engine;
 use clap::{Parser, ValueEnum};
+use nachweis_pid_hostlib::check_kb_freshness;
 use nachweis_pid_lib::{
-    check_kb_freshness, nonce_string, prove_statement_with_facts, verify_presentation, GuestInput,
+    nonce_string, prove_statement_with_facts, verify_presentation, GuestInput,
     PublicValuesStruct,
 };
 use p256::ecdsa::signature::Signer;
@@ -63,7 +65,7 @@ struct Args {
     /// --synth: issuer credential exp (unix seconds). Default 2027-09-01T00:00:00Z.
     #[arg(long, default_value_t = 1_819_756_800)]
     issuer_exp: u64,
-    /// --execute/--prove: KB-JWT freshness window in seconds (exp within, iat not older than).
+    /// --execute/--prove: KB-JWT freshness window in seconds (iat not older than; exp, if present, within).
     #[arg(long, default_value_t = 600)]
     kb_window: u64,
     /// --execute/--prove: skip the KB-JWT freshness pre-check (stored fixtures).

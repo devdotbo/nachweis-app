@@ -5,7 +5,8 @@ use alloy::sol_types::SolType;
 use anyhow::{anyhow, Context, Result};
 use base64::engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD};
 use base64::Engine;
-use nachweis_pid_lib::{check_kb_freshness, prove_statement_with_facts, GuestInput, PublicValuesStruct};
+use nachweis_pid_hostlib::check_kb_freshness;
+use nachweis_pid_lib::{prove_statement_with_facts, GuestInput, PublicValuesStruct};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::time::SystemTime;
 use x509_cert::{der::Decode, Certificate};
@@ -55,9 +56,10 @@ fn panic_message(p: Box<dyn std::any::Any + Send>) -> String {
 }
 
 /// Run the statement natively, then the KB-JWT freshness check the guest cannot do (it has no
-/// clock): with `kb_jwt_window_secs = Some(w)` the KB-JWT `exp` must lie in `(now, now + w]` and
-/// `iat` in `[now - w, now + w]`. The library asserts on every check, so a statement failure
-/// surfaces as a panic which is caught and returned as the error text.
+/// clock): with `kb_jwt_window_secs = Some(w)` the KB-JWT `iat` must lie in `[now - w, now + w]`
+/// and `exp`, when present, in `(now, now + w]` (`nachweis_pid_hostlib::check_kb_freshness`). The
+/// library asserts on every check, so a statement failure surfaces as a panic which is caught
+/// and returned as the error text.
 pub fn run_native(input: &GuestInput, kb_jwt_window_secs: Option<u64>) -> Result<(PublicValuesStruct, Vec<u8>)> {
     let r = catch_unwind(AssertUnwindSafe(|| prove_statement_with_facts(input)));
     let (pv, facts) = match r {
@@ -82,4 +84,56 @@ pub fn decode_public_values(bytes: &[u8]) -> Result<DecodedPublicValues> {
         expiry: pv.expiry,
         nonce: format!("0x{}", hex::encode(pv.nonce)),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::DEFAULT_KB_JWT_WINDOW_SECS;
+    use nachweis_pid_hostlib::synth::{mint, SynthOptions};
+
+    fn now() -> u64 {
+        SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs()
+    }
+
+    /// The official German test wallet signs KB-JWTs with aud, iat, nonce and sd_hash only; the
+    /// bridge must accept that with the default window and commit the issuer exp.
+    #[test]
+    fn native_run_accepts_a_kb_jwt_without_exp() {
+        let t = now();
+        let input = mint(&SynthOptions::at(t));
+        let (pv, bytes) = run_native(&input, Some(DEFAULT_KB_JWT_WINDOW_SECS)).unwrap();
+        assert_eq!(pv.expiry, t + 365 * 86_400);
+        assert_eq!(pv.over18, 1);
+        assert_eq!(decode_public_values(&bytes).unwrap().expiry, pv.expiry);
+    }
+
+    #[test]
+    fn native_run_rejects_a_stale_iat_when_exp_is_absent() {
+        let t = now();
+        let input = mint(&SynthOptions { kb_iat: t - DEFAULT_KB_JWT_WINDOW_SECS - 60, ..SynthOptions::at(t) });
+        let err = run_native(&input, Some(DEFAULT_KB_JWT_WINDOW_SECS)).err().expect("rejected").to_string();
+        assert!(err.starts_with("KB-JWT freshness: KB-JWT iat"), "{err}");
+        // Window disabled (KB_JWT_WINDOW_SECS=0): the statement alone decides.
+        assert!(run_native(&input, None).is_ok());
+    }
+
+    #[test]
+    fn native_run_keeps_the_exp_rule_when_exp_is_present() {
+        let t = now();
+        let fresh = mint(&SynthOptions { kb_exp: Some(t + 300), ..SynthOptions::at(t) });
+        assert!(run_native(&fresh, Some(DEFAULT_KB_JWT_WINDOW_SECS)).is_ok());
+        let expired = mint(&SynthOptions { kb_iat: t - 400, kb_exp: Some(t - 100), ..SynthOptions::at(t) });
+        let err = run_native(&expired, Some(DEFAULT_KB_JWT_WINDOW_SECS)).err().expect("rejected").to_string();
+        assert!(err.starts_with("KB-JWT freshness: KB-JWT expired"), "{err}");
+    }
+
+    #[test]
+    fn native_run_reports_a_statement_failure_as_error_text() {
+        let t = now();
+        let mut input = mint(&SynthOptions::at(t));
+        input.expected_aud = "https://other.example".to_string();
+        let err = run_native(&input, None).err().expect("rejected").to_string();
+        assert!(err.contains("KB-JWT aud"), "{err}");
+    }
 }

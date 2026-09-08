@@ -32,7 +32,7 @@ cargo test                     # unit tests + the anvil end-to-end test (skips i
 | `PROVER_ELF` | explicit guest ELF path; else `PROVER_ARTIFACTS/nachweis-pid-program`, else `../prover-sp1/target/elf-compilation/riscv64im-succinct-zkvm-elf/release/nachweis-pid-program` | unset |
 | `EXPECTED_VCT` | vct the statement expects | `urn:eudi:pid:de:1` |
 | `EXPECTED_AUD` | KB-JWT `aud` the statement expects (the verifier's `client_id`) | `https://self-issued.me/v2` |
-| `KB_JWT_WINDOW_SECS` | KB-JWT freshness window on the SP1 route (`POST /sessions/:id/presentation`, verifier mode): `exp` must lie within this many seconds ahead of now and `iat` must not be older than this; checked after the native statement run, before proving. Not applied on the Noir route (`POST /sessions/:id/noir-proof`): the bridge receives no KB-JWT there, the companion's `--kb-window` is the only freshness check (see `docs/trust-boundaries.md`). `0` disables the check (only for the stored fixture, whose KB-JWT expired five minutes after minting) | `600` |
+| `KB_JWT_WINDOW_SECS` | KB-JWT freshness window on the SP1 route (`POST /sessions/:id/presentation`, verifier mode): `iat` must not be older than this many seconds, and `exp`, when the wallet signs one, must lie within this many seconds ahead of now (the official German test wallet signs no KB-JWT `exp`, so `iat` alone decides); checked after the native statement run, before proving. Not applied on the Noir route (`POST /sessions/:id/noir-proof`): the bridge receives no KB-JWT there, the companion's `--kb-window` is the only freshness check (see `docs/trust-boundaries.md`). `0` disables the check (only for the stored fixture, whose KB-JWT expired five minutes after minting) | `600` |
 | `ISSUER_KEY_SEC1_HEX` | issuer P-256 key, SEC1 uncompressed; when unset the key is read from the `x5c` leaf certificate in the issuer JWT header (that is what a real ERICA credential needs; the synthetic fixture needs the override because its header copies the ERICA x5c) | unset |
 | `SP1_PROVER` | sp1-sdk prover selection: `cpu` (local), `mock`, `network` | sp1 default |
 | `RUST_LOG` | tracing filter. At `info` every non-2xx answer leaves one `warn` line with method, path, status and the error text (`request refused`) | `info` |
@@ -147,8 +147,8 @@ each route performs, and by whom, is tabulated in `docs/trust-boundaries.md`.
 1. Resolved: both proofs commit the issuer credential `exp` only (it used to be
    `min(issuer exp, KB-JWT exp)`, and real ERICA KB-JWTs carry `exp = iat + 300`, so the on-chain
    decision expired five minutes after the presentation). KB-JWT freshness is enforced off
-   chain, and where depends on the route: on the SP1 route the bridge checks `exp` and `iat`
-   against its clock after the native statement run (`KB_JWT_WINDOW_SECS`, default 600) and
+   chain, and where depends on the route: on the SP1 route the bridge checks `iat` (and `exp` when
+   present) against its clock after the native statement run (`KB_JWT_WINDOW_SECS`, default 600) and
    answers 422 `KB-JWT freshness: ...` before proving; on the Noir route the bridge never sees
    the KB-JWT, and the companion's `--kb-window` (default 600) is the only freshness check.
    The fixture's expiry (1819756800, 2027-09-01) lies ahead of real time, so the anvil test runs
@@ -169,7 +169,10 @@ each route performs, and by whom, is tabulated in `docs/trust-boundaries.md`.
 ## Tests
 
 - `cargo test --lib`: ABI encoding of the proof argument and the `publicInputs` layout; decoding of
-  the Noir public inputs against `contracts/test/fixtures/noir/public_inputs.bin`.
+  the Noir public inputs against `contracts/test/fixtures/noir/public_inputs.bin`; the native
+  statement run with synthetic presentations (`nachweis_pid_hostlib::synth`, no real credential):
+  a KB-JWT without `exp` passes the default window and commits the issuer `exp`, a stale `iat`
+  or an expired `exp` is rejected as `KB-JWT freshness: ...`.
 - `cargo test --test anvil`: starts `anvil` on a free port, deploys `AttestationRegistry` and
   `MockProofVerifier` from `contracts/out` (runs `forge build` if missing), sets verifier and
   operator, then drives the HTTP API in mock mode with the fixture vector: nonce matches the

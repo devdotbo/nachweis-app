@@ -1,0 +1,15 @@
+[package]
+version = "0.1.0"
+name = "nachweis-pid-hostlib"
+edition = "2021"
+description = "Host-side companions to nachweis-pid-lib: KB-JWT freshness against a clock and synthetic presentations for tests. Never compiled into the SP1 guest."
+
+[dependencies]
+nachweis-pid-lib = { path = "../lib" }
+serde_json = "1.0"
+sha2 = "0.10"
+p256 = { version = "0.13.2", features = ["ecdsa"] }
+base64 = "0.22"
+
+[dev-dependencies]
+alloy-sol-types = { workspace = true }

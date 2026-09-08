@@ -33,10 +33,12 @@ sha2 = "0.10"
 base64 = "0.22"
 x509-cert = { version = "0.2.4", default-features = false }
 nachweis-pid-lib = { path = "../prover-sp1/lib" }
+nachweis-pid-hostlib = { path = "../prover-sp1/hostlib" }
 sp1-sdk = { version = "=6.1.0", features = ["blocking"] }
 
 [dev-dependencies]
-# nothing extra: the anvil integration test uses reqwest, tokio and alloy from above
+# nothing extra: the statement unit tests mint synthetic presentations with
+# nachweis_pid_hostlib::synth; the anvil integration test uses reqwest, tokio and alloy from above
 
 # Mirror of prover-sp1/Cargo.toml: the shared statement library is compiled against the
 # SP1-patched p256 and sha2 so host and guest resolve the same crates.

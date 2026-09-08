@@ -21,6 +21,7 @@ tracing = "0.1.40"
 hex = "0.4.3"
 alloy-sol-types = { workspace = true }
 nachweis-pid-lib = { path = "../lib" }
+nachweis-pid-hostlib = { path = "../hostlib" }
 p256 = { version = "0.13.2", features = ["ecdsa"] }
 sha2 = "0.10"
 base64 = "0.22"
