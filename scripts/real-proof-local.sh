@@ -95,7 +95,9 @@ bridge_state() { curl -fs "$BRIDGE_URL/sessions/$1" | jq -r "$2"; }
 [ -f "$SESSION" ] || die "session file $SESSION does not exist"
 case "$(cd "$(dirname "$SESSION")" && pwd)/" in
   "$ROOT/.e2e/"*) ;;
-  "$ROOT/"*) die "the session file lies inside the repository; keep the presentation out of every worktree" ;;
+  "$ROOT/"*)
+    # Inside the checkout is fine only when git ignores it (docs/evidence/private/ is the G0 run location).
+    git -C "$ROOT" check-ignore -q "$SESSION" || die "the session file lies inside the repository and is not gitignored; keep the presentation out of every worktree" ;;
 esac
 # Only these fields are read into the shell; the presentation and the client key are never touched.
 INVESTOR=$(jq -r .bound_address "$SESSION" | tr 'A-F' 'a-f')
