@@ -1,5 +1,6 @@
 // Minimal DER: enough to read the P-256 public key out of an x5c leaf certificate and to build
 // a self-signed leaf for the test issuer. No general-purpose ASN.1, no extensions.
+import { publicKeyFromCertificate as publicKeyFromCertificateShared } from "../../shared/pid/der";
 
 export interface Tlv {
   tag: number;
@@ -34,25 +35,9 @@ export function children(buf: Uint8Array, tlv: Tlv): Tlv[] {
 }
 
 /// SEC1 uncompressed P-256 point (65 bytes) from the SubjectPublicKeyInfo of an X.509 certificate.
+/// The reader lives in shared/pid/der.ts (shared with the web app); this keeps the Buffer return type.
 export function publicKeyFromCertificate(der: Uint8Array): Buffer {
-  const cert = readTlv(der, 0);
-  if (cert.tag !== 0x30) throw new Error("DER: certificate is not a SEQUENCE");
-  const tbs = readTlv(der, cert.start);
-  if (tbs.tag !== 0x30) throw new Error("DER: tbsCertificate is not a SEQUENCE");
-  const fields = children(der, tbs);
-  // [0] version (optional), serial, signature alg, issuer, validity, subject, spki
-  let i = 0;
-  if (fields[0].tag === 0xa0) i = 1;
-  const spki = fields[i + 5];
-  if (!spki || spki.tag !== 0x30) throw new Error("DER: subjectPublicKeyInfo not found");
-  const [alg, bits] = children(der, spki);
-  if (bits.tag !== 0x03) throw new Error("DER: subjectPublicKey is not a BIT STRING");
-  const algChildren = children(der, alg);
-  const curveOid = Buffer.from(der.subarray(algChildren[1].start, algChildren[1].end)).toString("hex");
-  if (curveOid !== "2a8648ce3d030107") throw new Error(`x5c leaf key is not P-256 (curve OID ${curveOid})`);
-  const key = Buffer.from(der.subarray(bits.start + 1, bits.end)); // skip the unused-bits byte
-  if (key.length !== 65 || key[0] !== 0x04) throw new Error(`x5c leaf key is not an uncompressed point (${key.length} bytes)`);
-  return key;
+  return Buffer.from(publicKeyFromCertificateShared(der));
 }
 
 // ---- encoding, for the self-signed test issuer leaf ----
