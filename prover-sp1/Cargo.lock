@@ -2556,6 +2556,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1d87ecb2933e8aeadb3e3a02b828fed80a7528047e68b4f424523a0981a3a084"
 
 [[package]]
+name = "nachweis-pid-hostlib"
+version = "0.1.0"
+dependencies = [
+ "alloy-sol-types",
+ "base64 0.22.1",
+ "nachweis-pid-lib",
+ "p256",
+ "serde_json",
+ "sha2",
+]
+
+[[package]]
 name = "nachweis-pid-lib"
 version = "0.1.0"
 dependencies = [
@@ -2586,6 +2598,7 @@ dependencies = [
  "base64 0.22.1",
  "clap",
  "hex",
+ "nachweis-pid-hostlib",
  "nachweis-pid-lib",
  "p256",
  "rand 0.8.5",
