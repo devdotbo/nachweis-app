@@ -4,6 +4,9 @@ import { DoorsCard } from '../components/DoorsCard'
 import { PresentCard } from '../components/PresentCard'
 import { ProveCard } from '../components/ProveCard'
 import { StatusCard } from '../components/StatusCard'
+// zkPassport route (WP33), behind VITE_ZKPASSPORT=1; remove these two lines with src/components/zkpassport/.
+import { ZkPassportCard } from '../components/zkpassport/ZkPassportCard'
+import { ZKPASSPORT } from '../components/zkpassport/config'
 import { useSessions } from '../lib/sessions'
 import type { Wallet } from '../lib/wallet'
 
@@ -15,6 +18,7 @@ export function InvestorScreen({ wallet }: { wallet: Wallet }) {
     <div className="grid">
       <ConnectCard wallet={wallet} title="Connect wallet" lead="The address you connect is the subject of the eligibility decision. Nothing else about you goes on chain." />
       <PresentCard wallet={wallet} session={session} />
+      {ZKPASSPORT ? <ZkPassportCard wallet={wallet} /> : null}
       <ProveCard session={session} />
       <StatusCard address={address} session={session} />
       <DoorsCard address={address} />
