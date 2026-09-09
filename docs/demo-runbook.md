@@ -369,6 +369,39 @@ The sequence to film. Two commands and one phone: `scripts/browser-real-wallet-u
 
 On camera, in Chrome on the Mac: Connect dev signer; Create presentation request (the dev signer signs the session); "Prove in this browser" (the QR appears); scan it with the official test wallet on the iPhone, consent; the tab decrypts and proves in about 30 s and shows "attested from this browser"; switch to Issuer, Approve; back to Investor, Subscribe, the FundToken balance rises. What the tab sends and to which host, the evidence to record, the fail branches and the smoke test without the phone are in `docs/browser-real-wallet.md`.
 
+With `--pool` the same stack carries door two (added 2026-09-09, WP41): anvil forks Sepolia (`SEPOLIA_RPC_URL`, else the publicnode endpoint; read-only, chain id stays 31337 as `pool-local.sh` requires) and `scripts/pool-local.sh --attach` onboards the Uniswap v4 permissioned pool on this stack's registry, exactly as `app-e2e-local.sh --pool` does: real Uniswap bytecode at the published Sepolia addresses, our checker, adapter, mUSD and liquidity deployed on the fork, the probe (anvil key 2) swaps once and is refused once revoked (`POOL-LOCAL PASS` in `<run>/pool.log`). The app gets `VITE_POOL_ADAPTER` and `VITE_POOL_STABLE`, so "Two doors, one decision" shows the Swap door next to Subscribe; `env.json` carries a `pool` object, so `app/e2e/swap.spec.ts` runs against this stack too. The verifier stays pinned to the sandbox PID issuer and the tunnel is unchanged, so the phone flow is the same. Verified 2026-09-09 without the phone (dev signer K1, `cast` and `SwapPermissioned.s.sol`): attestByOperator, approve, subscribe mined, swap 100 mUSD for NDF through PermissionedHooks, revoke, subscribe reverts `NotEligible()`, swap refused with `WrappedError(PermissionedHooks, beforeSwap, Unauthorized())`.
+
+### Video run order (2026-09-10)
+
+Terminal A, from the repo root (about 60 s after the builds; the first run builds the bridge and the verifier, several minutes):
+
+```
+scripts/browser-real-wallet-up.sh --pool
+```
+
+Expected lines, in order: `relay probe: request_uri, status_url and pickup_url are on the public host (https://<name>.trycloudflare.com/request/<id>)`; `anvil on http://127.0.0.1:<port>, chain 31337, forking https://ethereum-sepolia-rpc.publicnode.com at block <n>`; `AttestationRegistry 0x…, FundToken 0x…, Subscription 0x…`; `permissioned pool on the fork: adapter 0x…, mUSD 0x…, checker 0x… reads <registry> (POOL-LOCAL PASS)`; `NoirPidVerifier 0x… pinned to 0xb4f2bfa1… (sandbox PID issuer (live, G0 record))`; `bridge on …, {"mode":"local","proof_mode":null}`; `app on http://127.0.0.1:<port> (COOP same-origin, COEP require-corp; dev signer: …; Swap door on)`; `tunnel answers: GET https://<name>.trycloudflare.com/health`; then the `BROWSER-REAL-WALLET UP` block with the app URL, the public URL and the click sequence (steps 1 to 8). Stop reading when `permissioned pool (fork)` is in the block.
+
+One Chrome tab on the Mac, the app URL from the block, 1440 px wide, the console closed. The phone next to it with the official test wallet open. Captions as text overlays in the cut, not on the page.
+
+1. Tab, Investor page: "Connect dev signer". Eligibility shows "not permitted". Both doors read "closed".
+2. "Present your ID": "Create presentation request"; "signed, sent to bridge". "Prove in this browser" is selected; click its start button; the QR appears.
+3. Phone: scan the QR with the official test wallet, consent, present. Caption here: "official test wallet, sample identity". The tab walks relay status responded, pickup, checking, witness, init, proving, verifying, submitting, submitted (about 30 s) and ends on "attested from this browser".
+4. Tab, header "Issuer": Presentations, "Approve" on the session (operator dev key); status "approved".
+5. Tab, header "Investor": Eligibility "permitted"; card "Two doors, one decision", door one: "Subscribe"; "tx confirmed", the FundToken balance rises.
+6. Same card, door two: "Swap". Caption here: "local fork of Sepolia, real Uniswap bytecode at the published addresses". The panel shows the pool liquidity and names PermissionedHooks and this app's registry; the swap runs mint mUSD (faucet), Permit2 signature, UniversalRouter.execute; "Swapped in the permissioned pool", NDF received.
+7. Tab, header "Issuer": "Revoke" with the investor address; "tx confirmed".
+8. Tab, header "Investor": the card reads "Approval withdrawn by the issuer (manual revocation). Both doors are closed until the issuer re-approves."; Subscribe shows "closed" with the button greyed out (the page does not send a subscribe it knows will revert; if one is sent against a closed door, the red line reads "Refused by Subscription.subscribe with NotEligible(): the Subscription asked the registry 0x…"). Swap shows "closed" and still sends: click "Swap"; "swap refused" with a transaction hash and "Refused by PermissionedHooks.beforeSwap. Unauthorized(): this address is not SWAP_ALLOWED …". One revoke, two doors closed. End.
+
+If the phone cannot scan (tunnel DNS not yet resolving, the wallet shows an error): wait for `tunnel answers` in Terminal A, reload the tab, repeat from step 2. If the wallet refuses the request: `docs/browser-real-wallet.md`, "fail branches". Steps 5 to 8 can be rehearsed without the phone by attesting the dev signer from Terminal B (`cast send <registry> "attestByOperator(address,(bytes32,uint256,uint8,uint64,bytes32,bool))" 0x7099…79C8 "(<policy>,3,1,<expiry>,0x00…00,false)" --private-key <anvil key 0> --rpc-url <anvil>`), then approve in the Issuer tab.
+
+Terminal A afterwards:
+
+```
+scripts/browser-real-wallet-down.sh
+```
+
+Expected: `stopped app`, `stopped bridge`, `stopped anvil`, then g0-down's verifier and tunnel lines; the logs stay in the run directory (gitignored).
+
 ## 8d. Privy standing order on a local chain (docs/privy-standing-order.md)
 
 `scripts/standing-order-local.sh` starts anvil and the contracts, then the issuer's automation (`automation/`) in local mode: a dev key (anvil key 1) signs for the investor and the Privy rule JSON is applied by a small evaluator, captioned "simulated Privy policy (local)"; nothing talks to Privy. It attests the investor with a 120 s expiry, runs three ticks (300 NDF), revokes (the tick is refused by the policy's deny-all rule and by the chain), re-approves (tick OK, 400 NDF), moves anvil's clock past the expiry (refused by the timestamp rule and the chain) and attests a second investor the automation holds no key for (no delegated wallet). Expected last line `STANDING-ORDER-LOCAL PASS`, about 20 s with the contracts built; `--keep` leaves anvil and the automation running. The Sepolia run with a real Privy app is the builder's, section 7 of `docs/privy-standing-order.md`.
