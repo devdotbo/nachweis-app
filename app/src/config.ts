@@ -45,7 +45,7 @@ export const DEV_OPERATOR_KEY: Hex | undefined = __NACHWEIS_DEV_SIGNER__ ? priva
 export const DEV_SIGNER: boolean = Boolean(DEV_PRIVATE_KEY || DEV_OPERATOR_KEY)
 
 /** Display labels for predicate bits. Decision bits: 1 = identity evidence (bit 0), 2 = over 18 (bit 1). */
-export const BIT_LABELS: readonly string[] = ['identity evidence', 'over 18']
+export const BIT_LABELS: readonly string[] = ['identity evidence', 'over 18', 'passport chip (zkPassport)' /* bit 2: route marker set by ZkPassportVerifier (WP33) */]
 export const TIER_LABELS: Record<number, string> = { 0: 'none', 1: 'A', 2: 'B' }
 export const TIER_A = 1
 export const DECISION_TTL_SECONDS = 30 * 24 * 3600
@@ -56,3 +56,14 @@ export const CONFIG_WARNINGS: string[] = MOCK
       REGISTRY === ZERO_ADDRESS ? 'VITE_REGISTRY is not set' : '',
       SUBSCRIPTION === ZERO_ADDRESS ? 'VITE_SUBSCRIPTION is not set' : '',
     ].filter(Boolean)
+
+/**
+ * Privy (WP32, docs/privy-standing-order.md). All optional. With VITE_PRIVY_APP_ID set the wallet
+ * layer is wrapped in PrivyProvider and @privy-io/wagmi (src/lib/PrivyWalletProvider.tsx) and the
+ * investor gets "Sign in with email, wallet by Privy"; unset, the provider tree is unchanged.
+ */
+export const PRIVY_APP_ID: string | undefined = env.VITE_PRIVY_APP_ID && env.VITE_PRIVY_APP_ID !== '' ? env.VITE_PRIVY_APP_ID : undefined
+/** Key quorum id of the issuer's authorization key (Dashboard, Authorization keys); the signer the investor allows on her wallet. */
+export const PRIVY_SIGNER_ID: string | undefined = env.VITE_PRIVY_SIGNER_ID && env.VITE_PRIVY_SIGNER_ID !== '' ? env.VITE_PRIVY_SIGNER_ID : undefined
+/** The issuer's automation (automation/): GET /status, GET /policy/:address, POST /tick. Unset: no standing-order card, no automation log. */
+export const AUTOMATION_URL: string | undefined = env.VITE_AUTOMATION_URL && env.VITE_AUTOMATION_URL !== '' ? env.VITE_AUTOMATION_URL.replace(/\/+$/, '') : undefined

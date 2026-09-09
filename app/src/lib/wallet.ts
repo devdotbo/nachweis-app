@@ -5,15 +5,19 @@ import { MOCK } from '../config'
 import { DEV_SIGNER_TYPE, devSignerId } from './devSigner'
 import { chain } from './WalletProvider'
 import { MOCK_INVESTOR, MOCK_OPERATOR } from './mockChain'
+import { usePrivyBridge } from './privyContext'
 import type { Role } from './role'
 
-/** How a connection is made. `dev` and `mock` exist for local testing only. */
-export type WalletKind = 'injected' | 'dev' | 'mock'
+/** How a connection is made. `dev` and `mock` exist for local testing only; `privy` is the embedded wallet by Privy. */
+export type WalletKind = 'injected' | 'dev' | 'mock' | 'privy'
+
+/** Connector id prefix @privy-io/wagmi gives the embedded wallet (`io.privy.wallet.<address>`). */
+const PRIVY_CONNECTOR_PREFIX = 'io.privy.wallet'
 
 /**
- * One way to connect, shown as a button on the connect step. A Privy option (embedded wallet,
- * email or social login) would be one more entry in `Wallet.options`; the connect step renders
- * whatever the wallet layer offers.
+ * One way to connect, shown as a button on the connect step. The Privy option (embedded wallet,
+ * email login) is one more entry in `Wallet.options` when VITE_PRIVY_APP_ID is set; the connect
+ * step renders whatever the wallet layer offers.
  */
 export interface WalletOption {
   id: string
@@ -90,6 +94,7 @@ function useChainWallet(role: Role): Wallet {
   const { disconnect } = useDisconnect()
   const { switchChain } = useSwitchChain()
   const { signMessageAsync } = useSignMessage()
+  const privy = usePrivyBridge()
   // Dev signer for this role when configured (investor key, operator key), else the injected wallet.
   const devForRole = connectors.find((c) => c.id === devSignerId(role))
   const anyDev = connectors.find((c) => c.type === DEV_SIGNER_TYPE)
@@ -99,8 +104,33 @@ function useChainWallet(role: Role): Wallet {
   useEffect(() => {
     if (isConnected && current?.type === DEV_SIGNER_TYPE && devForRole && current.id !== devForRole.id) connect({ connector: devForRole, chainId: chain.id })
   }, [isConnected, current, devForRole, connect])
+  // With Privy: the investor portal uses the embedded wallet, the issuer console the wallet connected through Privy's picker.
+  const privyActive = isConnected && Boolean(current?.id.startsWith(PRIVY_CONNECTOR_PREFIX))
+  useEffect(() => {
+    if (!privy || !privy.ready || !isConnected) return
+    if (role === 'investor' && privy.embeddedAddress && address?.toLowerCase() !== privy.embeddedAddress.toLowerCase()) void privy.activate('embedded')
+    if (role === 'issuer' && privy.externalAddress && address?.toLowerCase() !== privy.externalAddress.toLowerCase()) void privy.activate('external')
+  }, [privy, role, isConnected, address])
 
   const options: WalletOption[] = []
+  if (privy) {
+    if (role === 'investor') {
+      options.push({
+        id: 'privy-email',
+        kind: 'privy',
+        label: 'Sign in with email, wallet by Privy',
+        hint: 'An embedded wallet is created at email sign-in. Your identity evidence never goes to Privy; Privy sees this address and the transactions it signs.',
+        connect: privy.login,
+      })
+    }
+    options.push({
+      id: 'privy-connect',
+      kind: 'injected',
+      label: role === 'issuer' ? 'Connect operator wallet' : 'Bring your wallet',
+      hint: role === 'issuer' ? 'Privy opens the wallet picker; the operator key stays in the extension.' : 'Privy opens the wallet picker; the key stays in the extension.',
+      connect: privy.connectWallet,
+    })
+  }
   if (devForRole) {
     options.push({
       id: devForRole.id,
@@ -126,9 +156,11 @@ function useChainWallet(role: Role): Wallet {
     isConnected,
     wrongChain: isConnected && chainId !== chain.id,
     connect: () => {
-      if (wanted) connect({ connector: wanted, chainId: chain.id })
+      if (privy) (options[0] ?? { connect: () => {} }).connect()
+      else if (wanted) connect({ connector: wanted, chainId: chain.id })
     },
-    disconnect: () => disconnect(),
+    // wagmi's useDisconnect is not supported with Privy: disconnect is Privy's logout, wagmi follows.
+    disconnect: () => (privy ? void privy.logout() : disconnect()),
     switchToChain: () => switchChain({ chainId: chain.id }),
     chainId: chain.id,
     chainName: chain.name,
@@ -136,8 +168,8 @@ function useChainWallet(role: Role): Wallet {
     connecting: isPending,
     error: error?.message,
     devSigner: devActive,
-    kind: isConnected ? (devActive ? 'dev' : 'injected') : undefined,
-    connectorName: isConnected ? current?.name : undefined,
+    kind: isConnected ? (devActive ? 'dev' : privyActive ? 'privy' : 'injected') : undefined,
+    connectorName: isConnected ? (privyActive ? 'embedded wallet by Privy' : current?.name) : undefined,
     options,
   }
 }
