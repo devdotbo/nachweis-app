@@ -100,6 +100,8 @@ With the app: `scripts/browser-real-wallet-up.sh` or `scripts/app-e2e-local.sh` 
 
 ## 7. Runbook for the builder's Sepolia run (class S, hand-clicked)
 
+Dashboard facts (FACT, read in the builder's Privy dashboard by a browser teammate on 2026-09-09, reported by the lead): the organisation is on the Free plan; a dedicated app "Attestat" exists in development mode with app id `cmttciu77003c0bjv4xvdmupe`, Email login on, embedded-wallet auto-create on login on for EVM, allowed origins `http://localhost:5173` and `http://localhost:4173`; its Wallets, Advanced, More tab reads "Wallet environment: TEE enabled" verbatim; the Policies page opens the "Create policy" form (name, chain type EVM, optional owner) with no gate text; the "Keys and quorums" page opens "Create key" with no gate text, and an authorization key "attestat-automation" exists with key quorum id `m1x3z2i6n7fdtus1apxa84ww` (1 of 1); a self-serve Webhooks wizard exists; no Intents page and no Manual approvals page are in the sidebar; gas sponsorship needs purchased credits, so the embedded wallet must hold Sepolia ETH for gas (step 7 below); the More tab also offers "Enable asset swaps" (Uniswap-based, not gated), out of scope here. So steps 1 to 5 below are done or are confirmations; the app id and the signer id are public identifiers and stand in both `.env.example` files. Not yet done on 2026-09-09: the live policy check from the automation against that app (the secret in the builder's local env file was the dashboard's masked display, not the secret).
+
 Nothing below is done by an agent. Values in angle brackets are never pasted into a chat. Prerequisites: the Sepolia deployment (handoff action 1: `Deploy.s.sol`, `DeployNoirVerifier.s.sol`, the bridge against Sepolia) and the browser flow working on Sepolia with the official test wallet.
 
 1. Privy account and app at https://dashboard.privy.io, app name "Attestat", environment Development. Record `<PRIVY_APP_ID>` and `<PRIVY_APP_SECRET>` (App settings; exact page names unverified).
@@ -155,7 +157,7 @@ Never: "within a block", "nothing about you on chain", "on the device", "first",
 
 ## 10. Unverified (until the Sepolia run)
 
-- Whether a Privy app created in 2026 is TEE-enabled by default (step 3).
+- The API's exact acceptance of the rule shapes (the create call has not run against the real app yet; the dashboard confirms TEE execution, so step 3 is answered).
 - The exact status code and message of a policy refusal from `sendTransaction`; the automation treats every 4xx from that call as a refusal and logs it verbatim.
 - Case handling of the `to` condition (the rule carries the checksummed address; the local evaluator compares case-insensitively).
 - `function_name` matching for a no-argument function (`subscribe()`), and whether the `abi` field must carry more than the one function.
