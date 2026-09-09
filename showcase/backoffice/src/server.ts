@@ -52,7 +52,7 @@ async function route(req: Request): Promise<Response> {
   }
   if (req.method === 'POST' && path === '/probe') {
     const body = (await req.json().catch(() => null)) as { kind?: ProbeKind } | null
-    const kinds: ProbeKind[] = ['transfer', 'attestByOperator', 'single-signature']
+    const kinds: ProbeKind[] = ['transfer', 'attestByOperator', 'single-signature', 'sign-message']
     if (!body || !kinds.includes(body.kind as ProbeKind)) return bad(`kind must be one of ${kinds.join(', ')}`)
     try {
       return json(await desk.probe(body.kind as ProbeKind))

@@ -189,6 +189,19 @@ export class Desk {
       attempted = `call attestByOperator on the registry ${this.cfg.registry} with both signatures (only approve and revoke are allowed)`
       tx = { to: this.cfg.registry, data: encodeAttestByOperator(ZERO, this.cfg.policyId) }
       signers = both
+    } else if (kind === 'sign-message') {
+      attempted = 'sign a plain message (personal_sign) with the operator wallet, both signatures'
+      try {
+        const sig = await this.operator.signMessage('attestat backoffice probe', both)
+        this.log(`probe ${kind}: NOT refused, signature ${sig.slice(0, 18)}`)
+        return { kind, attempted, refused: false, by: 'not-refused', message: `not refused; signature ${sig.slice(0, 18)}... was produced` }
+      } catch (e) {
+        if (e instanceof Refused) {
+          this.log(`probe ${kind}: refused by ${e.by}`)
+          return { kind, attempted, refused: true, by: e.by, message: e.message }
+        }
+        throw e
+      }
     } else if (kind === 'single-signature') {
       const subject = this.list().find((p) => p.status === 'proposed')?.subject ?? ZERO
       attempted = `call approve(${subject}) on the registry with only the compliance signature`

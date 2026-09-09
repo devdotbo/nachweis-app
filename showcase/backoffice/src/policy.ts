@@ -75,7 +75,8 @@ export function describeRules(rules: PolicyRule[]): PolicyRuleView[] {
 
 export interface PolicyRequest {
   method: string
-  to: string
+  /** Absent for requests that carry no transaction (personal_sign). */
+  to?: string
   chainId: number
   functionName?: string
   value?: bigint | string
@@ -106,7 +107,7 @@ export function evaluate(rules: PolicyRule[], req: PolicyRequest): { allowed: bo
   if (deny) return { allowed: false, reason: `denied by rule "${deny.name}"` }
   const allow = hit.find((r) => r.action === 'ALLOW')
   if (allow) return { allowed: true, reason: `allowed by rule "${allow.name}"` }
-  return { allowed: false, reason: `no rule allows ${req.method} to ${req.to} (function ${req.functionName ?? 'none'})` }
+  return { allowed: false, reason: req.to ? `no rule allows ${req.method} to ${req.to} (function ${req.functionName ?? 'none'})` : `no rule allows ${req.method}` }
 }
 
 export function quorumSatisfied(confirmations: Partial<Record<Role, number>>, threshold: number): boolean {

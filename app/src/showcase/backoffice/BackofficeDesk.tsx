@@ -18,6 +18,7 @@ const PROBES: { kind: ProbeKind; label: string; hint: string }[] = [
   { kind: 'transfer', label: 'Try to send 1 wei from the operator wallet', hint: 'A plain value transfer. The policy has no rule for it.' },
   { kind: 'attestByOperator', label: 'Try attestByOperator from the operator wallet', hint: 'An operator-only registry function the policy does not list. The desk cannot write evidence, only confirm or withdraw it.' },
   { kind: 'single-signature', label: 'Try approve with one signature', hint: 'The right function, one key. The 2 of 2 quorum is not met.' },
+  { kind: 'sign-message', label: 'Try to sign a plain message', hint: 'personal_sign with both keys. The policy has no rule for it, and no chain or gas is involved: the refusal is the policy alone.' },
 ]
 
 function refusedBy(r: ProbeResult): string {
@@ -26,6 +27,8 @@ function refusedBy(r: ProbeResult): string {
       return "refused by the wallet policy in Privy's secure enclave, before signing"
     case 'privy-quorum':
       return 'refused by the key quorum in Privy, before signing'
+    case 'privy-precheck':
+      return "stopped by Privy's funds and gas pre-check before the policy was consulted (inconclusive: fund the wallet to see the policy's verdict)"
     case 'simulated-policy':
       return 'refused by the simulated policy checker (local mode)'
     case 'simulated-quorum':
@@ -281,7 +284,7 @@ export function BackofficeDesk() {
           ))}
         </div>
         {probe ? (
-          <div className={`note ${probe.refused ? 'coral' : 'mint'}`}>
+          <div className={`note ${probe.by === 'privy-precheck' ? '' : probe.refused ? 'coral' : 'mint'}`}>
             <strong>{probe.attempted}</strong>: {refusedBy(probe)}.
             <div className="err" style={{ marginTop: 6 }}>
               {probe.message}

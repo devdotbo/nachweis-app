@@ -24,6 +24,10 @@ class FakeOperator implements Operator {
     if (this.fail) throw this.fail
     return HASH
   }
+  async signMessage(_message: string, _signers: Role[]): Promise<Hex> {
+    if (this.refuse) throw this.refuse
+    return HASH
+  }
 }
 
 class FakeChain implements ChainReader {
@@ -195,4 +199,11 @@ test('a revert before broadcast (NoDecision) ends the proposal as reverted, keep
   expect(r.status).toBe('reverted')
   expect(r.error).toContain('NoDecision')
   expect(Object.keys(r.confirmations).length).toBe(2)
+})
+
+test('the sign-message probe reports the policy refusal', async () => {
+  const o = new FakeOperator()
+  o.refuse = new Refused('simulated-policy', 'simulated policy (local): no rule allows personal_sign')
+  const r = await new Desk(cfg, o, new FakeChain()).probe('sign-message')
+  expect(r).toMatchObject({ kind: 'sign-message', refused: true, by: 'simulated-policy' })
 })

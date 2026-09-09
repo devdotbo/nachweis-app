@@ -6,6 +6,7 @@
 import { APIError } from '@privy-io/node'
 import { encodeApprove } from '../src/chain'
 import { loadConfig } from '../src/config'
+import { parsePrivyError } from '../src/operator'
 import { privyClient } from '../src/privy'
 
 const cfg = loadConfig({ ...process.env, BACKOFFICE_MODE: 'privy' })
@@ -22,6 +23,9 @@ function apiText(e: unknown): string {
 }
 function isRefusal(e: unknown): boolean {
   return e instanceof APIError && typeof e.status === 'number' && e.status >= 400 && e.status < 500
+}
+function codeOf(e: unknown): string | undefined {
+  return e instanceof APIError ? parsePrivyError(e.message).code : undefined
 }
 const line = (n: number, verdict: string, text: string) => console.log(`[${n}] ${verdict} ${text}`)
 
@@ -40,7 +44,7 @@ try {
   const r = await privy.wallets().ethereum().signMessage(p.walletId, { message: 'attestat backoffice probe', authorization_context: both })
   line(2, 'INFO', `signMessage went through (signature ${r.signature.slice(0, 18)}...), the policy did not block personal_sign`)
 } catch (e) {
-  line(2, 'INFO', `signMessage refused: ${apiText(e)}`)
+  line(2, codeOf(e) === 'policy_violation' ? 'PASS' : 'INFO', `signMessage refused: ${apiText(e)}`)
 }
 
 // (3) update with one key: the 2-of-2 quorum must refuse
@@ -82,7 +86,8 @@ try {
   })
   line(6, 'FAIL', `transfer was NOT refused, tx ${r.hash}`)
 } catch (e) {
-  line(6, isRefusal(e) ? 'PASS' : 'FAIL', `transfer with both keys: ${apiText(e)}`)
+  const code = codeOf(e)
+  line(6, code === 'policy_violation' ? 'PASS' : code === 'transaction_broadcast_failure' ? 'INCONCLUSIVE' : isRefusal(e) ? 'PASS' : 'FAIL', `transfer with both keys: ${apiText(e)}${code === 'transaction_broadcast_failure' ? ' (Privy checked funds before the policy; fund the wallet to get the policy verdict)' : ''}`)
 }
 
 process.exit(0)

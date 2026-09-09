@@ -53,13 +53,13 @@ export interface DeskInfo {
   watcher: { pollMs: number; fromBlock: number; lastBlock: number }
 }
 
-export type ProbeKind = 'transfer' | 'attestByOperator' | 'single-signature'
+export type ProbeKind = 'transfer' | 'attestByOperator' | 'single-signature' | 'sign-message'
 
 export interface ProbeResult {
   kind: ProbeKind
   attempted: string
   refused: boolean
-  by: 'privy-policy' | 'privy-quorum' | 'simulated-policy' | 'simulated-quorum' | 'not-refused'
+  by: 'privy-policy' | 'privy-quorum' | 'privy-precheck' | 'simulated-policy' | 'simulated-quorum' | 'not-refused'
   message: string
   txHash?: Hex
 }

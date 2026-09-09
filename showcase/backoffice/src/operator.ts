@@ -13,7 +13,7 @@ import { evaluate, registryOperatorRules, type PolicyRule } from './policy'
 import { keysFor, privyClient } from './privy'
 import type { DeskMode, Role } from './types'
 
-export type RefusedBy = 'privy-policy' | 'privy-quorum' | 'simulated-policy' | 'simulated-quorum'
+export type RefusedBy = 'privy-policy' | 'privy-quorum' | 'privy-precheck' | 'simulated-policy' | 'simulated-quorum'
 
 export class Refused extends Error {
   constructor(
@@ -58,6 +58,8 @@ export interface Operator {
   address: Address
   walletId?: string
   send(tx: Tx, signers: Role[]): Promise<Hex>
+  /** personal_sign: the policy has no rule for it, so it is refused without touching a chain. */
+  signMessage(message: string, signers: Role[]): Promise<Hex>
 }
 
 export const QUORUM_THRESHOLD = 2
@@ -100,6 +102,13 @@ export class LocalOperator implements Operator {
       throw toReverted(e)
     }
   }
+
+  async signMessage(message: string, signers: Role[]): Promise<Hex> {
+    const verdict = evaluate(this.rules, { method: 'personal_sign', chainId: this.cfg.chainId })
+    if (!verdict.allowed) throw new Refused('simulated-policy', `simulated policy (local): ${verdict.reason}`)
+    if (new Set(signers).size < QUORUM_THRESHOLD) throw new Refused('simulated-quorum', `simulated key quorum (local): ${new Set(signers).size} of ${QUORUM_THRESHOLD} signatures`)
+    return this.account.signMessage({ message })
+  }
 }
 
 export class PrivyOperator implements Operator {
@@ -132,13 +141,46 @@ export class PrivyOperator implements Operator {
       throw toRefused(e)
     }
   }
+
+  async signMessage(message: string, signers: Role[]): Promise<Hex> {
+    try {
+      const r = await privyClient(this.cfg).wallets().ethereum().signMessage(this.walletId, {
+        message,
+        authorization_context: { authorization_private_keys: keysFor(this.cfg, signers) },
+      })
+      return r.signature as Hex
+    } catch (e) {
+      throw toRefused(e)
+    }
+  }
 }
 
-/** A 4xx Privy API error becomes Refused; the message keeps Privy's wording verbatim. */
+/** Privy's error body as observed 2026-09-09: `{"error": "...", "code": "policy_violation" | "invalid_data" | "transaction_broadcast_failure" | ...}`. */
+export function parsePrivyError(message: string): { error: string; code?: string } {
+  const m = message.match(/\{.*\}/s)
+  if (m) {
+    try {
+      const j = JSON.parse(m[0]) as { error?: unknown; code?: unknown }
+      if (typeof j.error === 'string') return { error: j.error, code: typeof j.code === 'string' ? j.code : undefined }
+    } catch {
+      // not JSON: fall through
+    }
+  }
+  return { error: message.replace(/^\d+\s*/, '') }
+}
+
+/**
+ * A 4xx Privy API error becomes Refused with Privy's wording verbatim. Observed on 2026-09-09 (probe-privy.ts):
+ * policy refusal `400 policy_violation "RPC request denied due to policy violation"`; quorum refusal
+ * `401 invalid_data "Number of signatures in privy-authorization-signature header does not match the wallet's
+ * authorization threshold."`; and, for a wallet without gas, `400 transaction_broadcast_failure "insufficient funds"`,
+ * which Privy answers before the policy is consulted: that one is `privy-precheck`, not a verdict on the policy.
+ */
 export function toRefused(e: unknown): unknown {
   if (e instanceof APIError && typeof e.status === 'number' && e.status >= 400 && e.status < 500) {
-    const text = `${e.status}: ${e.message.replace(/^\d+\s*/, '')}`
-    const by: RefusedBy = /quorum|signature|authorization/i.test(e.message) ? 'privy-quorum' : 'privy-policy'
+    const { error, code } = parsePrivyError(e.message)
+    const text = `${e.status}${code ? ` ${code}` : ''}: ${error}`
+    const by: RefusedBy = code === 'policy_violation' ? 'privy-policy' : /authorization threshold|signature/i.test(error) ? 'privy-quorum' : 'privy-precheck'
     return new Refused(by, text)
   }
   return e

@@ -86,15 +86,15 @@ export interface DeskInfo {
   watcher: { pollMs: number; fromBlock: number; lastBlock: number }
 }
 
-export type ProbeKind = 'transfer' | 'attestByOperator' | 'single-signature'
+export type ProbeKind = 'transfer' | 'attestByOperator' | 'single-signature' | 'sign-message'
 
 export interface ProbeResult {
   kind: ProbeKind
   /** What was attempted, in plain words. */
   attempted: string
   refused: boolean
-  /** `privy-policy`, `privy-quorum`, `simulated-policy`, `simulated-quorum`, or `not-refused`. */
-  by: 'privy-policy' | 'privy-quorum' | 'simulated-policy' | 'simulated-quorum' | 'not-refused'
+  /** `privy-policy`, `privy-quorum`, `privy-precheck` (Privy's API-level funds or gas check answered before the policy was consulted: inconclusive), `simulated-policy`, `simulated-quorum`, or `not-refused`. */
+  by: 'privy-policy' | 'privy-quorum' | 'privy-precheck' | 'simulated-policy' | 'simulated-quorum' | 'not-refused'
   /** Verbatim error text (Privy's wording in privy mode). */
   message: string
   txHash?: Hex

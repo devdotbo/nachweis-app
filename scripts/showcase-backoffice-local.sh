@@ -57,6 +57,7 @@ post() { curl -sS -X POST -H 'content-type: application/json' "$DESK$1" -d "${2:
 wait_queue() { local filter="$1" n="${2:-40}" out; for _ in $(seq 1 "$n"); do out=$(curl -sS "$DESK/queue" | jq -c "[.[] | select($filter)] | first // empty"); [ -n "$out" ] && { echo "$out"; return 0; }; sleep 0.5; done; return 1; }
 
 # ------------------------------------------------------------------ 1. anvil and contracts
+for port in "$ANVIL_PORT" "$DESK_PORT"; do lsof -nP -iTCP:"$port" -sTCP:LISTEN >/dev/null 2>&1 && die "port $port is already in use (a leftover anvil or desk? pids of the last run: $PIDS)"; done
 anvil --port "$ANVIL_PORT" --chain-id "$CHAIN_ID" --silent > "$RUN_DIR/anvil.log" 2>&1 & echo $! >> "$PIDS"
 for _ in $(seq 1 50); do cast chain-id --rpc-url "$RPC" >/dev/null 2>&1 && break; sleep 0.2; done
 say "anvil on $RPC"
@@ -130,6 +131,9 @@ say "assert: attestByOperator from the operator wallet refused: $(echo "$R" | jq
 R=$(post /probe '{"kind":"single-signature"}')
 [ "$(echo "$R" | jq -r .refused)" = "true" ] && [ "$(echo "$R" | jq -r .by)" = "simulated-quorum" ] || die "one-signature approve not refused by the quorum: $R"
 say "assert: approve with one signature refused: $(echo "$R" | jq -r .message) (simulated)"
+R=$(post /probe '{"kind":"sign-message"}')
+[ "$(echo "$R" | jq -r .refused)" = "true" ] && [ "$(echo "$R" | jq -r .by)" = "simulated-policy" ] || die "personal_sign not refused by the policy: $R"
+say "assert: personal_sign from the operator wallet refused: $(echo "$R" | jq -r .message) (simulated)"
 
 # ------------------------------------------------------------------ 6. manual withdrawal, four eyes again
 RV=$(post /queue/propose "{\"kind\":\"revoke\",\"subject\":\"$INVESTOR\"}")

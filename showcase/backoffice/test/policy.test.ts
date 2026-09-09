@@ -119,3 +119,30 @@ describe('quorum', () => {
     expect(missingRoles({ compliance: 1, operations: 1 }, ['compliance', 'operations'])).toEqual([])
   })
 })
+
+import { parsePrivyError, toRefused, Refused } from '../src/operator'
+import { APIError } from '@privy-io/node'
+describe('Privy error mapping (texts observed 2026-09-09)', () => {
+  const api = (status: number, body: string) => new APIError(status, undefined, `${status} ${body}`, undefined)
+  test('policy_violation is a policy refusal', () => {
+    const r = toRefused(api(400, '{"error":"RPC request denied due to policy violation","code":"policy_violation"}')) as Refused
+    expect(r).toBeInstanceOf(Refused)
+    expect(r.by).toBe('privy-policy')
+    expect(r.message).toBe('400 policy_violation: RPC request denied due to policy violation')
+  })
+  test('a signature count mismatch is a quorum refusal', () => {
+    const r = toRefused(api(401, '{"error":"Number of signatures in `privy-authorization-signature` header does not match the wallet\'s authorization threshold.","code":"invalid_data"}')) as Refused
+    expect(r.by).toBe('privy-quorum')
+  })
+  test('a funds failure is a pre-check, not a policy verdict', () => {
+    const r = toRefused(api(400, '{"error":"Transaction creation failed. Details: insufficient funds for gas * price + value: have 0 want 1","code":"transaction_broadcast_failure"}')) as Refused
+    expect(r.by).toBe('privy-precheck')
+  })
+  test('a 5xx passes through unchanged', () => {
+    const e = api(502, 'bad gateway')
+    expect(toRefused(e)).toBe(e)
+  })
+  test('parsePrivyError falls back to the raw text', () => {
+    expect(parsePrivyError('400 not json')).toEqual({ error: 'not json' })
+  })
+})
