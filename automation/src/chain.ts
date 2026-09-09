@@ -11,7 +11,7 @@ export const registryAbi = parseAbi([
   'event Revoked(address indexed subject, bytes32 indexed policyId, address indexed operator)',
 ])
 
-export const subscriptionAbi = parseAbi(['function subscribe()'])
+export const subscriptionAbi = parseAbi(['function subscribe()', 'function demoAmount() view returns (uint256)'])
 
 /** `subscribe()` selector, the calldata every tick sends. */
 export const SUBSCRIBE_DATA: Hex = encodeFunctionData({ abi: subscriptionAbi, functionName: 'subscribe' })
@@ -38,6 +38,11 @@ export function publicClient(cfg: Config): PublicClient {
 export async function readDecision(client: PublicClient, cfg: Config, subject: Address): Promise<Decision> {
   const d = await client.readContract({ address: cfg.registry, abi: registryAbi, functionName: 'decisionOf', args: [subject, cfg.policyId] })
   return { policyId: d.policyId, bits: d.bits, tier: Number(d.tier), expiry: BigInt(d.expiry), statusRef: d.statusRef, revoked: d.revoked }
+}
+
+/** `Subscription.demoAmount()`: what one plan run mints (wei of the fund token). */
+export async function readDemoAmount(client: PublicClient, cfg: Config): Promise<bigint> {
+  return client.readContract({ address: cfg.subscription, abi: subscriptionAbi, functionName: 'demoAmount' })
 }
 
 export async function readEligible(client: PublicClient, cfg: Config, subject: Address, requiredBits = 3n): Promise<boolean> {

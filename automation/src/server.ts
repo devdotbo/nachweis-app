@@ -4,10 +4,12 @@
  *   GET  /status            mode, addresses, poll interval, every investor's policy in plain words, the log
  *   GET  /policy/:address   one investor's policy: id, the rules as sent to Privy, plain words
  *   POST /tick              run the tick now; body {"target":"fundToken"} sends to the wrong contract (debug)
+ *   GET  /runs/:address     one investor's plan runs (showcase savings plan), oldest first
+ * PLAN_INTERVAL_SECS=<n> runs the tick on a timer as well (the plan schedule); unset, POST /tick is the only scheduler.
  * Start: `bun run src/server.ts` with automation/.env (see .env.example).
  */
 import { getAddress, type Address } from 'viem'
-import { publicClient } from './chain'
+import { publicClient, readDemoAmount } from './chain'
 import { loadConfig } from './config'
 import { describeRules, expiryOf, hasDenyAll } from './policy'
 import { policyBackend } from './policies'
@@ -22,6 +24,8 @@ const store = new Store()
 const backend = policyBackend(cfg, store)
 const signer = makeSigner(cfg, client)
 const watcher = new Watcher(cfg, client, store, backend)
+/** What one run mints, read once at start (undefined when the read fails: the screens then show no amount). */
+const planAmount: bigint | undefined = await readDemoAmount(client, cfg).catch(() => undefined)
 
 const CORS = { 'access-control-allow-origin': '*', 'access-control-allow-methods': 'GET, POST, OPTIONS', 'access-control-allow-headers': 'content-type' }
 
@@ -80,7 +84,10 @@ const server = Bun.serve({
         fundToken: cfg.fundToken,
         policyId: cfg.policyId,
         pollMs: cfg.pollMs,
+        planIntervalSecs: cfg.planIntervalSecs,
+        planAmount,
         lastBlock: watcher.lastBlock,
+        runs: store.runs,
         investors,
         log: store.log,
       })
@@ -90,6 +97,8 @@ const server = Bun.serve({
       const v = await investorView(getAddress(m[1]!), url.searchParams.get('fresh') === '1')
       return v ? json(v) : json({ error: 'no policy for this address yet: the automation creates it when the registry emits Approved' }, 404)
     }
+    const runs = url.pathname.match(/^\/runs\/(0x[0-9a-fA-F]{40})$/)
+    if (runs && req.method === 'GET') return json({ address: getAddress(runs[1]!), planAmount, runs: store.runsFor(getAddress(runs[1]!)) })
     if (url.pathname === '/tick' && req.method === 'POST') {
       let opts: TickOptions = {}
       try {
@@ -113,4 +122,13 @@ const server = Bun.serve({
 })
 
 await watcher.start()
+if (cfg.planIntervalSecs) {
+  store.add('tick', `PLAN SCHEDULE every ${cfg.planIntervalSecs} s (PLAN_INTERVAL_SECS)`)
+  setInterval(() => {
+    void watcher
+      .poll()
+      .then(() => runTick(cfg, client, store, signer))
+      .catch((e) => store.add('error', `PLAN SCHEDULE ERROR ${e instanceof Error ? e.message : String(e)}`))
+  }, cfg.planIntervalSecs * 1000)
+}
 console.log(`automation listening on http://127.0.0.1:${server.port} (mode ${cfg.signer}, chain ${cfg.chainId}, registry ${cfg.registry}, subscription ${cfg.subscription})`)

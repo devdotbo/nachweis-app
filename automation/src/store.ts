@@ -15,6 +15,17 @@ export interface InvestorPolicy {
 
 export type LogKind = 'policy' | 'tick' | 'watch' | 'error'
 
+/** One plan run per investor per tick (showcase savings plan, docs/showcase/savings-plan.md): the run history behind the log. */
+export interface PlanRun {
+  /** 1-based per investor. */
+  n: number
+  at: number
+  address: Address
+  outcome: 'ok' | 'denied-policy' | 'denied-chain' | 'no-delegated-wallet' | 'no-policy' | 'error'
+  hash?: Hex
+  detail: string
+}
+
 export interface LogEntry {
   at: number
   kind: LogKind
@@ -24,10 +35,12 @@ export interface LogEntry {
 }
 
 const MAX_LOG = 300
+const MAX_RUNS = 200
 
 export class Store {
   readonly policies = new Map<string, InvestorPolicy>()
   readonly log: LogEntry[] = []
+  readonly runs: PlanRun[] = []
   private seq = 0
 
   key(address: Address): string {
@@ -45,6 +58,19 @@ export class Store {
   nextLocalId(): string {
     this.seq += 1
     return `local-${this.seq}`
+  }
+
+  /** Records one plan run; `n` counts this investor's runs from 1. Returns the run. */
+  addRun(run: Omit<PlanRun, 'n' | 'at'>): PlanRun {
+    const r: PlanRun = { n: this.runsFor(run.address).length + 1, at: Date.now(), ...run }
+    this.runs.push(r)
+    if (this.runs.length > MAX_RUNS) this.runs.splice(0, this.runs.length - MAX_RUNS)
+    return r
+  }
+
+  runsFor(address: Address): PlanRun[] {
+    const k = this.key(address)
+    return this.runs.filter((r) => r.address.toLowerCase() === k)
   }
 
   add(kind: LogKind, line: string, extra: { address?: Address; hash?: Hex } = {}): LogEntry {
