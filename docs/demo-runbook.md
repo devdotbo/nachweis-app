@@ -335,7 +335,7 @@ Wallet: MetaMask (or any injected wallet) with a custom network, chain id 31337,
 
 The six beats as clicks, and what to watch:
 
-| beat | screen (role in the header) | click | app shows | terminal shows |
+| beat | screen (the path decides the role: investor portal at `/`, issuer console at `/issuer`, `app/src/lib/role.ts`) | click | app shows | terminal shows |
 |---|---|---|---|---|
 | 1 investor | Investor: card 1 "Connect wallet", card 3 "Eligibility" | Connect | Eligibility chip `not permitted`; both doors closed | `cast call $REG isEligible …` false |
 | 2 wallet | Investor: card 2 "Present your ID" | the yellow button creates the request; QR and openid4vp link appear; the phone scans and taps once | chip `presented, awaiting issuer`; bridge state chips created, presented, verified | verifier-service log: presentation verified (names in the service, not in any response) |

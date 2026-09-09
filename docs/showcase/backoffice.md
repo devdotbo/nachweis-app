@@ -99,14 +99,14 @@ Live probe results (`bun run scripts/probe-privy.ts`, 2026-09-09, wallet unfunde
 | Check | Class | Result | Record |
 |---|---|---|---|
 | scripts/showcase-backoffice-local.sh | L | SHOWCASE-BACKOFFICE-LOCAL PASS | this file, "Runs" |
-| Desk unit tests (bun test 35), app typecheck and build, forge 119 passed 20 skipped, app-e2e sp1-mock 1 passed | L | green 2026-09-09 | this file |
+| Desk unit tests (bun test 35), app typecheck and build, forge 152 passed 0 failed 20 skipped (recount on main 46d8349, 2026-09-09; 119 passed on the branch run below), app-e2e sp1-mock 1 passed | L | green 2026-09-09 | this file |
 | Bootstrap: quorum, policy, wallet ids | Privy API, no chain | ids below | this file |
 | probe-privy.ts: one key refused, two keys accepted; personal_sign refused by policy; approve passes the policy; transfer inconclusive (funds pre-check) | Privy API, no chain | done 2026-09-09, texts above | this file |
 | Sepolia: approve from the Privy wallet after two confirmations, Approved event with the wallet as operator; revoke; refused transfer | S | open (needs deployment and gas) | docs/evidence/<date>.md |
 
 ## Runs
 
-- 2026-09-09, builder's M3 Max, branch wp38-backoffice after the merge of main a4766c2: `scripts/showcase-backoffice-local.sh` printed SHOWCASE-BACKOFFICE-LOCAL PASS (approve 53,327 gas by the operator wallet after two confirmations; revoke after two confirmations; stranger approve reverted before broadcast with NoDecision; four refusals, simulated). Desk `bun test` 35 pass; app `tsc` and `vite build` clean; forge 119 passed, 20 skipped without RPC; app-e2e sp1-mock 1 passed, 2 skipped by mode.
+- 2026-09-09, builder's M3 Max, branch wp38-backoffice after the merge of main a4766c2: `scripts/showcase-backoffice-local.sh` printed SHOWCASE-BACKOFFICE-LOCAL PASS (approve 53,327 gas by the operator wallet after two confirmations; revoke after two confirmations; stranger approve reverted before broadcast with NoDecision; four refusals, simulated). Desk `bun test` 35 pass; app `tsc` and `vite build` clean; forge 119 passed, 20 skipped without RPC (152 passed, 0 failed, 20 skipped after the later merges, recount on main 46d8349 with `cd contracts && forge test`, 2026-09-09); app-e2e sp1-mock 1 passed, 2 skipped by mode.
 
 ## Open
 

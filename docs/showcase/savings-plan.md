@@ -78,7 +78,7 @@ No "first", no "only", no yield figure, no "KYC". Privy is named on screen only 
 |---|---|---|---|
 | L | `scripts/showcase-savings-plan-local.sh` | PASS, about 15 s on the M3 Max; run history `1:ok 2:ok 3:denied-policy 4:ok 5:denied-policy` | this file, 2026-09-09 |
 | L | Board walked headless (connect dev signer, attest, run, transfer, subscribe B, revoke, re-approve, warp): four chips open, four closed on revoke, open on re-approve, closed on expiry; no page errors | 2026-09-09, not committed as a spec |
-| L | Suites: forge 119 passed, 0 failed, 20 skipped (same as main); automation 16 pass; app typecheck and build with and without the app id; app-e2e sp1-mock 1 passed, 2 skipped | 2026-09-09 |
+| L | Suites: forge 119 passed, 0 failed, 20 skipped on the branch (152 passed, 0 failed, 20 skipped on main 46d8349 after the later merges, recount 2026-09-09); automation 16 pass; app typecheck and build with and without the app id; app-e2e sp1-mock 1 passed, 2 skipped | 2026-09-09 |
 | S | Sepolia with the Privy app: email sign-in, Allow, two runs while the tab is closed, Issuer B subscribe, transfer, revoke from the issuer console | not run | template below |
 
 Evidence template (class S, fill with hashes, never with an email address or a key):
