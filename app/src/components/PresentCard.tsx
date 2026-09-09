@@ -4,8 +4,10 @@ import { bridge, sessionMessage } from '../bridge'
 import { verifier } from '../verifier'
 import { addSession, updateSession, type Session } from '../lib/sessions'
 import type { Wallet } from '../lib/wallet'
+import type { StepState } from '../lib/journey'
+import { StateChip } from './Rail'
 
-export function PresentCard({ wallet, session }: { wallet: Wallet; session?: Session }) {
+export function PresentCard({ wallet, session, state }: { wallet: Wallet; session?: Session; state?: StepState }) {
   const address = wallet.address
   const [creating, setCreating] = useState(false)
   const [error, setError] = useState<string>()
@@ -57,14 +59,16 @@ export function PresentCard({ wallet, session }: { wallet: Wallet; session?: Ses
 
   const locked = !address
   return (
-    <section className={`card${locked ? ' locked' : ''}`}>
+    <section className={`card${locked ? ' locked' : ''}`} id="present">
       <h2>
-        <span className="n">2</span>Present your ID
+        Present your ID
+        <StateChip state={state} />
       </h2>
       <p className="lead">
-        Scan with the German EUDI test wallet (sample identity). The verifier-service checks the presentation; the nonce binds it to your address; this app never sees a name or a
-        document.
+        Show three fields (given name, family name, over 18) from the official German EUDI test wallet, sample identity. Names go to the issuer's verifier, not to the chain. Your
+        crypto wallet signs the session first, so the presentation is bound to this address; the ID wallet signs nothing on chain.
       </p>
+      {locked ? <div className="empty">Connect a wallet first. The presentation request is bound to the connected address.</div> : null}
       <div className="row">
         <button type="button" className="btn btn-yellow" onClick={create} disabled={locked || creating}>
           {creating ? 'Creating request' : session ? 'New presentation request' : 'Create presentation request'}
@@ -73,7 +77,7 @@ export function PresentCard({ wallet, session }: { wallet: Wallet; session?: Ses
       </div>
       {session ? (
         <div className="sub">
-          <span>wallet signs the session</span>
+          <span>Your wallet signs the session</span>
           {session.signature === 'pending' ? <span className="status waiting">waiting for signature</span> : null}
           {session.signature === 'signed' ? <span className="status open">signed, sent to bridge</span> : null}
           {session.signature === 'failed' ? (
@@ -100,7 +104,7 @@ export function PresentCard({ wallet, session }: { wallet: Wallet; session?: Ses
                 </a>
               </>
             ) : (
-              <p className="muted">Bridge in local mode: no wallet QR here. Prove on your phone with the handoff below (2b), or post the presentation to the bridge with a script (POST /sessions/{session.request.sessionId}/presentation).</p>
+              <p className="muted">The wallet QR appears in the next step: the device that makes the proof (this browser, your phone or the desktop companion) requests the presentation from the wallet itself.</p>
             )}
             <dl className="kv" style={{ marginTop: 10 }}>
               <dt>session</dt>

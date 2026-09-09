@@ -5,6 +5,9 @@ import { useDecision, useEligible, useRegistryStatus } from '../lib/chain'
 import { bitFlags, formatExpiry, shortHex, tierLabel } from '../lib/format'
 import type { Session } from '../lib/sessions'
 import { hasDecision } from '../lib/types'
+import { proofOrigin, type StepState } from '../lib/journey'
+import { StateChip } from './Rail'
+import { TxHash } from './TxLine'
 
 export type InvestorStatus = 'not permitted' | 'presented, awaiting issuer' | 'evidence on chain, awaiting issuer approval' | 'permitted' | 'revoked' | 'expired'
 
@@ -33,23 +36,27 @@ function stepClass(step: BridgeState, current: BridgeState): string {
   return i < c ? 'step done' : i === c ? 'step current' : 'step'
 }
 
-export function StatusCard({ address, session }: { address?: Address; session?: Session }) {
+export function StatusCard({ address, session, state }: { address?: Address; session?: Session; state?: StepState }) {
   const { decision, chain, status } = useInvestorStatus(address, session)
+  const origin = proofOrigin(session)
   const cls = status === 'permitted' ? 'open' : status === 'presented, awaiting issuer' || status === 'evidence on chain, awaiting issuer approval' ? 'waiting' : 'closed'
   const b = session?.bridge
   // The issuer approves and revokes on chain; show that step from the chain even when the bridge still says attested.
   const shown: BridgeState = chain.revoked && b?.state !== 'failed' ? 'revoked' : chain.approved && b?.state !== 'failed' ? 'approved' : (b?.state ?? 'created')
   return (
-    <section className={`card${address ? '' : ' locked'}`}>
+    <section className={`card${address ? '' : ' locked'}`} id="eligibility">
       <h2>
-        <span className="n">3</span>Eligibility
+        Eligibility
+        <StateChip state={state} />
       </h2>
+      <p className="lead">Two things open the doors: the proof's evidence stored on chain, and the issuer's approval as a separate transaction. Both are read live from the registry.</p>
       <div className="row">
         <span className={`status ${cls}`}>{status}</span>
         <span className="muted">
           required bits 0x{REQUIRED_BITS.toString(16)} under policy {shortHex(POLICY_ID, 6)}
         </span>
       </div>
+      {!address ? <div className="empty">Connect a wallet to read its eligibility from the registry.</div> : null}
       {session ? (
         <>
           <div className="steps">
@@ -65,9 +72,10 @@ export function StatusCard({ address, session }: { address?: Address; session?: 
           {b?.txHash ? (
             <p className="row">
               <span className="muted">attest tx</span>
-              <code>{b.txHash}</code>
+              <TxHash hash={b.txHash} chars={12} />
             </p>
           ) : null}
+          {origin ? <p className="caption">{origin.caption}</p> : null}
           {session.bridgeError ? <p className="err">{session.bridgeError}</p> : null}
         </>
       ) : null}
@@ -94,9 +102,10 @@ export function StatusCard({ address, session }: { address?: Address; session?: 
         <dt>approved</dt>
         <dd data-testid="approved">{chain.approved ? 'true' : 'false'}</dd>
       </dl>
-      {!hasDecision(decision) ? <p className="muted">No decision on chain for this address yet (decisionOf returns zeros).</p> : null}
-      {chain.hasDecision && !chain.approved && !chain.revoked ? <p className="muted">Evidence is on chain. Attestat opens the doors only after the issuer approves.</p> : null}
-      <p className="muted">Checks beyond identity evidence and age are simulated in this build.</p>
+      {address && !hasDecision(decision) ? <p className="muted">No decision on chain for this address yet (decisionOf returns zeros).</p> : null}
+      {chain.hasDecision && !chain.approved && !chain.revoked ? <p className="muted">Evidence is on chain. The doors open only after the issuer approves.</p> : null}
+      {chain.revoked ? <p className="muted">Approval withdrawn by the issuer, a manual step on the issuer console. Re-approval is the issuer's decision; a replayed proof cannot reopen the doors.</p> : null}
+      <p className="caption">Checks beyond identity evidence and age are simulated in this build.</p>
     </section>
   )
 }

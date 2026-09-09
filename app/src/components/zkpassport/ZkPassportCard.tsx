@@ -16,9 +16,9 @@ import { usePublicClient, useWriteContract } from 'wagmi'
 import { CHAIN_ID, MOCK, POLICY_ID, REGISTRY } from '../../config'
 import { registryAbi } from '../../lib/contracts'
 import { shortHex } from '../../lib/format'
-import type { TxState } from '../../lib/types'
+import type { StepState } from '../../lib/journey'
 import type { Wallet } from '../../lib/wallet'
-import { TxLine } from '../TxLine'
+import { StateChip } from '../Rail'
 import {
   ZKPASSPORT_CHAIN_NAMES,
   ZKPASSPORT_DECISION_TTL_SECONDS,
@@ -44,20 +44,23 @@ const PHASE_LABEL: Record<Phase, string> = {
   error: 'failed',
 }
 
+/** Local transaction state: TxState's pending label union is closed to the operator calls, and this card must not widen a shared type. */
+type SubmitState = { status: 'idle' } | { status: 'pending' } | { status: 'done'; hash: `0x${string}` } | { status: 'error'; message: string }
+
 interface Proved {
   params: SolidityParams
   call: AttestCall
   proofs: number
 }
 
-export function ZkPassportCard({ wallet }: { wallet: Wallet }) {
+export function ZkPassportCard({ wallet, state }: { wallet: Wallet; state?: StepState }) {
   const address = wallet.address
   const [phase, setPhase] = useState<Phase>('idle')
   const [error, setError] = useState<string>()
   const [url, setUrl] = useState<string>()
   const [qr, setQr] = useState<string>()
   const [proved, setProved] = useState<Proved>()
-  const [tx, setTx] = useState<TxState>({ status: 'idle' })
+  const [tx, setTx] = useState<SubmitState>({ status: 'idle' })
   const [txHash, setTxHash] = useState<`0x${string}`>()
   const alive = useRef(true)
   const { writeContractAsync } = useWriteContract()
@@ -166,7 +169,7 @@ export function ZkPassportCard({ wallet }: { wallet: Wallet }) {
   const submit = useCallback(async () => {
     if (!proved) return
     const { subject, decision, proof, publicInputs } = proved.call
-    setTx({ status: 'pending', label: 'attestWithProof from your wallet' })
+    setTx({ status: 'pending' })
     try {
       const hash = await writeContractAsync({ address: REGISTRY, abi: registryAbi, functionName: 'attestWithProof', args: [subject, decision, proof, publicInputs] })
       if (client) await client.waitForTransactionReceipt({ hash })
@@ -182,9 +185,10 @@ export function ZkPassportCard({ wallet }: { wallet: Wallet }) {
   const locked = !address
   const busy = phase === 'requesting' || phase === 'waiting' || phase === 'received' || phase === 'generating' || phase === 'verifying'
   return (
-    <section className={`card${locked ? ' locked' : ''}`}>
+    <section className={`card${locked ? ' locked' : ''}`} id="zkpassport">
       <h2>
-        <span className="n">2</span>Passport chip (zkPassport)
+        Passport chip (zkPassport)
+        <StateChip state={state} />
       </h2>
       <p className="lead">
         Alternative evidence for people without an EUDI wallet: the zkPassport app reads the chip of your own biometric passport or ID card and proves on your phone that you are {ZKPASSPORT_MIN_AGE} or older, bound to this
@@ -244,7 +248,19 @@ export function ZkPassportCard({ wallet }: { wallet: Wallet }) {
             <button type="button" className="btn btn-blue" onClick={() => void submit()} disabled={tx.status === 'pending' || tx.status === 'done'}>
               {tx.status === 'done' ? 'Evidence on chain' : 'Send attestWithProof from this wallet'}
             </button>
-            <TxLine tx={tx} />
+            {tx.status === 'pending' ? (
+              <p className="row">
+                <span className="status waiting">tx pending</span>
+                <span className="muted">attestWithProof from your wallet</span>
+              </p>
+            ) : null}
+            {tx.status === 'done' ? (
+              <p className="row">
+                <span className="status open">tx confirmed</span>
+                <code>{shortHex(tx.hash, 8)}</code>
+              </p>
+            ) : null}
+            {tx.status === 'error' ? <p className="err">{tx.message}</p> : null}
           </div>
           {txHash ? <p className="muted">Evidence stored; the issuer approves it in the issuer console like any other decision.</p> : null}
         </div>

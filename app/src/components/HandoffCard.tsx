@@ -2,7 +2,9 @@ import QRCode from 'qrcode'
 import { useEffect, useState, type ReactNode } from 'react'
 import { bridge } from '../bridge'
 import { handoffJson, handoffUri } from '../lib/handoff'
+import type { StepState } from '../lib/journey'
 import { updateSession, type Session } from '../lib/sessions'
+import { StateChip } from './Rail'
 
 export type HandoffVariant = 'phone' | 'companion'
 
@@ -12,7 +14,7 @@ export type HandoffVariant = 'phone' | 'companion'
  * carries the compact handoff JSON; the URI below it is the same for pasting. The other device
  * shows the wallet QR itself; this browser only waits for GET /sessions/:id to flip to attested.
  */
-export function HandoffCard({ session, variant = 'phone', picker, children }: { session?: Session; variant?: HandoffVariant; picker?: ReactNode; children?: ReactNode }) {
+export function HandoffCard({ session, variant = 'phone', picker, children, state: stepState }: { session?: Session; variant?: HandoffVariant; picker?: ReactNode; children?: ReactNode; state?: StepState }) {
   const [qr, setQr] = useState<string>()
   const [copied, setCopied] = useState(false)
   const handoff = session?.handoff
@@ -66,17 +68,17 @@ export function HandoffCard({ session, variant = 'phone', picker, children }: { 
     }
   }
   return (
-    <section className={`card${signed ? '' : ' locked'}`}>
+    <section className={`card${signed ? '' : ' locked'}`} id="prove">
       <h2>
-        <span className="n">2b</span>
         {variant === 'phone' ? 'Prove on your phone' : 'Prove with the desktop companion'}
+        <StateChip state={stepState} />
       </h2>
       {picker}
       {children}
       <p className="lead">
         {variant === 'phone'
-          ? 'The phone app (Nachweis Prover) scans this handoff, requests the presentation from the wallet with the same challenge, proves on the phone and posts only the proof to this session. Your wallet signature above already binds the session to your address; the phone holds no key.'
-          : 'Paste the handoff URI into the desktop companion (`companion handoff <uri>`): it requests the presentation from the wallet with the same challenge, proves with native bb and posts only the proof to this session. Your wallet signature above already binds the session to your address; the companion holds no Ethereum key.'}
+          ? 'The proof is made on your phone. The phone app scans this handoff, requests the presentation from the wallet with the same challenge, proves on the phone and posts only the proof to this session. Your wallet signature above already binds the session to your address; the phone holds no key.'
+          : 'The proof is made by the desktop companion on your own computer. Paste the handoff URI into it (`companion handoff <uri>`): it requests the presentation from the wallet with the same challenge, proves with native bb and posts only the proof to this session. Your wallet signature above already binds the session to your address; the companion holds no Ethereum key.'}
       </p>
       <div className="row">
         {!signed ? <span className="status idle">sign the session first</span> : null}

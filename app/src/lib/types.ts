@@ -53,4 +53,4 @@ export interface RegistryEvent {
   blockNumber: bigint
 }
 
-export type TxState = { status: 'idle' } | { status: 'pending'; label: string } | { status: 'done'; hash: Hex } | { status: 'error'; message: string }
+export type TxState = { status: 'idle' } | { status: 'pending'; label: 'attestByOperator' | 'approve' | 'revoke' | 'subscribe' } | { status: 'done'; hash: Hex } | { status: 'error'; message: string }

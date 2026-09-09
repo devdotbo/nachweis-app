@@ -1,6 +1,7 @@
-import { useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { browserPathAvailability } from '../lib/browserProver'
-import type { Session } from '../lib/sessions'
+import type { StepState } from '../lib/journey'
+import { updateSession, type Session } from '../lib/sessions'
 import { BrowserProveCard } from './BrowserProveCard'
 import { HandoffCard } from './HandoffCard'
 
@@ -17,10 +18,15 @@ const PATHS: { id: ProvePath; label: string }[] = [
  * wallet signed: this tab (WP29, default when cross-origin isolated and not iOS), the phone app or
  * the desktop companion (both consume the handoff QR and URI, WP14).
  */
-export function ProveCard({ session }: { session?: Session }) {
+export function ProveCard({ session, state }: { session?: Session; state?: StepState }) {
   const avail = useMemo(browserPathAvailability, [])
   const [path, setPath] = useState<ProvePath>(avail.ok ? 'browser' : 'phone')
   const isBridge = session?.request.mode === 'bridge' || session?.request.mode === 'mock'
+  const sessionId = session?.request.sessionId
+  // The Eligibility caption says where the proof was made; the picker is the only place that knows.
+  useEffect(() => {
+    if (sessionId) updateSession(sessionId, { provePath: path })
+  }, [sessionId, path])
   if (!session || !isBridge) return null
   const picker: ReactNode = (
     <div className="row paths" role="group" aria-label="where to prove">
@@ -40,9 +46,9 @@ export function ProveCard({ session }: { session?: Session }) {
     </div>
   )
   const unavailable = !avail.ok ? <p className="note">Proving in this browser is off: {avail.reason}</p> : null
-  if (path === 'browser') return <BrowserProveCard session={session} picker={picker} availability={avail} />
+  if (path === 'browser') return <BrowserProveCard session={session} picker={picker} availability={avail} state={state} />
   return (
-    <HandoffCard session={session} variant={path} picker={picker}>
+    <HandoffCard session={session} variant={path} picker={picker} state={state}>
       {unavailable}
     </HandoffCard>
   )

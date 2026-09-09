@@ -19,16 +19,15 @@ export function IssuerPending({ operator, sessions }: { operator?: Address; sess
   const locked = !operator
 
   return (
-    <section className={`card${locked ? ' locked' : ''}`}>
-      <h2>
-        <span className="n">3</span>Presentations
-      </h2>
+    <section className={`card${locked ? ' locked' : ''}`} id="queue">
+      <h2>Presentations</h2>
       <p className="lead">
-        Sessions created in this browser, verified by the verifier-service. Held in memory only. A proof puts the evidence on chain (attestWithProof); nothing opens until the
-        issuer approves it here (registry.approve for the bound address under this policy). Revoke withdraws the approval, Re-approve restores it. The direct operator route
-        (attestByOperator: bits 0x{REQUIRED_BITS.toString(16)}, tier A, 30 days, statusRef = keccak256(session id)) is the fallback when no proof route is available.
+        Sessions opened in this browser, in the order they arrived. Held in memory only; a reload forgets them, the chain does not. A proof puts the evidence on chain; nothing
+        opens until you approve it here. Revoke withdraws the approval (a manual step), Re-approve restores it. Attest directly (attestByOperator: bits 0x{REQUIRED_BITS.toString(16)},
+        tier A, 30 days) is the fallback when no proof route is available.
       </p>
-      {sessions.length === 0 ? <div className="empty">No presentations yet. Switch to Investor and create a request.</div> : null}
+      {locked ? <div className="empty">Connect the operator wallet to approve, revoke or attest.</div> : null}
+      {sessions.length === 0 ? <div className="empty">No presentation in this browser yet. A session appears here the moment an investor creates a request in the investor portal of this same browser; decisions already on chain are in the table below.</div> : null}
       <div className="list">
         {sessions.map((s) => (
           <SessionRow key={s.request.sessionId} s={s} registry={registry} locked={locked} busy={busy} setBusy={setBusy} />
