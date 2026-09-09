@@ -81,6 +81,22 @@ Two on-screen sentences. Investor card: "Wallet by Privy: an embedded wallet cre
 
 Builder TODO before submission: the Sepolia run of `docs/privy-standing-order.md` section 7 (Privy app, authorization key, policy gate check, tests 5 to 9), the evidence record of section 8, then the Privy line in the submission text.
 
+## Showcase
+
+Five demos, one more door and one more evidence route, all built on the same registry read (`isEligible`). Every item below is evidence class L: a local anvil chain, a dev key or the local evaluator in place of Privy (captioned "simulated Privy policy (local)" on screen), no wallet run, no device run, no Sepolia transaction. Each script starts its own anvil and prints the PASS line named here; the demo pages sit under `/showcase/<slug>` in the app (`app/src/showcase/registry.ts`).
+
+| Demo | What it shows | Script and PASS line | Doc |
+|---|---|---|---|
+| Standing order (WP32) | The issuer's automation sends a recurring `subscribe()` from the investor's own wallet under a policy copied from the on-chain decision; revoke and expiry refuse the tick. | `scripts/standing-order-local.sh`, `STANDING-ORDER-LOCAL PASS` | `docs/privy-standing-order.md` |
+| Compliance desk (`/showcase/backoffice`) | A four-eyes desk approves and withdraws investor wallets through an operator wallet whose policy allows approve and revoke and nothing else; three refusals on screen. | `scripts/showcase-backoffice-local.sh`, `SHOWCASE-BACKOFFICE-LOCAL PASS` | `docs/showcase/backoffice.md` |
+| Contractor payout desk (`/showcase/payout-desk`) | A treasury that may only pay through `GatedPayout`, which pays only addresses with a live decision; the gate's own revert text and the policy's refusals on screen. | `scripts/showcase-payout-desk-local.sh`, `SHOWCASE-PAYOUT-DESK-LOCAL PASS` | `docs/showcase/payout-desk.md` |
+| Fund desk for an email investor (`/showcase/investor-money`) | Subscribe in a test stablecoin, receive a distribution, claim and redeem, each movement gated by the decision; refused before approval and after revoke. | `scripts/showcase-investor-money-local.sh` (`--test` runs the browser spec), `SHOWCASE-INVESTOR-MONEY-LOCAL PASS` | `docs/showcase/investor-money.md` |
+| The attested savings plan (`/showcase/savings-plan`) | One decision read by four doors (recurring plan, a second issuer's instrument, the permissioned pool, a transfer); one revoke closes all four. | `scripts/showcase-savings-plan-local.sh`, `SHOWCASE-SAVINGS-PLAN-LOCAL PASS` | `docs/showcase/savings-plan.md` |
+| Swap door (WP35, investor portal) | The investor swaps the demo stable for the fund token in the Uniswap v4 permissioned pool from the connected wallet; after revoke the same swap is refused and the revert is shown in words. Pool on an anvil fork of Sepolia. | `scripts/pool-local.sh`, `POOL-LOCAL PASS`; browser: `scripts/app-e2e-local.sh --mode sp1-mock --pool --test` | `docs/swap.md` |
+| zkPassport route (WP33) | A second evidence route: a passport chip proof from the zkPassport phone app, verified behind an adapter in front of the same policy. Locally a mock root verifier stands in; not run with a phone. | `scripts/zkpassport-local.sh`, `ZKPASSPORT-LOCAL PASS` | `docs/zkpassport.md` |
+
+The demo scripts start from an address attested on the local chain by the operator path or a mock verifier (captioned as such); where the identity proof of the main route is made is stated in the Honesty box above. Sample identity from the official test wallet; testnet funds only.
+
 ## Pre-existing work
 
 Everything in this repository was written during the event, except the adapted third-party code named in [DISCLOSURE.md](DISCLOSURE.md). The builder's pre-existing Rust EUDI verifier was modified during the event on branch `nachweis-relay` (blind relay, bridge mode, result minimization); those changes are exported as the patch series in `vendor/verifier-relay-patches/` with their base commit, so the event work on the verifier is reviewable here even before that branch is pushed.
