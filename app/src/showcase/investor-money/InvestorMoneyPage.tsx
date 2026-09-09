@@ -12,7 +12,7 @@ import { useRegistryStatus } from '../../lib/chain'
 import { addressUrl } from '../../lib/explorer'
 import { formatExpiry, shortHex } from '../../lib/format'
 import { PRIVY_ENABLED } from '../../lib/PrivyBoundary'
-import type { Wallet } from '../../lib/wallet'
+import { useWallet } from '../../lib/wallet'
 import { DESK_RECEIPT_LABEL, DISTRIBUTE_STABLE, MINT_STABLE, REDEEM_UNITS, SUBSCRIBE_STABLE, fmtStable, fmtUnits, useDeskAddresses, useDeskReceipts, useDeskTx, useInvestorBalances } from './desk'
 import { DeskTxLine } from './DeskTxLine'
 
@@ -26,7 +26,9 @@ function when(at: number): string {
   return new Date(at).toISOString().slice(11, 19) + ' UTC'
 }
 
-export function InvestorMoneyPage({ wallet }: { wallet: Wallet }) {
+/** The route's component (src/showcase/registry.ts). The wallet is the investor's, like the product's investor portal. */
+export function InvestorMoneyPage() {
+  const wallet = useWallet('investor')
   const address = wallet.address
   const addresses = useDeskAddresses()
   const status = useRegistryStatus(address)

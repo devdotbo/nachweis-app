@@ -21,7 +21,8 @@
 #   --test    browser run instead of the cast flow: deploy, mint the operator's treasury, start the app, then
 #             `bunx playwright test e2e/showcase-investor-money.spec.ts` clicks the beats above from a fresh
 #             investor (attest, revoke and approve by cast, the operator's action), then stop (exit code = test result)
-# Env: RUN_DIR (default .e2e/showcase-investor-money, gitignored), ANVIL_PORT, APP_PORT (default: free ports).
+# Env: RUN_DIR (default .e2e/showcase-investor-money, gitignored), ANVIL_PORT (default 8552, the port assigned to this
+#      demo so the showcase scripts can run side by side), APP_PORT (default: a free port).
 # Nothing touches a public chain: every transaction goes to the local anvil. No Privy app is involved
 # (the page then offers the dev signer; with VITE_PRIVY_APP_ID it would offer email sign-in instead).
 set -eEuo pipefail
@@ -56,7 +57,7 @@ MUSD_100=100000000
 MUSD_10=10000000
 NDF_50=50000000000000000000   # 18 decimals
 free_port() { python3 -c 'import socket;s=socket.socket();s.bind(("127.0.0.1",0));print(s.getsockname()[1]);s.close()'; }
-ANVIL_PORT="${ANVIL_PORT:-$(free_port)}"
+ANVIL_PORT="${ANVIL_PORT:-8552}"
 RPC="http://127.0.0.1:$ANVIL_PORT"
 
 mkdir -p "$RUN_DIR"

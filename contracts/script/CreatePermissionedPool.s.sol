@@ -42,7 +42,10 @@ contract CreatePermissionedPool is Script {
         uint24 fee = uint24(vm.envOr("POOL_FEE", uint256(3000)));
         int24 tickSpacing = int24(int256(vm.envOr("TICK_SPACING", uint256(60))));
 
-        require(block.chainid == 11155111, "run against Sepolia (chain id 11155111)");
+        require(
+            block.chainid == 11155111 || block.chainid == 31337,
+            "run against Sepolia (chain id 11155111) or an anvil fork of it started with --chain-id 31337"
+        );
         IPermissionsAdapterFactory factory = IPermissionsAdapterFactory(UniswapSepolia.PERMISSIONS_ADAPTER_FACTORY);
         require(factory.POOL_MANAGER() == UniswapSepolia.POOL_MANAGER, "factory POOL_MANAGER mismatch");
         require(UniswapSepolia.PERMISSIONED_HOOKS.code.length != 0, "PermissionedHooks has no code");

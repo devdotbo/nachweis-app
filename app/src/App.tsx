@@ -1,12 +1,13 @@
-import { Suspense, useEffect } from 'react'
-import { Navigate, Route, Routes, useParams } from 'react-router'
+import { useEffect } from 'react'
+import { Navigate, Route, Routes } from 'react-router'
 import { TopBar } from './components/TopBar'
 import { ISSUER_PATH, useRole } from './lib/role'
 import { updateSession, useSessions, type SessionState } from './lib/sessions'
-import { useWallet, type Wallet } from './lib/wallet'
+import { useWallet } from './lib/wallet'
 import { InvestorScreen } from './screens/InvestorScreen'
 import { IssuerScreen } from './screens/IssuerScreen'
-import { showcases } from './showcase/registry'
+import { ShowcaseRoute } from './showcase/ShowcaseRoute'
+import { SHOWCASE_PATH } from './showcase/registry'
 import { bridge, isTerminal, type BridgeState } from './bridge'
 import { verifier } from './verifier'
 
@@ -91,18 +92,6 @@ function useSessionPolling() {
   }, [activeIds])
 }
 
-/** /showcase/:slug renders the demo registered under that slug (src/showcase/registry.ts); an unknown slug goes home. */
-function ShowcaseRoute({ wallet }: { wallet: Wallet }) {
-  const { slug } = useParams()
-  const entry = showcases.find((s) => s.slug === slug)
-  if (!entry) return <Navigate to="/" replace />
-  return (
-    <Suspense fallback={null}>
-      <entry.Component wallet={wallet} />
-    </Suspense>
-  )
-}
-
 export function App() {
   const role = useRole()
   const wallet = useWallet(role)
@@ -113,7 +102,7 @@ export function App() {
       <Routes>
         <Route path="/" element={<InvestorScreen wallet={wallet} />} />
         <Route path={ISSUER_PATH} element={<IssuerScreen wallet={wallet} />} />
-        <Route path="/showcase/:slug" element={<ShowcaseRoute wallet={wallet} />} />
+        <Route path={`${SHOWCASE_PATH}/:slug?`} element={<ShowcaseRoute />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </>
