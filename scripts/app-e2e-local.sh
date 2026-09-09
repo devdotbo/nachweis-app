@@ -19,7 +19,10 @@
 #   sp1-mock  bridge in verifier mode with PROOF_MODE=mock and a MockProofVerifier on the registry.
 #             The test posts the presentation with scripts/e2e/wallet.ts (app/e2e/sp1-mock.spec.ts).
 #
-# Usage: scripts/app-e2e-local.sh [--mode noir|browser|sp1-mock] [--test] [--stop]
+# Usage: scripts/app-e2e-local.sh [--mode noir|browser|sp1-mock] [--pool] [--test] [--stop]
+#   --pool    anvil forks Sepolia (SEPOLIA_RPC_URL or publicnode, chain id 31337) and scripts/pool-local.sh
+#             onboards the Uniswap permissioned pool on it; the app gets VITE_POOL_*, env.json a `pool`
+#             object, and app/e2e/swap.spec.ts runs (docs/swap.md)
 #   --test    run `bunx playwright test` in app/ against the stack, then stop it (exit code = test result)
 #   --stop    stop a stack started earlier (pids in RUN_DIR/pids) and exit
 # Env: VERIFIER_REPO (default ../nachweis-verifier-relay), RUN_DIR (default .e2e/app),
@@ -33,11 +36,12 @@ set -eEuo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VERIFIER_REPO="${VERIFIER_REPO:-$(cd "$ROOT/.." && pwd)/nachweis-verifier-relay}"
 RUN_DIR="${RUN_DIR:-$ROOT/.e2e/app}"
-MODE=noir; TEST=0; STOP=0
+MODE=noir; TEST=0; STOP=0; POOL=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --mode) MODE="$2"; shift 2 ;;
     --test) TEST=1; shift ;;
+    --pool) POOL=1; shift ;;
     --stop) STOP=1; shift ;;
     -h|--help) sed -n '2,30p' "$0"; exit 0 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
@@ -102,7 +106,9 @@ ensure_bun_deps() { # dir, marker package
 }
 
 # ------------------------------------------------------------------ 1. anvil
-anvil --port "$ANVIL_PORT" --silent > "$RUN_DIR/anvil.log" 2>&1 & echo $! >> "$PIDS"
+ANVIL_ARGS=(--port "$ANVIL_PORT" --silent)
+[ $POOL -eq 1 ] && ANVIL_ARGS+=(--fork-url "${SEPOLIA_RPC_URL:-https://ethereum-sepolia-rpc.publicnode.com}" --chain-id 31337 --retries 5 --timeout 30000)
+anvil "${ANVIL_ARGS[@]}" > "$RUN_DIR/anvil.log" 2>&1 & echo $! >> "$PIDS"
 for _ in $(seq 1 50); do cast chain-id --rpc-url "$RPC" >/dev/null 2>&1 && break; sleep 0.2; done
 cast chain-id --rpc-url "$RPC" >/dev/null 2>&1 || die "anvil did not come up ($RUN_DIR/anvil.log)"
 say "anvil on $RPC"
@@ -114,6 +120,13 @@ TOKEN=$(echo "$DEPLOY_OUT" | awk '/FundToken:/ {print $2}' | head -1)
 SUBSCRIPTION=$(echo "$DEPLOY_OUT" | awk '/Subscription:/ {print $2}' | head -1)
 [ -n "$REGISTRY" ] && [ -n "$TOKEN" ] && [ -n "$SUBSCRIPTION" ] || die "could not parse the deploy output"
 say "AttestationRegistry $REGISTRY, FundToken $TOKEN, Subscription $SUBSCRIPTION (operator $OPERATOR)"
+POOL_ENV=(); POOL_JSON='null'
+if [ $POOL -eq 1 ]; then
+  "$ROOT/scripts/pool-local.sh" --attach "$RPC" --registry "$REGISTRY" --fund-token "$TOKEN" --subscription "$SUBSCRIPTION" --out "$RUN_DIR/pool" > "$RUN_DIR/pool.log" 2>&1 \
+    || { tail -20 "$RUN_DIR/pool.log"; die "pool-local.sh failed (see $RUN_DIR/pool.log)"; }
+  while read -r line; do [ -n "$line" ] && POOL_ENV+=("$line"); done < "$RUN_DIR/pool/pool.env"; POOL_JSON=$(cat "$RUN_DIR/pool/pool.json")
+  say "permissioned pool on the fork: adapter $(jq -r .adapter <<< "$POOL_JSON"), checker $(jq -r .checker <<< "$POOL_JSON") ($(tail -1 "$RUN_DIR/pool.log"))"
+fi
 
 NOIR_VERIFIER=""; ISSUER_JSON=""; ISSUER_KEY_PEM=""; ISSUER_CERT_PEM=""
 if [ $NOIR_STACK -eq 1 ]; then
@@ -175,7 +188,7 @@ say "bridge on $BRIDGE_URL, $(curl -s "$BRIDGE_URL/health" | jq -c '{mode,proof_
 ensure_bun_deps "$ROOT/app" vite
 (cd "$ROOT/app" && exec env -u VITE_MOCK VITE_BRIDGE_URL="$BRIDGE_URL" VITE_VERIFIER_URL="$VERIFIER_URL" VITE_CHAIN_ID=31337 VITE_RPC_URL="$RPC" \
   VITE_REGISTRY="$REGISTRY" VITE_FUND_TOKEN="$TOKEN" VITE_SUBSCRIPTION="$SUBSCRIPTION" VITE_POLICY_ID="$POLICY" VITE_REQUIRED_BITS=3 \
-  VITE_DEV_PRIVATE_KEY="$K1" VITE_DEV_OPERATOR_KEY="$K0" \
+  VITE_DEV_PRIVATE_KEY="$K1" VITE_DEV_OPERATOR_KEY="$K0" "${POOL_ENV[@]}" \
   node node_modules/vite/bin/vite.js --port "$APP_PORT" --strictPort --host 127.0.0.1 > "$RUN_DIR/app.log" 2>&1) & echo $! >> "$PIDS"
 wait_http "$APP_URL/" 30 || die "vite did not come up ($RUN_DIR/app.log)"
 say "app on $APP_URL (dev signer: investor $INVESTOR, operator $OPERATOR)"
@@ -186,7 +199,7 @@ jq -n --arg mode "$MODE" --arg appUrl "$APP_URL" --arg rpcUrl "$RPC" --arg verif
   --arg registry "$REGISTRY" --arg fundToken "$TOKEN" --arg subscription "$SUBSCRIPTION" --arg noirVerifier "$NOIR_VERIFIER" --arg policyId "$POLICY" \
   --arg investor "$INVESTOR" --arg operator "$OPERATOR" --arg issuerJson "$ISSUER_JSON" --arg issuerKeyPem "$ISSUER_KEY_PEM" --arg issuerCertPem "$ISSUER_CERT_PEM" \
   --arg companionDir "$ROOT/companion" --arg walletScript "$ROOT/scripts/e2e/wallet.ts" --arg runDir "$RUN_DIR" --arg issuerToken "$ISSUER_TOKEN" \
-  '$ARGS.named' > "$ENV_JSON"
+  --argjson pool "$POOL_JSON" '$ARGS.named' > "$ENV_JSON"
 say "env for the specs: $ENV_JSON"
 
 if [ $TEST -eq 1 ]; then

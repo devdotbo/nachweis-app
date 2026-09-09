@@ -260,9 +260,9 @@ Shortcut with a real verification and no proving: on a Sepolia fork, `PROOF_MODE
 
 ## 7. Uniswap permissioned pool on a Sepolia fork
 
-Not run 2026-09-07: needs a Sepolia RPC URL (network). The commands are the ones the dry runs and fork tests used, pointed at a local fork so `--broadcast` stays local.
+Run 2026-09-09 by `scripts/pool-local.sh` (24 s, `POOL-LOCAL PASS`), which does the sequence below on its own fork and adds the app's Swap door; `docs/swap.md` has the short form and `scripts/app-e2e-local.sh --mode sp1-mock --pool --test` the browser run. The hand-driven commands stay here.
 
-Terminal A (replaces the plain anvil; the fork keeps chain id 11155111, which the scripts require, and funds the anvil default accounts):
+Terminal A (replaces the plain anvil; the fork funds the anvil default accounts; the pool scripts accept chain id 11155111, the fork's own, and 31337, which `--chain-id 31337` sets so the app labels the chain Anvil):
 
 ```
 export SEPOLIA_RPC_URL=https://ethereum-sepolia-rpc.publicnode.com      # or your own
@@ -324,7 +324,7 @@ cd $W/app && cp .env.example .env
 # VITE_VERIFIER_MODE=service
 # VITE_BRIDGE_URL=http://127.0.0.1:8790
 # VITE_REGISTRY=$REG  VITE_FUND_TOKEN=$TOK  VITE_SUBSCRIPTION=$SUB
-# VITE_POOL=                                   leave empty until the pool exists; the Swap door stays disabled
+# VITE_POOL_ADAPTER= VITE_POOL_STABLE=          from .e2e/pool/pool.env after scripts/pool-local.sh; empty: the Swap door shows its placeholder
 # VITE_POLICY_ID=0xd272…d05f  VITE_REQUIRED_BITS=3
 # VITE_CHAIN_ID=31337  VITE_RPC_URL=http://127.0.0.1:8545     plain anvil (TODO-3 resolved)
 # VITE_MOCK=0
@@ -342,8 +342,8 @@ The six beats as clicks, and what to watch:
 | 3a binding | same card | "sign" (ghost button): the wallet signs `nachweis:session:<id>` | `address_verified` | bridge: `POST /sessions/:id/address-proof` 200 |
 | 3 evidence | Investor: card 3 "Eligibility" | wait for the bridge's `attestWithProof` | bridge chips proving, proved, attested with the tx hash; chip `evidence on chain, awaiting issuer approval`; both doors closed; card 5 "What the chain sees" shows the raw Decision and "no name, no document" | bridge: `attestWithProof` tx hash and decoded `Attested`; `cast call $REG isEligible …` false |
 | 3b issuer | Issuer: card 3 "Presentations" | Approve (registry.approve from the operator signer; "Attest directly" is the operator fallback without a proof) | badge `attested (awaiting issuer approval)` turns `approved`; investor card 3 turns `permitted`, both doors open | Issuer card 4 "Registry events" lists `Attested` and `Approved`; `cast call $REG isEligible …` true |
-| 4 doors | Investor: card 4 "Two doors, one decision" | Subscribe (`Subscription.subscribe()`); Swap (disabled until `VITE_POOL`; on Sepolia the swap is the script of section 7 or the viem calldata in `contracts/docs/uniswap-permissioned-pool.md`) | balance of NDF; door states from `isEligible` | anvil: `subscribe` mined |
-| 6 revoke | Issuer: card 3 Revoke, or card 2 "Revoke by address" | Revoke | Issuer card 4 shows `Revoked`; Investor card 3 `revoked`, both doors closed; Subscribe now fails with `NotEligible`; the issuer button reads Re-approve | bridge or cast: `revoke` tx; `cast logs … Revoked` |
+| 4 doors | Investor: card 4 "Two doors, one decision" | Subscribe (`Subscription.subscribe()`); Swap (with the pool of section 7 configured through `VITE_POOL_ADAPTER` and `VITE_POOL_STABLE`: 100 mUSD through the permissioned Universal Router from the wallet, the estimate and the three registry answers shown first; `docs/swap.md`) | balance of NDF; door states from `isEligible`; swap receipt with hash, gas and the amounts | anvil: `subscribe` and `execute` mined |
+| 6 revoke | Issuer: card 3 Revoke, or card 2 "Revoke by address" | Revoke | Issuer card 4 shows `Revoked`; Investor card 3 `revoked`, both doors closed; Subscribe now fails with `NotEligible`; Swap is refused on screen ("Refused by PermissionedHooks.beforeSwap", `Unauthorized()`, the reverted transaction's hash); the issuer button reads Re-approve | bridge or cast: `revoke` tx; `cast logs … Revoked` |
 | 7 re-approve | Issuer: card 3 | Re-approve | badge `approved`; Investor card 3 `permitted`, doors open again (reapproval requires the issuer; a replayed proof cannot reopen) | `cast logs … Approved` |
 
 Simulated checks: the issuer screen states per session what Approve confirms (presentation verified by the issuer's verifier for this session, bound address signed the session, issuer approves eligibility for that address) and that sanctions and other checks are simulated in this build. The caption in the video should carry it too (see `docs/video-shotlist.md`).
