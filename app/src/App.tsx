@@ -6,6 +6,8 @@ import { updateSession, useSessions, type SessionState } from './lib/sessions'
 import { useWallet } from './lib/wallet'
 import { InvestorScreen } from './screens/InvestorScreen'
 import { IssuerScreen } from './screens/IssuerScreen'
+import { ShowcaseRoute } from './showcase/ShowcaseRoute'
+import { SHOWCASE_PATH } from './showcase/registry'
 import { bridge, isTerminal, type BridgeState } from './bridge'
 import { verifier } from './verifier'
 
@@ -100,6 +102,7 @@ export function App() {
       <Routes>
         <Route path="/" element={<InvestorScreen wallet={wallet} />} />
         <Route path={ISSUER_PATH} element={<IssuerScreen wallet={wallet} />} />
+        <Route path={`${SHOWCASE_PATH}/:slug?`} element={<ShowcaseRoute />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </>
