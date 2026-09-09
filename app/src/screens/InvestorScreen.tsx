@@ -6,6 +6,7 @@ import { HoldingsCard } from '../components/HoldingsCard'
 import { PresentCard } from '../components/PresentCard'
 import { ProveCard } from '../components/ProveCard'
 import { Rail } from '../components/Rail'
+import { StandingOrderCard } from '../components/StandingOrderCard'
 import { StatusCard } from '../components/StatusCard'
 import { useEligible, useFundBalance, useRegistryEvents, useRegistryStatus } from '../lib/chain'
 import { journeySteps, type StepId, type StepState } from '../lib/journey'
@@ -62,6 +63,7 @@ export function InvestorScreen({ wallet }: { wallet: Wallet }) {
           <ProveCard session={session} state={state('prove')} />
           <StatusCard address={address} session={session} state={eligibilityState()} />
           <DoorsCard address={address} state={doorsState()} />
+          <StandingOrderCard address={address} wallet={wallet} />
           <HoldingsCard address={address} state={state('holdings')} />
           <HistoryCard address={address} state={state('history')} />
           <ChainPanel address={address} />

@@ -1,10 +1,11 @@
+import { AutomationLog } from '../components/AutomationLog'
 import { ConnectCard } from '../components/ConnectCard'
 import { DecisionsTable, subjectsOf } from '../components/DecisionsTable'
 import { EventLog } from '../components/EventLog'
 import { Receipts } from '../components/HistoryCard'
 import { IssuerPending } from '../components/IssuerPending'
 import { RevokeByAddress } from '../components/RevokeByAddress'
-import { POLICY_ID, REQUIRED_BITS } from '../config'
+import { AUTOMATION_URL, POLICY_ID, REQUIRED_BITS } from '../config'
 import { useRegistryEvents, useRegistryTx } from '../lib/chain'
 import { shortHex } from '../lib/format'
 import { useSessions } from '../lib/sessions'
@@ -14,6 +15,7 @@ const SECTIONS = [
   ['#queue', 'Queue'],
   ['#decisions', 'Decisions'],
   ['#history', 'Event history'],
+  ...(AUTOMATION_URL ? ([['#automation', 'Standing orders']] as const) : []),
   ['#revoke', 'Revoke by address'],
 ] as const
 
@@ -82,6 +84,7 @@ export function IssuerScreen({ wallet }: { wallet: Wallet }) {
         <Receipts emptyText="Nothing sent from this browser yet." />
       </section>
       <EventLog />
+      <AutomationLog />
       <RevokeByAddress operator={wallet.address} />
     </main>
   )
