@@ -69,6 +69,7 @@ export async function runTick(cfg: Config, client: PublicClient, store: Store, s
       }
     }
   }
+  for (const r of results) store.addRun({ address: r.address, outcome: r.outcome, hash: r.hash, detail: r.detail })
   store.add('tick', `TICK END ${results.map((r) => r.outcome).join(', ') || 'nothing to do'}`)
   return results
 }
