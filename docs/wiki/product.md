@@ -1,0 +1,50 @@
+---
+type: reference
+title: Product
+updated: 2026-09-08
+---
+
+# Product
+
+## The sentence
+
+Attestat helps token issuers accept EUDI identity evidence and apply their approval to customers' linked crypto wallets, without putting identity documents on chain. (FACT, sentence decided 2026-09-07 by the builder and the lead, name Attestat decided 2026-09-07 evening, /Users/bioharz/git/ethglobal/nachweis/wiki/decisions.md; the rest of this page still says Nachweis where it was written before the rename, same product, see /Users/bioharz/git/ethglobal/nachweis/wiki/name-and-domains.md)
+
+Spoken line: "Your ID wallet should work where you invest."
+
+## Who buys
+
+The issuer of a gated instrument: a fund issuer, transfer agent or launchpad that today gates its token behind its own document funnel and allowlist. The issuer is the obliged entity; Nachweis is its tool. The investor never pays Nachweis and never uploads a document to it.
+
+Why this buyer (OPINION, from /Users/bioharz/git/ethglobal/nachweis/raw/verdict-2026-09-06.md and /Users/bioharz/git/ethglobal/nachweis/raw/2026-09-06-live-gated-products.md): the only gates that exist in crypto today are thrown by issuers of permissioned instruments and by launchpads. Secondary markets for tokenized stocks are ungated. No live product accepts an external attestation without a contract (COUNT 0, live-gated-products memo), so the buyer must be the party that already owns the gate.
+
+Why now (CLAIM, income-paths memo cited in /Users/bioharz/git/ethglobal/nachweis/raw/money-question-2026-09-07.md): member-state wallets by 2026-12-24, private relying parties in regulated sectors must accept the wallet from 2027-12-24 (eIDAS 2, Art 5f). No named operator has yet said which step Nachweis would replace; that is the business gate after 2026-09-13.
+
+## What it does, in one flow
+
+1. The investor's official test wallet answers the issuer's registered request (given name, family name, over 18) to the issuer's verifier. Names go to the issuer, not to the chain.
+2. The issuer matches the presentation to its onboarding record and approves in a separate step. Remaining checks (sanctions and similar) are stubs in this build and are labelled simulated.
+3. The investor binds a crypto wallet address by signing a nonce with the EVM key.
+4. An EligibilityDecision (policy id, predicate bits, tier, expiry, status reference) is written on Sepolia against the address. No name, no document.
+5. The fund token's transfer check and the Uniswap permissioned pool's allowlist checker both read the same decision. One permission, two doors.
+6. The issuer withdraws approval; both doors refuse.
+
+Details: /Users/bioharz/git/ethglobal/nachweis/wiki/architecture.md, /Users/bioharz/git/ethglobal/nachweis/wiki/pitch.md.
+
+## What it is not
+
+- Not KYC as a service. The issuer verifies, the issuer decides. Nachweis carries the decision.
+- Not a data holder. Nachweis stores no identity document because it never receives one in the target deployment (blind relay or on-device proof). In the server-side proof deployment the verifier does see the presentation; say so (see honesty rules).
+- Not a wallet. The state wallet is the wallet. An own wallet cannot hold a sandbox PID and certification in Germany is not expected before 2028 (decision 2026-09-07, rejected alternative).
+- Not an attestation hub or a compliance layer. Identity is a mechanic inside a product the issuer wants (COUNT: six finalists out of 302 identity projects, all with identity inside a wanted product, none as a layer; /Users/bioharz/git/ethglobal/nachweis/raw/synthesis.md).
+- Not onboarding. It is eligibility. The issuer keeps its compliance file; a predicate never satisfies full customer due diligence (AMLR Art 22 and Art 77, CLAIM from the product-pitch-legal memo).
+
+## Honesty rules for every public sentence
+
+- The sandbox wallet is a test environment with sample data (FACT, https://eudi-wallet.gov.de/en/news/testing-digital-credentials-in-the-eudi-wallet-sandbox, fetched 2026-09-07). Say "official test wallet, sample identity". Never "real state-issued identity" for the demo.
+- Say "no identity documents on chain, and nothing we could use to find her". Never "nothing about you on chain": predicate bits and an expiry bound to an address are still personal data in the EDPB's reading (CLAIM, product-pitch-legal memo).
+- Where the proof is made must be stated on screen: laptop companion today (the investor's own computer; FACT, G0 record 2026-09-08), browser and phone next, wallet when the EUDI framework selects a ZK scheme (FACT, ARF v3.0.0 chapter 7: no scheme selected, wallet-side support expected after launch; see /Users/bioharz/git/ethglobal/nachweis/wiki/narrative-zk.md). Never say "on the device" when the recorded proof is on the Mac. The regulation's published text spells the unlinkability duty "unlikeability" in Art 5a(16)(b); quote it only verbatim. If the proof is made by our server, say "the chain does not trust our server, but the server did see the presentation".
+- Simulated checks are captioned simulated. Manual withdrawal is captioned manual.
+- No "first", no "only", no "the thing SPRIND is lacking", no yield figures, no "second KYC removed", no "everyone has this wallet by 2027" (rules carried over from /Users/bioharz/git/ethglobal/nachweis/raw/build-plan.md and /Users/bioharz/git/ethglobal/nachweis/raw/front-door-brief-2026-09-02.md). The word KYC appears only in the Uniswap form field kycUrl.
+- Spiko and similar issuers appear only as "an instrument like", never as partners.
+- Open jury questions that touch the product sentence stay listed in /Users/bioharz/git/ethglobal/nachweis/wiki/open-questions.md until answered; the pitch does not paper over them.
