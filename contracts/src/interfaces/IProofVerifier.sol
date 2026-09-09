@@ -14,6 +14,8 @@ interface IProofVerifier {
     /// @notice Replay nonce carried by the proof, or bytes32(0) if the proving system has none.
     ///         The registry consumes a non-zero nonce once per policyId, so the same proof cannot be
     ///         submitted twice (tier and statusRef are not proof-bound, replay could rewrite them).
-    /// @dev Pure decode only, must not depend on chain state. Reverts on malformed proof bytes.
-    function nonceOf(bytes calldata proof) external pure returns (bytes32);
+    /// @dev Decode only, must not depend on chain state. Reverts on malformed proof bytes.
+    ///      `view`, not `pure`, so a dispatching verifier can read its immutables (EvidenceRouter,
+    ///      zkPassport route, WP33); Sp1PidVerifier and NoirPidVerifier keep their pure implementations.
+    function nonceOf(bytes calldata proof) external view returns (bytes32);
 }

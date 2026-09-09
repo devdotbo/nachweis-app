@@ -71,6 +71,13 @@ contract Sp1PidVerifierForkTest is Test {
         inputs[3] = bytes32(uint256(f.expiry));
 
         registry.attestWithProof(f.subject, d, abi.encode(f.publicValues, f.proof), inputs);
+        // Evidence alone is not eligibility since the issuer-approval split: the operator approves first.
+        assertFalse(registry.isEligible(f.subject, POLICY, bits));
+        address operator = makeAddr("operator");
+        vm.prank(owner);
+        registry.setOperator(POLICY, operator, true);
+        vm.prank(operator);
+        registry.approve(f.subject, POLICY);
         assertTrue(registry.isEligible(f.subject, POLICY, bits));
 
         vm.expectRevert(abi.encodeWithSelector(AttestationRegistry.NonceConsumed.selector, POLICY, f.nonce));
