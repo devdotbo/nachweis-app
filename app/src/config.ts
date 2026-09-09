@@ -21,8 +21,8 @@ export const BRIDGE_URL: string = (BRIDGE_CONFIGURED ? env.VITE_BRIDGE_URL! : VE
 export const REGISTRY = addressOr(env.VITE_REGISTRY, ZERO_ADDRESS)
 export const FUND_TOKEN = addressOr(env.VITE_FUND_TOKEN, ZERO_ADDRESS)
 export const SUBSCRIPTION = addressOr(env.VITE_SUBSCRIPTION, ZERO_ADDRESS)
-/** Optional. The Swap door stays disabled until a pool address is configured (WP7). */
-export const POOL: Address | undefined = env.VITE_POOL && env.VITE_POOL !== '' ? addressOr(env.VITE_POOL, ZERO_ADDRESS) : undefined
+/** Optional. The Uniswap permissioned pool is identified by its PermissionsAdapter (VITE_POOL_ADAPTER, with VITE_POOL_STABLE; see src/components/swap/config.ts). The journey rail's Swap step stays off without it. VITE_POOL is the older name for the same address. */
+export const POOL: Address | undefined = [env.VITE_POOL_ADAPTER, env.VITE_POOL].some((v) => v && v !== '') ? addressOr(env.VITE_POOL_ADAPTER || env.VITE_POOL, ZERO_ADDRESS) : undefined
 
 /** Default policy: keccak256("nachweis.pid.over18.v1"). */
 export const DEFAULT_POLICY_ID: Hex = keccak256(stringToBytes('nachweis.pid.over18.v1'))
@@ -56,3 +56,14 @@ export const CONFIG_WARNINGS: string[] = MOCK
       REGISTRY === ZERO_ADDRESS ? 'VITE_REGISTRY is not set' : '',
       SUBSCRIPTION === ZERO_ADDRESS ? 'VITE_SUBSCRIPTION is not set' : '',
     ].filter(Boolean)
+
+/**
+ * Privy (WP32, docs/privy-standing-order.md). All optional. With VITE_PRIVY_APP_ID set the wallet
+ * layer is wrapped in PrivyProvider and @privy-io/wagmi (src/lib/PrivyWalletProvider.tsx) and the
+ * investor gets "Sign in with email, wallet by Privy"; unset, the provider tree is unchanged.
+ */
+export const PRIVY_APP_ID: string | undefined = env.VITE_PRIVY_APP_ID && env.VITE_PRIVY_APP_ID !== '' ? env.VITE_PRIVY_APP_ID : undefined
+/** Key quorum id of the issuer's authorization key (Dashboard, Authorization keys); the signer the investor allows on her wallet. */
+export const PRIVY_SIGNER_ID: string | undefined = env.VITE_PRIVY_SIGNER_ID && env.VITE_PRIVY_SIGNER_ID !== '' ? env.VITE_PRIVY_SIGNER_ID : undefined
+/** The issuer's automation (automation/): GET /status, GET /policy/:address, POST /tick. Unset: no standing-order card, no automation log. */
+export const AUTOMATION_URL: string | undefined = env.VITE_AUTOMATION_URL && env.VITE_AUTOMATION_URL !== '' ? env.VITE_AUTOMATION_URL.replace(/\/+$/, '') : undefined

@@ -28,6 +28,8 @@ export interface JourneyInput {
   eligible: boolean
   balance?: bigint
   historyCount: number
+  /** A swap through the permissioned pool went through from this browser (receipts store). */
+  swapped?: boolean
 }
 
 const PROVED_STATES = new Set(['proved', 'attested', 'approved', 'revoked'])
@@ -75,8 +77,8 @@ export function journeySteps(i: JourneyInput): Step[] {
     id: 'swap',
     label: 'Swap',
     anchor: '#doors',
-    state: !POOL ? 'off' : eligible ? 'current' : 'off',
-    detail: !POOL ? 'no pool configured' : eligible ? 'permissioned pool open' : 'door closed',
+    state: !POOL ? 'off' : i.swapped ? 'done' : eligible ? 'current' : 'off',
+    detail: !POOL ? 'no pool configured' : i.swapped ? 'swapped in the permissioned pool' : eligible ? 'permissioned pool open' : 'door closed',
   })
   steps.push({ id: 'holdings', label: 'Holdings', anchor: '#holdings', state: held ? 'done' : 'off', detail: held ? 'fund token balance' : 'nothing held yet' })
   steps.push({ id: 'history', label: 'History', anchor: '#history', state: i.historyCount > 0 ? 'done' : 'off', detail: i.historyCount > 0 ? `${i.historyCount} ${i.historyCount === 1 ? 'entry' : 'entries'}` : 'receipts and registry events' })

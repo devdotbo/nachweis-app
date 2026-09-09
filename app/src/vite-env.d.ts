@@ -8,6 +8,11 @@ interface ImportMetaEnv {
   readonly VITE_FUND_TOKEN?: string
   readonly VITE_SUBSCRIPTION?: string
   readonly VITE_POOL?: string
+  /** Uniswap permissioned pool: the PermissionsAdapter and the demo stable (scripts/pool-local.sh writes both). */
+  readonly VITE_POOL_ADAPTER?: string
+  readonly VITE_POOL_STABLE?: string
+  readonly VITE_POOL_FEE?: string
+  readonly VITE_POOL_TICK_SPACING?: string
   readonly VITE_POLICY_ID?: string
   readonly VITE_REQUIRED_BITS?: string
   readonly VITE_RPC_URL?: string

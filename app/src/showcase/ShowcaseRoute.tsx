@@ -1,40 +1,39 @@
 import { Suspense } from 'react'
 import { Link, Navigate, useParams } from 'react-router'
-import { SHOWCASES, showcaseOf } from './registry'
+import { SHOWCASE, SHOWCASE_PATH } from './registry'
 
-export const SHOWCASE_PATH = '/showcase'
-
-/** /showcase: the list of demos. /showcase/:slug: one demo, lazily loaded. Unknown slugs go home. */
-export function ShowcaseIndex() {
-  return (
-    <main className="page">
-      <div className="page-head">
-        <div>
-          <h1>Showcase</h1>
-          <p className="sub">Demos built on Attestat: one eligibility decision on chain, read by more than one door. Official test wallet, sample identity; nothing here is a live product.</p>
-        </div>
-      </div>
-      <ul className="list">
-        {SHOWCASES.map((s) => (
-          <li key={s.slug} className="item">
-            <div className="top">
-              <Link to={`${SHOWCASE_PATH}/${s.slug}`}>{s.title}</Link>
-            </div>
-            <p className="muted">{s.sentence}</p>
-          </li>
-        ))}
-      </ul>
-    </main>
-  )
-}
-
+/** /showcase lists the demos; /showcase/:slug renders one. Unknown slugs go home. */
 export function ShowcaseRoute() {
   const { slug } = useParams()
-  const entry = showcaseOf(slug)
-  if (!entry) return <Navigate to={SHOWCASE_PATH} replace />
-  const C = entry.component
+  if (!slug) {
+    return (
+      <main className="page console">
+        <div className="page-head">
+          <div>
+            <h1>Showcase</h1>
+            <p className="sub">Demos built on Attestat: each one reads the same eligibility decision from the AttestationRegistry.</p>
+          </div>
+        </div>
+        <div className="list">
+          {SHOWCASE.map((s) => (
+            <div className="item" key={s.slug}>
+              <div className="top">
+                <Link to={`${SHOWCASE_PATH}/${s.slug}`}>
+                  <strong>{s.title}</strong>
+                </Link>
+              </div>
+              <p className="muted">{s.sentence}</p>
+            </div>
+          ))}
+        </div>
+      </main>
+    )
+  }
+  const entry = SHOWCASE.find((s) => s.slug === slug)
+  if (!entry) return <Navigate to="/" replace />
+  const C = entry.Component
   return (
-    <Suspense fallback={<main className="page">Loading {entry.title}</main>}>
+    <Suspense fallback={<main className="page console" />}>
       <C />
     </Suspense>
   )

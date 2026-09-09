@@ -9,8 +9,12 @@ export function shortHex(h: string, n = 10): string {
   return h.length > n * 2 + 2 ? `${h.slice(0, n + 2)}...${h.slice(-n)}` : h
 }
 
+/** Largest expiry a Date can hold (year 275760); a venue decision carries uint64.max, which is "no expiry". */
+const MAX_DATE_SECONDS = 8_640_000_000_000n
+
 export function formatExpiry(expiry: bigint): string {
   if (expiry === 0n) return 'none'
+  if (expiry >= MAX_DATE_SECONDS) return 'no expiry'
   return new Date(Number(expiry) * 1000).toISOString().replace('T', ' ').slice(0, 16) + ' UTC'
 }
 
