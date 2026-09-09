@@ -118,12 +118,18 @@ expect "FundToken.issuer is the desk" "$(cast call --rpc-url "$RPC" "$TOKEN" "is
 expect "FundDesk.token" "$(cast call --rpc-url "$RPC" "$DESK" "token()(address)")" "$TOKEN"
 say "AttestationRegistry $REGISTRY, MockStable $STABLE, FundDesk $DESK, FundToken $TOKEN (issuer = desk)"
 
-start_app() { # writes RUN_DIR/env.json (mode, appUrl, addresses) and starts Vite with the dev signer keys
+start_app() { # deploys the product layout too, writes RUN_DIR/env.json (mode, appUrl, addresses) and starts Vite with the dev signer keys
+  # Deploy.s.sol (its own registry, FundToken, Subscription) so the investor portal and the issuer console are configured;
+  # the app points at the desk's registry, where the investor is approved. Only the desk's doors matter on this run.
+  MAIN_OUT=$(cd "$ROOT/contracts" && DEPLOYER_PRIVATE_KEY=$K0 POLICY_ID=$POLICY forge script script/Deploy.s.sol:Deploy --rpc-url "$RPC" --broadcast 2>&1) || { echo "$MAIN_OUT" | tail -20; die "Deploy.s.sol failed"; }
+  MAIN_TOKEN=$(echo "$MAIN_OUT" | awk '/FundToken:/ {print $2}' | head -1)
+  SUBSCRIPTION=$(echo "$MAIN_OUT" | awk '/Subscription:/ {print $2}' | head -1)
+  MAIN_REGISTRY=$(echo "$MAIN_OUT" | awk '/AttestationRegistry:/ {print $2}' | head -1)
   APP_PORT="${APP_PORT:-$(free_port)}"
   APP_URL="http://127.0.0.1:$APP_PORT"
   [ -d "$ROOT/app/node_modules/vite" ] || (cd "$ROOT/app" && bun install --silent) || die "bun install failed in app/"
   (cd "$ROOT/app" && exec env -u VITE_MOCK -u VITE_PRIVY_APP_ID -u VITE_AUTOMATION_URL VITE_CHAIN_ID=31337 VITE_RPC_URL="$RPC" VITE_REGISTRY="$REGISTRY" VITE_DESK="$DESK" \
-    VITE_FUND_TOKEN="${MAIN_TOKEN:-$TOKEN}" VITE_SUBSCRIPTION="${SUBSCRIPTION:-}" VITE_DEV_PRIVATE_KEY=$K1 VITE_DEV_OPERATOR_KEY=$K0 \
+    VITE_FUND_TOKEN="$MAIN_TOKEN" VITE_SUBSCRIPTION="$SUBSCRIPTION" VITE_DEV_PRIVATE_KEY=$K1 VITE_DEV_OPERATOR_KEY=$K0 \
     node node_modules/vite/bin/vite.js --port "$APP_PORT" --strictPort --host 127.0.0.1 > "$RUN_DIR/app.log" 2>&1) & echo $! >> "$PIDS"
   for _ in $(seq 1 200); do curl -fs -m 5 "$APP_URL/" >/dev/null 2>&1 && break; sleep 0.3; done
   curl -fs -m 5 "$APP_URL/" >/dev/null 2>&1 || die "the app did not come up ($RUN_DIR/app.log)"
@@ -229,13 +235,6 @@ say "record: $RUN_DIR/env.json"
 echo "SHOWCASE-INVESTOR-MONEY-LOCAL PASS"
 
 if [ $APP -eq 1 ]; then
-  # The product layout next to the desk, on the same registry, so the investor portal and the issuer console are complete too.
-  MAIN_OUT=$(cd "$ROOT/contracts" && DEPLOYER_PRIVATE_KEY=$K0 POLICY_ID=$POLICY forge script script/Deploy.s.sol:Deploy --rpc-url "$RPC" --broadcast 2>&1) || { echo "$MAIN_OUT" | tail -20; die "Deploy.s.sol failed"; }
-  MAIN_TOKEN=$(echo "$MAIN_OUT" | awk '/FundToken:/ {print $2}' | head -1)
-  SUBSCRIPTION=$(echo "$MAIN_OUT" | awk '/Subscription:/ {print $2}' | head -1)
-  MAIN_REGISTRY=$(echo "$MAIN_OUT" | awk '/AttestationRegistry:/ {print $2}' | head -1)
-  # Deploy.s.sol deploys its own registry; the app points at the desk's registry, where the investor is approved.
-  # The product FundToken and Subscription then read the other registry; only the desk's doors matter on this run.
   start_app
   say "app: $APP_URL/showcase/investor-money (investor, dev signer = anvil key 1) and $APP_URL/issuer (operator = anvil key 0); product Deploy.s.sol registry $MAIN_REGISTRY unused, Subscription $SUBSCRIPTION"
 fi
