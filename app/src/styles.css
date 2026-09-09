@@ -276,3 +276,26 @@ table.data tr.revoked td:first-child{box-shadow:inset 3px 0 0 var(--red)}
 .rules .status{flex:none;margin-top:1px}
 .ticks{margin:0;padding-left:0;list-style:none;display:flex;flex-direction:column;gap:8px;font-size:.88rem}
 .ticks li{display:flex;gap:8px;flex-wrap:wrap;align-items:center;overflow-wrap:anywhere}
+
+/* showcase (wiki/showcase-brief.md): the gallery and the savings-plan lifecycle board */
+.gallery{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:10px}
+.gallery li{display:flex;flex-direction:column;gap:4px;padding:14px 16px;border:1px solid var(--line);border-radius:var(--r-panel);background:var(--sheet)}
+.gallery a{font-family:var(--display);font-weight:500;font-size:.95rem;text-decoration:none}
+.board{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.15fr) minmax(0,1fr);grid-template-areas:"plan decision issuerb" "pool decision transfer";gap:14px;align-items:stretch}
+.board .door.plan{grid-area:plan}.board .door.issuerb{grid-area:issuerb}.board .door.pool{grid-area:pool}.board .door.transfer{grid-area:transfer}
+.board .decision{grid-area:decision;border:1px solid var(--ink);border-radius:var(--r-panel);padding:18px;background:var(--bar);color:var(--bar-text);display:flex;flex-direction:column;gap:12px}
+.board .decision h3{font-family:var(--display);font-weight:500;font-size:.95rem;display:flex;justify-content:space-between;align-items:center;gap:10px}
+.board .decision .kv dt{color:var(--bar-mute)}.board .decision .kv dd{color:var(--bar-text)}
+.board .decision .flag{border-color:var(--bar-line);color:var(--bar-mute);background:transparent}.board .decision .flag.on{border-color:rgba(255,204,0,.6);color:var(--yellow);background:rgba(255,204,0,.12)}
+.board .decision .muted{color:var(--bar-mute)}
+.board .door.open{border-color:rgba(21,122,79,.55)}.board .door.closed{border-color:rgba(194,42,70,.5)}
+.board .runs{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:5px;font-size:.82rem;max-height:200px;overflow:auto}
+.board .runs li{display:flex;gap:8px;align-items:center;flex-wrap:wrap;overflow-wrap:anywhere}
+.board .runs .n{font-family:var(--mono);color:var(--ink-mute);min-width:2.2em}
+@media (max-width:900px){.board{grid-template-columns:1fr;grid-template-areas:"decision" "plan" "issuerb" "pool" "transfer"}}
+.beats{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr));gap:14px}
+.beat{border:1px solid var(--line);border-radius:var(--r-panel);padding:14px;background:var(--sheet);display:flex;flex-direction:column;gap:8px}
+.beat h3{font-family:var(--display);font-weight:500;font-size:.9rem}
+.beat .hint{font-size:.82rem;color:var(--ink-mute);line-height:1.45}
+.beat .btn{align-self:flex-start}
+.honesty{margin:0;padding-left:1.1em;font-size:.86rem;color:var(--ink-soft);display:flex;flex-direction:column;gap:4px;max-width:80ch}
