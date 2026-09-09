@@ -12,6 +12,8 @@
   "dependencies": {
     "@aztec/bb.js": "5.0.0-nightly.20260324",
     "@noir-lang/noir_js": "1.0.0-beta.21",
+    "@privy-io/react-auth": "3.40.0",
+    "@privy-io/wagmi": "4.0.17",
     "@tanstack/react-query": "^5.102.8",
     "@zkpassport/sdk": "0.16.2",
     "qrcode": "^1.5.4",

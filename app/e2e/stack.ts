@@ -30,6 +30,35 @@ export interface StackEnv {
   companionDir: string
   walletScript: string
   runDir: string
+  /** The Uniswap permissioned pool scripts/pool-local.sh onboarded on the fork (scripts/app-e2e-local.sh --pool); null without --pool. */
+  pool?: PoolEnv | null
+}
+
+/** scripts/pool-local.sh's pool.json. */
+export interface PoolEnv {
+  rpcUrl: string
+  chainId: number
+  forkBlock: number
+  registry: string
+  fundToken: string
+  stable: string
+  checker: string
+  adapter: string
+  poolId: string
+  currency0: string
+  currency1: string
+  fee: number
+  tickSpacing: number
+  hooks: string
+  router: string
+  permit2: string
+  stateView: string
+  quoter: string
+  policyId: string
+  requiredBits: string
+  lpTokenId: string
+  liquidity: string
+  probe: string
 }
 
 const ENV_PATH = process.env.APP_E2E_ENV ?? resolve(import.meta.dirname, '../../.e2e/app/env.json')

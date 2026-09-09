@@ -269,3 +269,10 @@ table.data tr.revoked td:first-child{box-shadow:inset 3px 0 0 var(--red)}
 
 .txline{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:.86rem}
 .txline a{font-family:var(--mono);font-size:.78rem}
+
+/* WP32 standing order: the policy in plain words and the tick results */
+.rules{margin:0;padding-left:0;list-style:none;display:flex;flex-direction:column;gap:6px;font-size:.88rem;line-height:1.45}
+.rules li{display:flex;gap:8px;align-items:flex-start;overflow-wrap:anywhere}
+.rules .status{flex:none;margin-top:1px}
+.ticks{margin:0;padding-left:0;list-style:none;display:flex;flex-direction:column;gap:8px;font-size:.88rem}
+.ticks li{display:flex;gap:8px;flex-wrap:wrap;align-items:center;overflow-wrap:anywhere}

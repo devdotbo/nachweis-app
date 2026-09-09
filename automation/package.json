@@ -1,0 +1,21 @@
+{
+  "name": "nachweis-automation",
+  "version": "0.1.0",
+  "description": "Issuer automation: runs a standing order (recurring subscribe) from the investor's Privy embedded wallet under a policy copied from the on-chain eligibility decision",
+  "license": "Apache-2.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "start": "bun run src/server.ts",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@privy-io/node": "0.34.0",
+    "viem": "2.56.3"
+  },
+  "devDependencies": {
+    "bun-types": "1.4.2",
+    "typescript": "5.9.3"
+  }
+}

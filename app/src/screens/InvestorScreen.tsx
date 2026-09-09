@@ -6,6 +6,7 @@ import { HoldingsCard } from '../components/HoldingsCard'
 import { PresentCard } from '../components/PresentCard'
 import { ProveCard } from '../components/ProveCard'
 import { Rail } from '../components/Rail'
+import { StandingOrderCard } from '../components/StandingOrderCard'
 import { StatusCard } from '../components/StatusCard'
 // zkPassport route (WP33), behind VITE_ZKPASSPORT=1; remove these two imports and the line after ProveCard with src/components/zkpassport/.
 import { ZkPassportCard } from '../components/zkpassport/ZkPassportCard'
@@ -29,7 +30,8 @@ export function InvestorScreen({ wallet }: { wallet: Wallet }) {
   const { events } = useRegistryEvents()
   const mine = address ? address.toLowerCase() : ''
   const historyCount = mine ? receipts.filter((r) => r.subject?.toLowerCase() === mine || r.from?.toLowerCase() === mine).length + events.filter((e) => e.subject.toLowerCase() === mine).length : 0
-  const steps = journeySteps({ address, session, chain, eligible, balance, historyCount })
+  const swapped = Boolean(mine) && receipts.some((r) => r.kind === 'swap' && r.from?.toLowerCase() === mine)
+  const steps = journeySteps({ address, session, chain, eligible, balance, historyCount, swapped })
   const state = (id: StepId): StepState | undefined => steps.find((s) => s.id === id)?.state
   const doorsState = (): StepState | undefined => {
     const a = state('subscribe')
@@ -66,6 +68,7 @@ export function InvestorScreen({ wallet }: { wallet: Wallet }) {
           {ZKPASSPORT ? <ZkPassportCard wallet={wallet} state={state('prove')} /> : null}
           <StatusCard address={address} session={session} state={eligibilityState()} />
           <DoorsCard address={address} state={doorsState()} />
+          <StandingOrderCard address={address} wallet={wallet} />
           <HoldingsCard address={address} state={state('holdings')} />
           <HistoryCard address={address} state={state('history')} />
           <ChainPanel address={address} />
