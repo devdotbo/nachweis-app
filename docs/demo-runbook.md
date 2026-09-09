@@ -369,6 +369,10 @@ The sequence to film. Two commands and one phone: `scripts/browser-real-wallet-u
 
 On camera, in Chrome on the Mac: Connect dev signer; Create presentation request (the dev signer signs the session); "Prove in this browser" (the QR appears); scan it with the official test wallet on the iPhone, consent; the tab decrypts and proves in about 30 s and shows "attested from this browser"; switch to Issuer, Approve; back to Investor, Subscribe, the FundToken balance rises. What the tab sends and to which host, the evidence to record, the fail branches and the smoke test without the phone are in `docs/browser-real-wallet.md`.
 
+## 8d. Privy standing order on a local chain (docs/privy-standing-order.md)
+
+`scripts/standing-order-local.sh` starts anvil and the contracts, then the issuer's automation (`automation/`) in local mode: a dev key (anvil key 1) signs for the investor and the Privy rule JSON is applied by a small evaluator, captioned "simulated Privy policy (local)"; nothing talks to Privy. It attests the investor with a 120 s expiry, runs three ticks (300 NDF), revokes (the tick is refused by the policy's deny-all rule and by the chain), re-approves (tick OK, 400 NDF), moves anvil's clock past the expiry (refused by the timestamp rule and the chain) and attests a second investor the automation holds no key for (no delegated wallet). Expected last line `STANDING-ORDER-LOCAL PASS`, about 20 s with the contracts built; `--keep` leaves anvil and the automation running. The Sepolia run with a real Privy app is the builder's, section 7 of `docs/privy-standing-order.md`.
+
 ## 9. Sepolia real run (builder, manual)
 
 Not run 2026-09-07. Nothing is deployed to any network as of this file. What the builder must have:

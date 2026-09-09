@@ -58,6 +58,8 @@ Licence notices are kept in the files named below. Sources and commits are taken
 | `prover-ios/MoproiOSBindings/mopro.swift` | UniFFI-generated bindings from `prover-mobile-core` (committed generated code) | mopro-ffi 0.3.7 | no SPDX in the generated file; mopro-ffi MIT or Apache-2.0, uniffi MPL-2.0 per `prover-ios/README.md` (unverified in the file itself) |
 | `prover-sp1/LICENSE-MIT` | MIT licence file that ships with the SP1 project template (Succinct Labs, 2024) | none stated | MIT. Whether any `prover-sp1` source file is template-derived is unverified; the crates carry their own doc comments and names |
 
+npm dependencies added on 2026-09-09 for the Privy standing order, used as packages and not copied: `@privy-io/react-auth` 3.40.0 and `@privy-io/wagmi` 4.0.17 (`app/package.json`), `@privy-io/node` 0.34.0 (`automation/package.json`); Privy's licence terms apply to those packages, the code that calls them (`automation/`, `app/src/lib/PrivyWalletProvider.tsx`, `app/src/components/StandingOrderCard.tsx`, `app/src/components/AutomationLog.tsx`) is class 4. The policy rule shapes follow Privy's documented request bodies; no Privy example code was copied.
+
 Read as references, no file copied (inventory with commits and licences in the builder's `nachweis-refs/INVENTORY.md`, not part of this repository): eid-privacy/zkp-android (MPL-2.0, Mopro layout for `prover-android`; `prover-android/README.md` states no MPL-2.0 source was copied), zkmopro/noir-rs (MIT or Apache-2.0, structure of `prover-mobile-core`), openwallet-foundation/multipaz (Apache-2.0, not used in the submission), succinctlabs/sp1 (Apache-2.0 and MIT), eu-digital-identity-wallet/eudi-lib-android-wallet-core (Apache-2.0, not used), eid-privacy/noir-benchmarks (licence not recorded, unverified), Uniswap/v4-periphery (MIT; the developer guide and `deployments.json` supplied the Sepolia addresses in `contracts/src/uniswap/UniswapSepolia.sol`).
 
 ## 4. Newly authored event code
@@ -76,6 +78,7 @@ Everything else in this repository was written during ETHOnline 2026. First comm
 | `prover-android/` | Android prover app | 12 |
 | `prover-ios/` | iOS prover app (imported by path in one commit after a history rewrite that dropped a build blob) | 1 |
 | `scripts/`, `docs/` | end-to-end scripts, runbooks, this disclosure's companions | 5, 8 |
+| `automation/` | the issuer's automation for the Privy standing order (policy builder, watcher, tick, server; bun), written 2026-09-09 on branch `wp32-privy-standing-order` | branch |
 
 How the code was produced (Claude Code agents directed and reviewed by the builder) is described in `docs/ai-attribution.md`; the working method in `docs/process.md`.
 
