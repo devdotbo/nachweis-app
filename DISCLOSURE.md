@@ -1,8 +1,10 @@
-# Continuity disclosure
+# Pre-existing work disclosure
 
-ETHGlobal rule (https://ethglobal.com/rules, read 2026-09-08): "In all cases, you must disclose any pre-existing work in writing to the ETHGlobal team and include full details in your submission (repo history, video, and description)." and "All new parts of extending an existing project must remain open source."
+ETHGlobal rule (https://ethglobal.com/rules, read 2026-09-08, re-read 2026-09-09): "In all cases, you must disclose any pre-existing work in writing to the ETHGlobal team and include full details in your submission (repo history, video, and description)." and "All new parts of extending an existing project must remain open source."
 
-This file is that disclosure for the submission. It sorts every piece of code the submission depends on into four classes: pre-event base, event changes to pre-existing code, adapted third-party code, and newly authored event code. Every statement below was checked with `git log`, `git diff` or a header grep on 2026-09-08; anything not checked says "unverified". Version 1 of this file (commit `1e6dbd7`, 2026-09-07) contained errors, listed at the end.
+Track: Classic. Decision of 2026-09-09 (wiki `decisions.md`, entry "2026-09-09 night"; the facts and the two options in `docs/wiki/track-decision.md`): Attestat is a new project, started in this repository on 2026-09-07. The builder's pre-existing EUDI verifier (section 1) is his own public Apache-2.0 library, used as a dependency over HTTP and disclosed here; the event changes to it (section 2) are vendored in this repository as a patch series. Earlier versions of this file were titled "Continuity disclosure" while the track was open.
+
+This file is that disclosure for the submission. It sorts every piece of code the submission depends on into four classes: pre-event base, event changes to pre-existing code, adapted third-party code, and newly authored event code. Every statement below was checked with `git log`, `git diff` or a header grep on 2026-09-08 and recounted on 2026-09-09; anything not checked says "unverified". Version 1 of this file (commit `1e6dbd7`, 2026-09-07) contained errors, listed at the end.
 
 Product name: Attestat. Repository, crate, package and on-chain identifiers keep the earlier working name `nachweis` for this submission.
 
@@ -14,7 +16,7 @@ Product name: Attestat. Repository, crate, package and on-chain identifiers keep
 
 ## 2. Event changes to pre-existing code (the relay branch)
 
-The verifier was modified during the event on a branch. Branch `nachweis-relay` in the worktree `/Users/bioharz/git/ethglobal/nachweis-verifier-relay` (a git worktree of the repository above), base `a08d72c`, 10 commits dated 2026-09-07 and 2026-09-08, 13 files changed, 3,589 insertions, 165 deletions (sum over the exported patch series, `git apply --stat` on `vendor/verifier-relay-patches/*.patch`, counted 2026-09-09):
+The verifier was modified during the event on a branch. Branch `nachweis-relay` in the worktree `/Users/bioharz/git/ethglobal/nachweis-verifier-relay` (a git worktree of the repository above), base `a08d72c`, 10 commits dated 2026-09-07 and 2026-09-08 (`git rev-list --count a08d72c..HEAD` in that worktree), 13 files changed. Net change of the branch against its base: 3,456 insertions, 32 deletions (`git diff --shortstat a08d72c..HEAD`, 2026-09-09). Summed per patch, which counts a line changed twice in two commits twice: 3,589 insertions, 165 deletions (`git apply --numstat` over `vendor/verifier-relay-patches/*.patch`, summed, 2026-09-09). Commits:
 
 ```
 cbbd2f8 Add blind-relay session table, client JWK validation and address-bound nonce
@@ -59,28 +61,35 @@ Licence notices are kept in the files named below. Sources and commits are taken
 | `prover-android/gradlew`, `gradlew.bat`, `gradle/wrapper/gradle-wrapper.jar` | Gradle wrapper, copied via eid-privacy/zkp-android | none stated | Apache-2.0 (Gradle) |
 | `prover-ios/MoproiOSBindings/mopro.swift` | UniFFI-generated bindings from `prover-mobile-core` (committed generated code) | mopro-ffi 0.3.7 | no SPDX in the generated file; mopro-ffi MIT or Apache-2.0, uniffi MPL-2.0 per `prover-ios/README.md` (unverified in the file itself) |
 | `prover-sp1/LICENSE-MIT` | MIT licence file that ships with the SP1 project template (Succinct Labs, 2024) | none stated | MIT. Whether any `prover-sp1` source file is template-derived is unverified; the crates carry their own doc comments and names |
+| `contracts/src/zkpassport/interfaces/IZKPassportVerifier.sol` | zkpassport/zkpassport-packages `packages/registry-contracts/src/lib/Types.sol` (structs and enums copied), function signatures from `RootVerifier.sol` and `VerifierHelper.sol` in the same package; interface only, no bytecode vendored (header of the file) | `2c37fe9` (fetched 2026-09-09) | Apache-2.0, ZKPassport |
 
-npm dependencies added on 2026-09-09 for the Privy standing order, used as packages and not copied: `@privy-io/react-auth` 3.40.0 and `@privy-io/wagmi` 4.0.17 (`app/package.json`), `@privy-io/node` 0.34.0 (`automation/package.json`); Privy's licence terms apply to those packages, the code that calls them (`automation/`, `app/src/lib/PrivyWalletProvider.tsx`, `app/src/components/StandingOrderCard.tsx`, `app/src/components/AutomationLog.tsx`) is class 4. The policy rule shapes follow Privy's documented request bodies; no Privy example code was copied.
+npm dependencies added on 2026-09-09 for the Privy standing order, used as packages and not copied: `@privy-io/react-auth` 3.40.0 and `@privy-io/wagmi` 4.0.17 (`app/package.json`), `@privy-io/node` 0.34.0 (`automation/package.json`); Privy's licence terms apply to those packages, the code that calls them (`automation/`, `app/src/lib/PrivyWalletProvider.tsx`, `app/src/components/StandingOrderCard.tsx`, `app/src/components/AutomationLog.tsx`) is class 4. The policy rule shapes follow Privy's documented request bodies; no Privy example code was copied. Added the same day for the zkPassport evidence route: `@zkpassport/sdk` 0.16.2 (`app/package.json`), used as a package in `app/` (QR code, proof request, Solidity verifier parameters); licence Apache-2.0 (`"license"` field of the installed package, read 2026-09-09). The code that calls it and the adapter contracts in `contracts/src/zkpassport/` are class 4.
 
 Read as references, no file copied (inventory with commits and licences in the builder's `nachweis-refs/INVENTORY.md`, not part of this repository): eid-privacy/zkp-android (MPL-2.0, Mopro layout for `prover-android`; `prover-android/README.md` states no MPL-2.0 source was copied), zkmopro/noir-rs (MIT or Apache-2.0, structure of `prover-mobile-core`), openwallet-foundation/multipaz (Apache-2.0, not used in the submission), succinctlabs/sp1 (Apache-2.0 and MIT), eu-digital-identity-wallet/eudi-lib-android-wallet-core (Apache-2.0, not used), eid-privacy/noir-benchmarks (licence not recorded, unverified), Uniswap/v4-periphery (MIT; the developer guide and `deployments.json` supplied the Sepolia addresses in `contracts/src/uniswap/UniswapSepolia.sol`).
 
 ## 4. Newly authored event code
 
-Everything else in this repository was written during ETHOnline 2026. First commit `1e6dbd7` ("Add README, disclosure, license and env example") on 2026-09-07; 145 commits on `main` up to `0fd7312`, all dated 2026-09-07, plus the event branches after that. Commits touching each component on `main` at `0fd7312`:
+Everything else in this repository was written during ETHOnline 2026. First commit `1e6dbd7` ("Add README, disclosure, license and env example") on 2026-09-07 17:34; 289 commits on `main` up to `46d8349` (2026-09-09 03:28), of them 237 non-merge commits and 52 merges of the work-package branches, one author identity throughout (`git rev-list --count main`, `--no-merges`, `--merges`; `git log --format=%an main | sort | uniq -c`, counted 2026-09-09). By day: 145 on 2026-09-07, 84 on 2026-09-08, 60 on 2026-09-09 (`git log --format=%ad --date=short main | sort | uniq -c`). Test suites at that commit: `cd contracts && forge test` 152 passed, 0 failed, 20 skipped (the skips need `SEPOLIA_RPC_URL` or `MAINNET_RPC_URL`); `cd automation && bun test` 16 pass. Commits touching each component on `main` at `46d8349` (`git log --oneline main -- <path> | wc -l`, merge commits without their own diff excluded by git's default history simplification):
 
 | Component | What it is | Commits |
 |---|---|---|
-| `contracts/` | AttestationRegistry with pluggable proof verifiers, FundToken, Subscription, Sp1PidVerifier, NoirPidVerifier, EudiAllowlistChecker, scripts, tests | 52 |
-| `service/` | Rust bridge (sessions, address proof, prover, attest and revoke) | 15 |
-| `app/` | Vite and React front end | 23 |
-| `prover-sp1/` | SP1 guest and host for the PID statement | 12 |
-| `circuits/` | the adapted Noir circuit (class 3 base plus new constraints, tests, fixtures) | 10 |
-| `companion/` | desktop companion prover (bun) | 5 |
-| `prover-mobile-core/` | shared Rust prover core (mopro-ffi, uniffi) | 6 |
-| `prover-android/` | Android prover app | 12 |
-| `prover-ios/` | iOS prover app (imported by path in one commit after a history rewrite that dropped a build blob) | 1 |
-| `scripts/`, `docs/` | end-to-end scripts, runbooks, this disclosure's companions | 5, 8 |
-| `automation/` | the issuer's automation for the Privy standing order (policy builder, watcher, tick, server; bun), written 2026-09-09 on branch `wp32-privy-standing-order` | branch |
+| `contracts/` | AttestationRegistry with pluggable proof verifiers, FundToken, Subscription, Sp1PidVerifier, NoirPidVerifier, EudiAllowlistChecker, scripts, tests; the rows below are subsets | 67 |
+| `contracts/src/showcase/` | `FundDesk` (subscribe, distribute, claim, redeem, each gated by `isEligible`) and `GatedPayout` (pays only recipients with a live decision), with their deploy scripts and tests, 2026-09-09 | 3 |
+| `contracts/script/DeploySecondIssuer.s.sol` | the second issuer of the savings-plan demo: a second `FundToken` (NDF-B) and `Subscription` on the shared registry; a deployment, no new contract | 1 |
+| `contracts/src/zkpassport/` | `ZkPassportVerifier` (an `IProofVerifier` adapter for zkPassport proofs) and `EvidenceRouter`, tests and mock root in `contracts/test/zkpassport/`, 2026-09-09; the vendored interface is class 3 | 1 |
+| `service/` | Rust bridge (sessions, address proof, prover, attest and revoke) | 25 |
+| `app/` | Vite and React front end: investor portal, issuer console, browser prover, Swap door, Privy option, zkPassport card | 65 |
+| `app/src/showcase/` | the demo pages under `/showcase/<slug>` (backoffice, payout desk, investor money, savings plan), a subset of `app/` | 13 |
+| `prover-sp1/` | SP1 guest and host for the PID statement | 16 |
+| `circuits/` | the adapted Noir circuit (class 3 base plus new constraints, tests, fixtures) | 14 |
+| `companion/` | desktop companion prover (bun) | 11 |
+| `prover-mobile-core/` | shared Rust prover core (mopro-ffi, uniffi) | 9 |
+| `prover-android/` | Android prover app | 16 |
+| `prover-ios/` | iOS prover app (imported by path in one commit after a history rewrite that dropped a build blob) | 2 |
+| `scripts/`, `docs/` | end-to-end scripts, runbooks, evidence records, this disclosure's companions | 45, 70 |
+| `automation/` | the issuer's automation for the Privy standing order (policy builder, watcher, tick, server; bun), 2026-09-09, merged from branch `wp32-privy-standing-order` | 5 |
+| `showcase/` | the bun services of two demos: `showcase/backoffice/` (compliance desk with a two-of-two quorum) and `showcase/payout-desk/` (four-eyes payout runs), 2026-09-09 | 6 |
+| `shared/`, `spikes/`, `vendor/` | `shared/pid`: the browser-safe statement check, DER reader, JWE decrypt and circuit input derivation used by the app and the companion; `spikes/browser-prover`: the browser proving spike; `vendor/`: the relay patch series (section 2) | 1, 2, 2 |
 
 How the code was produced (Claude Code agents directed and reviewed by the builder) is described in `docs/ai-attribution.md`; the working method in `docs/process.md`.
 
@@ -90,3 +99,4 @@ How the code was produced (Claude Code agents directed and reviewed by the build
 - Version 1 listed the eid-privacy circuit as used "if used for the zero-knowledge path". It is used; the adapted circuit is the client-side proof route.
 - Version 1's event-work list named `contracts/`, `service/`, `app/`, `circuits/` and `docs/` only; `companion/`, `prover-sp1/`, `prover-mobile-core/`, `prover-android/`, `prover-ios/` and `scripts/` are event work too.
 - Version 1 named `klartext-verifier` as a separate front end; see section 1.
+- Versions up to 2026-09-09 were titled "Continuity disclosure" and section 4 counted 145 commits as of `0fd7312`; the track is Classic and the counts are those of `46d8349` above.
