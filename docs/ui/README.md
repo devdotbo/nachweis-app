@@ -1,6 +1,6 @@
 # Screens
 
-Screenshots of the app's main states (WP31, product UI). Taken with `app/e2e/ui-shots.ts` against a mock-mode dev server (`VITE_MOCK=1`: in-memory verifier, bridge and chain, fake delays, mock wallet), except the files named `anvil-…`, which the Playwright stacks took (anvil, verifier-service, bridge with PROOF_MODE=mock, dev signer).
+Screenshots of the app's main states (WP31, product UI). Taken with `app/e2e/ui-shots.ts` against a mock-mode dev server (`VITE_MOCK=1`: in-memory verifier, bridge and chain, fake delays, mock wallet), except the files named `anvil-…`, which the Playwright stacks took (anvil, verifier-service, bridge with PROOF_MODE=mock, dev signer; the `swap` files on an anvil fork of Sepolia with the Uniswap permissioned pool, `docs/swap.md`).
 
 | File | State |
 |---|---|
@@ -20,5 +20,9 @@ Screenshots of the app's main states (WP31, product UI). Taken with `app/e2e/ui-
 | issuer-04-revoked | after Revoke from the decisions table |
 | issuer-05-mobile | 390 px viewport |
 | issuer-06-anvil-sp1-mock-approved | the Playwright stack on anvil after Approve |
+| investor-11-anvil-swap-open | the Playwright stack on an anvil fork of Sepolia with the permissioned pool (`--pool`): the Swap tile open, the estimate, the three answers of registry, checker and adapter, the pool panel |
+| investor-12-anvil-swap-confirmed | after Swap from the dev-signer wallet: receipt with hash and gas, sent and received amounts, the four steps; rail marks Swap done; History lists the swap |
+| issuer-07-anvil-revoked-for-swap | the issuer console after Revoke by address, the Revoked event |
+| investor-13-anvil-swap-refused | the same Swap after the revoke: door closed, the three answers no, `swap refused` with the reverted transaction's hash and the decoded WrappedError in words |
 
 Regenerate: start `VITE_MOCK=1 bun run dev -- --port 5199` in `app/`, then `APP_URL=http://127.0.0.1:5199 bun run e2e/ui-shots.ts`.
