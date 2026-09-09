@@ -5,9 +5,12 @@ import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {IEligibility} from "./interfaces/IEligibility.sol";
 
 /// @title FundToken
-/// @notice Demo fund share token. Every transfer requires the recipient to be eligible under the
-///         issuer's policy in the AttestationRegistry. Exceptions: burns (to == 0) and transfers
-///         back to the issuer (redemption). Minting is restricted to the issuer and the Subscription contract.
+/// @notice Demo fund share token. Every transfer requires both the sender and the recipient to be
+///         eligible under the issuer's policy in the AttestationRegistry, so a revoked or expired holder
+///         can neither receive nor pass units on. Exceptions: mints (from == 0), transfers from the issuer
+///         (inventory hand-out), and transfers to the issuer (redemption: a revoked holder may still
+///         return units). Burns (to == 0) skip the recipient check. Minting is restricted to the issuer
+///         and the Subscription contract.
 contract FundToken is ERC20 {
     error NotEligible(address subject);
     error NotIssuer(address caller);
@@ -57,8 +60,12 @@ contract FundToken is ERC20 {
         _mint(to, amount);
     }
 
-    /// @dev Transfer hook. Covers transfer, transferFrom and mint (from == 0).
+    /// @dev Transfer hook. Covers transfer, transferFrom and mint (from == 0). The sender check is
+    ///      skipped for mints, for the issuer's own hand-outs and for returns to the issuer.
     function _update(address from, address to, uint256 value) internal override {
+        if (from != address(0) && from != issuer && to != issuer) {
+            if (!registry.isEligible(from, policyId, REQUIRED_BITS)) revert NotEligible(from);
+        }
         if (to != address(0) && to != issuer) {
             if (!registry.isEligible(to, policyId, REQUIRED_BITS)) revert NotEligible(to);
         }

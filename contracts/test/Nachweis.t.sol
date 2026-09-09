@@ -535,6 +535,52 @@ contract NachweisTest is Test {
         assertTrue(token.transfer(issuer, 1e18));
     }
 
+    /// @dev Regression: the hook checks the sender too. A revoked or expired holder cannot pass units
+    ///      to an eligible address, directly or through an approved spender; returns to the issuer stay open.
+    function test_revokedSenderCannotTransferToEligible() public {
+        _attest(alice);
+        _attest(bob);
+        _attest(carol);
+        vm.prank(alice);
+        subscription.subscribe();
+        vm.prank(alice);
+        token.approve(carol, 5e18);
+
+        vm.prank(operator);
+        registry.revoke(alice, POLICY);
+        assertTrue(registry.isEligible(bob, POLICY, REQUIRED));
+
+        vm.prank(alice);
+        vm.expectRevert(abi.encodeWithSelector(FundToken.NotEligible.selector, alice));
+        token.transfer(bob, 1e18); // forge-lint: disable-line(erc20-unchecked-transfer)
+        vm.prank(carol);
+        vm.expectRevert(abi.encodeWithSelector(FundToken.NotEligible.selector, alice));
+        token.transferFrom(alice, bob, 1e18); // forge-lint: disable-line(erc20-unchecked-transfer)
+        assertEq(token.balanceOf(bob), 0);
+
+        // The issuer's door stays open both ways: return to the issuer, and the issuer hands units out.
+        vm.prank(alice);
+        assertTrue(token.transfer(issuer, 1e18));
+        vm.prank(issuer);
+        assertTrue(token.transfer(bob, 1e18));
+        assertEq(token.balanceOf(bob), 1e18);
+
+        // Re-approval reopens the sender side.
+        vm.prank(operator);
+        registry.approve(alice, POLICY);
+        vm.prank(alice);
+        assertTrue(token.transfer(bob, 1e18));
+        assertEq(token.balanceOf(bob), 2e18);
+
+        // Expiry closes it the same way.
+        vm.prank(operator);
+        registry.attestByOperator(alice, _decision(REQUIRED, uint64(block.timestamp + 10)));
+        vm.warp(block.timestamp + 11);
+        vm.prank(alice);
+        vm.expectRevert(abi.encodeWithSelector(FundToken.NotEligible.selector, alice));
+        token.transfer(bob, 1e18); // forge-lint: disable-line(erc20-unchecked-transfer)
+    }
+
     function test_expiryClosesTransfer() public {
         _attest(alice);
         vm.prank(operator);
