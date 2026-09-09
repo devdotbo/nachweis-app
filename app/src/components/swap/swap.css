@@ -1,0 +1,25 @@
+/* Swap door and the permissioned-pool panel (WP35). Same vocabulary as styles.css: hairlines, one fill for tiles, mono only for hashes and numbers. */
+.swap-door{gap:12px}
+.swap-amounts{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.swap-amount{border:1px solid var(--line-soft);border-radius:var(--r-control);padding:9px 11px;background:var(--paper);min-width:0}
+.swap-amount .l{display:block;font-size:.72rem;color:var(--ink-mute);margin-bottom:2px}
+.swap-amount .v{display:block;font-variant-numeric:tabular-nums;font-size:1.08rem;font-weight:500;color:var(--ink);letter-spacing:-.01em;overflow-wrap:anywhere}
+.swap-amount .s{display:block;font-size:.72rem;color:var(--ink-mute);line-height:1.35;margin-top:2px}
+.swap-ask{display:flex;flex-direction:column;gap:6px;font-size:.82rem;color:var(--ink-soft)}
+.swap-ask .q{font-family:var(--mono);font-size:.76rem;color:var(--ink);overflow-wrap:anywhere}
+.swap-ask .flags{gap:6px}
+.flag.off{border-color:rgba(194,42,70,.45);color:var(--red);background:var(--red-wash)}
+.swap-result{display:flex;flex-direction:column;gap:8px}
+.swap-result .steps{gap:5px}
+.swap-result .step{font-size:.72rem}
+.swap-result details{font-size:.8rem;color:var(--ink-mute)}
+.swap-result details summary{cursor:pointer}
+.swap-result pre.raw{margin-top:6px;max-height:220px}
+.swap-panel{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:20px;border:1px solid var(--line);border-radius:var(--r-panel);padding:16px 18px;background:var(--sheet)}
+@media (max-width:760px){.swap-panel{grid-template-columns:1fr}}
+.swap-panel h3{font-family:var(--display);font-weight:500;font-size:.92rem;margin-bottom:10px}
+.swap-panel .kv{font-size:.82rem}
+.swap-panel .kv dd{font-size:.74rem}
+.swap-panel ol{margin:0;padding-left:18px;font-size:.84rem;color:var(--ink-soft);line-height:1.5;display:flex;flex-direction:column;gap:7px}
+.swap-panel ol b{font-weight:500;color:var(--ink)}
+.swap-panel .caption{margin-top:10px}

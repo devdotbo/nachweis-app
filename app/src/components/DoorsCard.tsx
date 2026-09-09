@@ -1,12 +1,11 @@
 import { formatUnits, type Address } from 'viem'
 import { useQueryClient } from '@tanstack/react-query'
-import { POOL } from '../config'
 import { useEligible, useFundBalance, useRegistryStatus, useRegistryTx } from '../lib/chain'
-import { addressUrl } from '../lib/explorer'
 import type { StepState } from '../lib/journey'
-import { shortHex } from '../lib/format'
 import { StateChip } from './Rail'
 import { TxLine } from './TxLine'
+import { SwapDoor } from './swap/SwapDoor'
+import { SwapExplainer } from './swap/SwapExplainer'
 
 export function DoorsCard({ address, state }: { address?: Address; state?: StepState }) {
   const eligible = useEligible(address)
@@ -18,7 +17,6 @@ export function DoorsCard({ address, state }: { address?: Address; state?: StepS
   const queryClient = useQueryClient()
   // The subscribe receipt is awaited inside subscribe(); refresh the balance right after instead of waiting for the 8 s poll.
   const doSubscribe = () => void subscribe().then(() => queryClient.invalidateQueries()).catch(() => {})
-  const poolUrl = POOL ? addressUrl(POOL) : undefined
   return (
     <section className={`card${address ? '' : ' locked'}`} id="doors">
       <h2>
@@ -47,27 +45,10 @@ export function DoorsCard({ address, state }: { address?: Address; state?: StepS
             Fund token balance: <code>{balance === undefined ? '…' : formatUnits(balance, 18)}</code>
           </p>
         </div>
-        <div className="door">
-          <div className="head">
-            <h3>Swap</h3>
-            <span className={`status ${open && POOL ? 'open' : 'closed'}`}>{open && POOL ? 'open' : 'closed'}</span>
-          </div>
-          <p className="hint">
-            {POOL ? (
-              <>
-                Uniswap v4 permissioned pool {poolUrl ? <a href={poolUrl} target="_blank" rel="noreferrer">{shortHex(POOL, 6)}</a> : <code>{shortHex(POOL, 6)}</code>}: its allowlist checker reads the same registry before every swap.
-              </>
-            ) : (
-              'The Uniswap v4 permissioned pool reads the same registry before every swap. No pool address is configured for this deployment.'
-            )}
-          </p>
-          <button type="button" className="btn btn-blue" disabled title={POOL ? 'In this build the swap is sent by the SwapPermissioned script; see docs/demo-runbook.md' : 'no pool configured (VITE_POOL)'}>
-            Swap
-          </button>
-          <p className="hint">{POOL ? 'In this build the swap itself is sent by the SwapPermissioned script against this pool; the door state here is the same registry read the pool makes.' : 'Configure VITE_POOL after the pool is created to show its door.'}</p>
-        </div>
+        <SwapDoor address={address} eligible={open} />
       </div>
       <TxLine tx={tx} />
+      {address ? <SwapExplainer /> : null}
     </section>
   )
 }
