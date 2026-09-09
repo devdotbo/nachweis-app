@@ -6,6 +6,7 @@ import { HoldingsCard } from '../components/HoldingsCard'
 import { PresentCard } from '../components/PresentCard'
 import { ProveCard } from '../components/ProveCard'
 import { Rail } from '../components/Rail'
+import { StandingOrderCard } from '../components/StandingOrderCard'
 import { StatusCard } from '../components/StatusCard'
 // zkPassport route (WP33), behind VITE_ZKPASSPORT=1; remove these two imports and the line after ProveCard with src/components/zkpassport/.
 import { ZkPassportCard } from '../components/zkpassport/ZkPassportCard'
@@ -66,6 +67,7 @@ export function InvestorScreen({ wallet }: { wallet: Wallet }) {
           {ZKPASSPORT ? <ZkPassportCard wallet={wallet} state={state('prove')} /> : null}
           <StatusCard address={address} session={session} state={eligibilityState()} />
           <DoorsCard address={address} state={doorsState()} />
+          <StandingOrderCard address={address} wallet={wallet} />
           <HoldingsCard address={address} state={state('holdings')} />
           <HistoryCard address={address} state={state('history')} />
           <ChainPanel address={address} />
