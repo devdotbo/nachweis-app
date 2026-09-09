@@ -39,6 +39,23 @@ export interface LogEntryView {
   hash?: Hex
 }
 
+/** One plan run (automation `PlanRun`): the run history of the savings plan. */
+export interface PlanRunView {
+  n: number
+  at: number
+  address: Address
+  outcome: TickResultView['outcome']
+  hash?: Hex
+  detail: string
+}
+
+export interface RunsView {
+  address: Address
+  /** What one run mints, wei of the fund token (undefined when the automation could not read it). */
+  planAmount?: string
+  runs: PlanRunView[]
+}
+
 export interface StatusView {
   mode: 'privy' | 'local'
   simulated: boolean
@@ -49,7 +66,10 @@ export interface StatusView {
   subscription: Address
   policyId: Hex
   pollMs: number
+  planIntervalSecs?: number
+  planAmount?: string
   lastBlock?: string
+  runs?: PlanRunView[]
   investors: PolicyView[]
   log: LogEntryView[]
 }
@@ -65,6 +85,7 @@ async function getJson<T>(path: string): Promise<T | undefined> {
 export const automation = {
   status: () => getJson<StatusView>('/status'),
   /** `fresh` skips the automation's short cache of the wallet lookup (right after Allow or Remove signer). */
+  runs: (address: Address) => getJson<RunsView>(`/runs/${address}`),
   policy: (address: Address, fresh = false) => getJson<PolicyView>(`/policy/${address}${fresh ? '?fresh=1' : ''}`),
   tick: async (opts: { address?: Address; target?: 'subscription' | 'fundToken' } = {}): Promise<TickResultView[]> => {
     if (!AUTOMATION_URL) throw new Error('VITE_AUTOMATION_URL is not set')
