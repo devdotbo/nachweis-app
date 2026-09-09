@@ -1,6 +1,6 @@
 # Screens
 
-Screenshots of the app's main states (WP31, product UI). Taken with `app/e2e/ui-shots.ts` against a mock-mode dev server (`VITE_MOCK=1`: in-memory verifier, bridge and chain, fake delays, mock wallet), except the two files named `anvil-sp1-mock`, which the Playwright sp1-mock stack took (anvil, verifier-service, bridge with PROOF_MODE=mock, dev signer).
+Screenshots of the app's main states (WP31, product UI). Taken with `app/e2e/ui-shots.ts` against a mock-mode dev server (`VITE_MOCK=1`: in-memory verifier, bridge and chain, fake delays, mock wallet), except the files named `anvil-…`, which the Playwright stacks took (anvil, verifier-service, bridge with PROOF_MODE=mock, dev signer).
 
 | File | State |
 |---|---|
@@ -13,6 +13,7 @@ Screenshots of the app's main states (WP31, product UI). Taken with `app/e2e/ui-
 | investor-07-revoked | issuer withdrew approval; both doors closed; rail marks the approval step failed |
 | investor-08-mobile | 390 px viewport, revoked state |
 | investor-09-anvil-sp1-mock-permitted | the Playwright stack on anvil after the issuer approved |
+| investor-10-anvil-browser-proved | the browser-mode stack on anvil: proof made in the tab by bb.js, attested |
 | issuer-01-locked | issuer console before the operator wallet is connected |
 | issuer-02-queue | queue with one session attested and awaiting approval, decisions table, event history |
 | issuer-03-approved | after Approve: receipts, decisions row approved, both doors open, Approved event |
