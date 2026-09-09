@@ -57,7 +57,8 @@ input{font:inherit;color:inherit}
 
 /* ---- top bar ------------------------------------------------------------ */
 .topbar{background:var(--bar);color:var(--bar-text);border-bottom:1px solid var(--bar-line)}
-.topbar .inner{max-width:1280px;margin:0 auto;padding:0 clamp(16px,3vw,36px);display:flex;align-items:center;gap:22px;min-height:56px;flex-wrap:wrap}
+.topbar .inner{max-width:1280px;margin:0 auto;padding:0 clamp(16px,3vw,36px);display:flex;align-items:center;gap:12px 22px;min-height:56px;flex-wrap:wrap}
+@media (max-width:700px){.topbar .inner{padding-bottom:10px}.topbar .spacer{display:none}.wallet{margin-left:auto}}
 .wordmark{font-family:var(--display);font-weight:500;font-size:1.05rem;letter-spacing:-.01em;color:var(--bar-text);text-decoration:none;display:inline-flex;align-items:baseline;gap:2px;padding:14px 0}
 .wordmark i{font-style:normal;color:var(--yellow)}
 .areas{display:flex;gap:2px;align-self:stretch}
@@ -79,7 +80,7 @@ input{font:inherit;color:inherit}
 .topbar .btn-ghost:hover:not(:disabled){background:rgba(244,241,232,.08)}
 
 /* ---- page frames -------------------------------------------------------- */
-.page{max-width:1280px;margin:0 auto;padding:28px clamp(16px,3vw,36px) 72px}
+.page{max-width:1280px;margin:0 auto;padding:28px clamp(16px,3vw,36px) 72px;min-width:0;overflow-x:clip}
 .page-head{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:22px}
 .page-head h1{font-family:var(--display);font-weight:500;font-size:1.35rem;letter-spacing:-.01em}
 .page-head .sub{color:var(--ink-mute);font-size:.92rem;max-width:64ch;margin-top:4px}
@@ -115,7 +116,7 @@ input{font:inherit;color:inherit}
 .flow{display:flex;flex-direction:column;min-width:0;max-width:820px}
 
 @media (max-width:900px){
-  .journey{grid-template-columns:1fr;gap:20px}
+  .journey{grid-template-columns:minmax(0,1fr);gap:20px}
   .rail{position:static;padding:10px 0}
   .rail h2{display:none}
   .rail ol{display:flex;overflow-x:auto;gap:2px;padding:0 10px;scrollbar-width:thin}

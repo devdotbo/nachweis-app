@@ -96,7 +96,7 @@ test.describe('investor proves on the phone, issuer approves, subscribes, issuer
     await shot(page, env.mode, '04-attested-awaiting-approval')
 
     // 6b. the issuer approves: registry.approve(subject, policyId) with the operator dev key
-    await page.getByRole('button', { name: 'Issuer' }).click()
+    await page.getByRole('link', { name: 'Issuer', exact: true }).click()
     await expectConnected(page, env.operator)
     const pending = card(page, 'Presentations')
     const item = pending.locator('.item', { hasText: sessionId })
@@ -107,7 +107,7 @@ test.describe('investor proves on the phone, issuer approves, subscribes, issuer
     await expect(pending.getByText('tx confirmed')).toBeVisible()
     await expect(card(page, 'Registry events').locator('.ev.approved').first()).toBeVisible()
     await shot(page, env.mode, '04b-approved-issuer')
-    await page.getByRole('button', { name: 'Investor' }).click()
+    await page.getByRole('link', { name: 'Investor', exact: true }).click()
     await expectConnected(page, env.investor)
     await expect(status.locator('.status').first()).toHaveText('permitted')
     await expect(status.getByTestId('approved')).toHaveText('true')
@@ -124,7 +124,7 @@ test.describe('investor proves on the phone, issuer approves, subscribes, issuer
     await shot(page, env.mode, '05-subscribed')
 
     // 8. issuer role with the operator dev key: the session from this browser, Revoke
-    await page.getByRole('button', { name: 'Issuer' }).click()
+    await page.getByRole('link', { name: 'Issuer', exact: true }).click()
     await expectConnected(page, env.operator)
     await expect(item.locator('.status')).toHaveText('approved')
     await shot(page, env.mode, '06-issuer')
@@ -136,7 +136,7 @@ test.describe('investor proves on the phone, issuer approves, subscribes, issuer
     await shot(page, env.mode, '07-revoked-issuer')
 
     // 9. back to the investor: revoked, Subscribe closed
-    await page.getByRole('button', { name: 'Investor' }).click()
+    await page.getByRole('link', { name: 'Investor', exact: true }).click()
     await expectConnected(page, env.investor)
     await expect(status.locator('.status').first()).toHaveText('revoked')
     await expect(status.locator('dl.kv')).toContainText('true')
@@ -147,13 +147,13 @@ test.describe('investor proves on the phone, issuer approves, subscribes, issuer
     await shot(page, env.mode, '08-revoked-investor')
 
     // 10. re-approval needs the issuer: Re-approve reopens, the investor is permitted again
-    await page.getByRole('button', { name: 'Issuer' }).click()
+    await page.getByRole('link', { name: 'Issuer', exact: true }).click()
     await expectConnected(page, env.operator)
     await item.getByRole('button', { name: 'Re-approve' }).click()
     await expect(item.locator('.status')).toHaveText('approved')
     await expect(pending.getByText('tx confirmed')).toBeVisible()
     await shot(page, env.mode, '09-reapproved-issuer')
-    await page.getByRole('button', { name: 'Investor' }).click()
+    await page.getByRole('link', { name: 'Investor', exact: true }).click()
     await expectConnected(page, env.investor)
     await expect(status.locator('.status').first()).toHaveText('permitted')
     await expect(subscribeDoor.locator('.status')).toHaveText('open')
