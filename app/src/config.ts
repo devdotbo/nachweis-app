@@ -45,7 +45,7 @@ export const DEV_OPERATOR_KEY: Hex | undefined = __NACHWEIS_DEV_SIGNER__ ? priva
 export const DEV_SIGNER: boolean = Boolean(DEV_PRIVATE_KEY || DEV_OPERATOR_KEY)
 
 /** Display labels for predicate bits. Decision bits: 1 = identity evidence (bit 0), 2 = over 18 (bit 1). */
-export const BIT_LABELS: readonly string[] = ['identity evidence', 'over 18']
+export const BIT_LABELS: readonly string[] = ['identity evidence', 'over 18', 'passport chip (zkPassport)' /* bit 2: route marker set by ZkPassportVerifier (WP33) */]
 export const TIER_LABELS: Record<number, string> = { 0: 'none', 1: 'A', 2: 'B' }
 export const TIER_A = 1
 export const DECISION_TTL_SECONDS = 30 * 24 * 3600
