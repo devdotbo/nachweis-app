@@ -1,7 +1,9 @@
 import QRCode from 'qrcode'
 import { useEffect, useState, type ReactNode } from 'react'
 import { BROWSER_PHASES, BrowserProver, requestUriOf, type BrowserAvailability, type BrowserPhase } from '../lib/browserProver'
+import type { StepState } from '../lib/journey'
 import type { Session } from '../lib/sessions'
+import { StateChip } from './Rail'
 
 const PHASE_LABEL: Record<BrowserPhase, string> = {
   idle: 'ready',
@@ -31,7 +33,7 @@ function stepClass(step: BrowserPhase, current: BrowserPhase): string {
  * JWE in a worker, proves with noir_js and bb.js, verifies, and posts only the proof to the bridge
  * session the wallet signed. The presentation never leaves the worker.
  */
-export function BrowserProveCard({ session, picker, availability }: { session: Session; picker: ReactNode; availability: BrowserAvailability }) {
+export function BrowserProveCard({ session, picker, availability, state }: { session: Session; picker: ReactNode; availability: BrowserAvailability; state?: StepState }) {
   const [qr, setQr] = useState<string>()
   const b = session.browser
   const signed = session.signature === 'signed'
@@ -64,15 +66,16 @@ export function BrowserProveCard({ session, picker, availability }: { session: S
   const requestUri = b?.openid4vpUri ? requestUriOf(b.openid4vpUri) : undefined
 
   return (
-    <section className={`card${signed ? '' : ' locked'}`}>
+    <section className={`card${signed ? '' : ' locked'}`} id="prove">
       <h2>
-        <span className="n">2b</span>Prove in this browser
+        Prove in this browser
+        <StateChip state={state} />
       </h2>
       {picker}
       <p className="lead">
-        This tab asks the relay for your presentation with the same challenge your wallet signature bound to this session, decrypts the wallet's answer in a Web Worker, proves the
-        statement with noir_js and bb.js on {availability.threads} cores, verifies the proof here and posts only the proof to the bridge. The presentation stays in this tab's memory and is
-        dropped after proving.
+        The proof is made in this browser tab. The tab asks the relay for your presentation with the same challenge your wallet signature bound to this session, decrypts the
+        wallet's answer in a Web Worker, proves the statement with noir_js and bb.js on {availability.threads} cores, verifies the proof here and posts only the proof to the bridge.
+        The relay passes the encrypted answer through unopened; the presentation stays in this tab's memory and is dropped after proving.
       </p>
       <div className="row">
         <button type="button" className="btn btn-yellow" onClick={start} disabled={!signed || busy || attested} data-testid="browser-start">

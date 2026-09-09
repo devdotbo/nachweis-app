@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react'
-import { Header } from './components/Header'
-import type { Role } from './lib/role'
+import { useEffect } from 'react'
+import { Navigate, Route, Routes } from 'react-router'
+import { TopBar } from './components/TopBar'
+import { ISSUER_PATH, useRole } from './lib/role'
 import { updateSession, useSessions, type SessionState } from './lib/sessions'
 import { useWallet } from './lib/wallet'
 import { InvestorScreen } from './screens/InvestorScreen'
@@ -90,13 +91,17 @@ function useSessionPolling() {
 }
 
 export function App() {
-  const [role, setRole] = useState<Role>('investor')
+  const role = useRole()
   const wallet = useWallet(role)
   useSessionPolling()
   return (
-    <div className="app">
-      <Header role={role} setRole={setRole} wallet={wallet} />
-      {role === 'investor' ? <InvestorScreen wallet={wallet} /> : <IssuerScreen wallet={wallet} />}
-    </div>
+    <>
+      <TopBar role={role} wallet={wallet} />
+      <Routes>
+        <Route path="/" element={<InvestorScreen wallet={wallet} />} />
+        <Route path={ISSUER_PATH} element={<IssuerScreen wallet={wallet} />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </>
   )
 }

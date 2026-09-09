@@ -37,6 +37,9 @@ test.describe('investor proves through the bridge (verifier mode, PROOF_MODE=moc
     const sessionId = (await present.locator('dl.kv dd').first().textContent())?.trim() ?? ''
     expect(sessionId).not.toBe('')
     await shot(page, env.mode, '01-session')
+    // The bridge proves on its own in this mode. The prove step defaults to "in this browser" on an isolated
+    // page; the phone card is one click away and reports the bridge's proof as "attested without the phone".
+    await card(page, 'Prove in this browser').getByRole('button', { name: 'On your phone' }).click()
 
     // the wallet stand-in answers the verifier's request for this session (same id at bridge and verifier)
     const r = runBun(['run', env.walletScript, env.verifierUrl, sessionId, env.issuerKeyPem, env.issuerCertPem], env.runDir, 120_000)
@@ -76,7 +79,7 @@ test.describe('investor proves through the bridge (verifier mode, PROOF_MODE=moc
     await shot(page, env.mode, '03-attested-awaiting-approval')
 
     // the issuer approves with the operator dev key: registry.approve(subject, policyId)
-    await page.getByRole('button', { name: 'Issuer' }).click()
+    await page.getByRole('link', { name: 'Issuer', exact: true }).click()
     await expectConnected(page, env.operator)
     const pending = card(page, 'Presentations')
     const item = pending.locator('.item', { hasText: sessionId })
@@ -88,7 +91,7 @@ test.describe('investor proves through the bridge (verifier mode, PROOF_MODE=moc
     await shot(page, env.mode, '04-approved-issuer')
 
     // back to the investor: permitted, doors open
-    await page.getByRole('button', { name: 'Investor' }).click()
+    await page.getByRole('link', { name: 'Investor', exact: true }).click()
     await expectConnected(page, env.investor)
     await expect(status.locator('.status').first()).toHaveText('permitted')
     await expect(status.getByTestId('approved')).toHaveText('true')
