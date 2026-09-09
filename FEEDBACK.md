@@ -76,6 +76,10 @@ Not a broadcast. Fork results on 2026-09-07 (read-only public RPC, block 1165592
 
 Fork results on 2026-09-09 (`scripts/pool-local.sh`, anvil forked at block 11664502 with chain id 31337, 24 s end to end): the same onboarding and mint (liquidity 999000000000000, tokenId 9), a probe swap of 100 mUSD for 90.652862473832711386 NDF through the permissioned Universal Router, revoke, the identical calldata refused with `Unauthorized` inside `beforeSwap`; then the browser: the investor portal's Swap door sends the swap from the dev-signer wallet, the issuer revokes in the console, the refused swap is mined as a reverted transaction and decoded on screen (`app/e2e/swap.spec.ts`, `docs/swap.md`).
 
-TODO: transaction hashes of steps 2 to 6.
-TODO: the same mint and swap broadcast on Sepolia, gas actually paid.
-TODO: step 7 form submission and response.
+## Sepolia broadcast
+
+Not done as of 2026-09-09. What exists and what is missing, per line:
+
+- Steps 1 to 6 (checker deployment, adapter, venue decision and 1 wei deposit, verification, wrapper and hook approvals, `PoolManager.initialize`, swapping enabled): one call sequence in `contracts/script/lib/PermissionedPoolOnboarding.sol` lines 32 to 93, run by `contracts/script/CreatePermissionedPool.s.sol` (lines 52 to 74; the script accepts chain id 11155111 and 31337). Broadcast so far only to the anvil fork of `scripts/pool-local.sh` (fork block 11664502, 2026-09-09), where the fork's hashes have no meaning outside that run and are not recorded. [Builder: Sepolia transaction hashes of steps 1 to 6 after `CreatePermissionedPool.s.sol --broadcast`; the script prints the pool id and policy id at lines 91 to 92.]
+- Mint and swap: `contracts/script/AddLiquidityPermissioned.s.sol` (lines 24 to 54) and `contracts/script/SwapPermissioned.s.sol` (lines 33 to 92). On the fork: liquidity 999000000000000, position 9, 100 mUSD for 90.652862473832711386 NDF; dry-run gas 8,195,312 (mint) and 8,921,394 (mint plus swap) from the 2026-09-07 runs above; the browser swap shows its gas on screen and the evidence template in `docs/swap.md` has a slot for it, not yet filled. [Builder: Sepolia hashes and gas paid for the mint, the swap and the refused swap.]
+- Step 7 (routing allowlist request, off-chain): the form URL the script prints at `CreatePermissionedPool.s.sol` line 94 to 95 is https://developers.uniswap.org/permissioned-pools-allowlist; the request needs the pool id, the `kycUrl` field (item 8 above) and the checker address. Not sent; item 7 above stays open. [Builder: date sent, the fields submitted and Uniswap's response.]
