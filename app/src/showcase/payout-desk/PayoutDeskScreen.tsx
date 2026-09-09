@@ -127,7 +127,7 @@ function TreasuryCard({ state, busy, onAllowance, error }: { state: DeskState; b
         <dd>{fmtAmount(state.treasury.balance, state.token)}</dd>
         <dt>allowance for the gate</dt>
         <dd>
-          {fmtAmount(state.treasury.allowance, state.token)}
+          {BigInt(state.treasury.allowance) >= 1n << 255n ? `unlimited (${state.token.symbol})` : fmtAmount(state.treasury.allowance, state.token)}
           {allowanceLow ? (
             <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={onAllowance}>
               Set allowance

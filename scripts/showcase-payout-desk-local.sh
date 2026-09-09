@@ -92,10 +92,11 @@ cast send --rpc-url "$RPC" --private-key "$K0" "$REGISTRY" \
 say "contractor 1 $C1: attested and approved (operator path, captioned manual); contractor 2 $C2: no decision"
 
 # ------------------------------------------------------------------ 3. the desk in local mode
+if curl -fs "$DESK/health" >/dev/null 2>&1; then die "something already listens on $DESK (set DESK_PORT)"; fi
 (cd "$ROOT/showcase/payout-desk" && [ -d node_modules ] || bun install --silent)
-(cd "$ROOT/showcase/payout-desk" && PAYOUT_SIGNER=local RPC_URL=$RPC CHAIN_ID=$CHAIN_ID REGISTRY=$REGISTRY GATED_PAYOUT=$GATE PAYOUT_TOKEN=$TOKEN \
+(cd "$ROOT/showcase/payout-desk" && exec env PAYOUT_SIGNER=local RPC_URL=$RPC CHAIN_ID=$CHAIN_ID REGISTRY=$REGISTRY GATED_PAYOUT=$GATE PAYOUT_TOKEN=$TOKEN \
   POLICY_ID=$POLICY REQUIRED_BITS=3 PAYOUT_CAP=$CAP LOCAL_TREASURY_KEY=$K3 OFFICER_A_TOKEN=$TOKEN_A OFFICER_B_TOKEN=$TOKEN_B PORT=$DESK_PORT \
-  CONTRACTORS="Contractor 1:$C1,Contractor 2:$C2" bun run src/server.ts > "$RUN_DIR/desk.log" 2>&1 & echo $! >> "$PIDS")
+  CONTRACTORS="Contractor 1:$C1,Contractor 2:$C2" bun src/server.ts > "$RUN_DIR/desk.log" 2>&1) & echo $! >> "$PIDS"
 for _ in $(seq 1 100); do curl -fs "$DESK/health" >/dev/null 2>&1 && break; sleep 0.2; done
 curl -fs "$DESK/health" >/dev/null || { tail -20 "$RUN_DIR/desk.log"; die "the desk did not start"; }
 # the allowance for the gate is issued at startup through the (simulated) policy
