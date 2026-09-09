@@ -84,7 +84,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     policyId,
     requiredBits: env.REQUIRED_BITS && /^\d+$/.test(env.REQUIRED_BITS) ? BigInt(env.REQUIRED_BITS) : 3n,
     cap: env.PAYOUT_CAP && /^\d+$/.test(env.PAYOUT_CAP) ? BigInt(env.PAYOUT_CAP) : 1_000_000_000n,
-    port: env.PORT && /^\d+$/.test(env.PORT) ? Number(env.PORT) : 8791,
+    port: env.PORT && /^\d+$/.test(env.PORT) ? Number(env.PORT) : 8792,
     officerTokens: { A: env.OFFICER_A_TOKEN?.trim() || 'officer-a', B: env.OFFICER_B_TOKEN?.trim() || 'officer-b' },
     contractors: parseContractors(env.CONTRACTORS),
   }
