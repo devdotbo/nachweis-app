@@ -26,7 +26,8 @@ export function InvestorScreen({ wallet }: { wallet: Wallet }) {
   const { events } = useRegistryEvents()
   const mine = address ? address.toLowerCase() : ''
   const historyCount = mine ? receipts.filter((r) => r.subject?.toLowerCase() === mine || r.from?.toLowerCase() === mine).length + events.filter((e) => e.subject.toLowerCase() === mine).length : 0
-  const steps = journeySteps({ address, session, chain, eligible, balance, historyCount })
+  const swapped = Boolean(mine) && receipts.some((r) => r.kind === 'swap' && r.from?.toLowerCase() === mine)
+  const steps = journeySteps({ address, session, chain, eligible, balance, historyCount, swapped })
   const state = (id: StepId): StepState | undefined => steps.find((s) => s.id === id)?.state
   const doorsState = (): StepState | undefined => {
     const a = state('subscribe')

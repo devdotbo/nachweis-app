@@ -52,7 +52,10 @@ abstract contract PermissionedPoolScriptBase is Script {
     /// @dev Loads an existing pool or bootstraps one under the deployer key. `bootstrapped` tells the caller
     ///      that the pool has no liquidity yet and that every address printed is simulation-only.
     function _loadOrBootstrap(uint256 deployerKey) internal returns (Demo memory d, bool bootstrapped) {
-        require(block.chainid == 11155111, "run against Sepolia (chain id 11155111)");
+        require(
+            block.chainid == 11155111 || block.chainid == 31337,
+            "run against Sepolia (chain id 11155111) or an anvil fork of it started with --chain-id 31337"
+        );
         address deployer = vm.addr(deployerKey);
         (d.policyId, d.requiredBits) = _policy();
         uint24 fee = uint24(vm.envOr("POOL_FEE", uint256(3000)));
