@@ -1,5 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { Address } from 'viem'
 import { AUTOMATION_URL, PRIVY_APP_ID, PRIVY_SIGNER_ID } from '../config'
 import { automation, useAutomationPoll, type TickResultView } from '../lib/automation'
@@ -18,11 +18,26 @@ export function StandingOrderCard({ address, wallet }: { address?: Address; wall
   const privy = usePrivyBridge()
   const status = useRegistryStatus(address)
   const queryClient = useQueryClient()
-  const { data: policy, error: policyError, refresh } = useAutomationPoll(() => (address ? automation.policy(address) : Promise.resolve(undefined)), [address], 5000)
+  // Set right after Allow or Remove signer: the next poll skips the automation's short cache of the wallet lookup.
+  const freshRef = useRef(false)
+  const { data: policy, error: policyError, refresh } = useAutomationPoll(
+    () => {
+      const fresh = freshRef.current
+      freshRef.current = false
+      return address ? automation.policy(address, fresh) : Promise.resolve(undefined)
+    },
+    [address],
+    5000,
+  )
   const [busy, setBusy] = useState<'allow' | 'run' | 'remove'>()
   const [error, setError] = useState<string>()
   const [results, setResults] = useState<TickResultView[]>()
   const [delegatedNow, setDelegatedNow] = useState<boolean>()
+  // A fresh address (another sign-in) starts from the automation's view again.
+  useEffect(() => {
+    setDelegatedNow(undefined)
+    setResults(undefined)
+  }, [address])
   if (!PRIVY_APP_ID || !AUTOMATION_URL) return null
 
   const embedded = wallet.kind === 'privy'
@@ -46,6 +61,7 @@ export function StandingOrderCard({ address, wallet }: { address?: Address; wall
       if (!PRIVY_SIGNER_ID) throw new Error('VITE_PRIVY_SIGNER_ID is not set')
       const ok = await privy.addSigner(address, PRIVY_SIGNER_ID, policy.policyId)
       setDelegatedNow(ok)
+      freshRef.current = true
       refresh()
     })
   const run = () =>
@@ -61,6 +77,7 @@ export function StandingOrderCard({ address, wallet }: { address?: Address; wall
       if (!address || !privy) return
       await privy.removeSigners(address)
       setDelegatedNow(false)
+      freshRef.current = true
       refresh()
     })
 
@@ -126,7 +143,7 @@ export function StandingOrderCard({ address, wallet }: { address?: Address; wall
         <ul className="ticks" data-testid="tick-results">
           {results.map((r, i) => (
             <li key={i}>
-              <span className={`status ${r.outcome === 'ok' ? 'open' : r.outcome === 'no-delegated-wallet' ? 'idle' : 'closed'}`}>{r.outcome === 'ok' ? 'subscribed' : r.outcome === 'denied-policy' ? 'refused by Privy' : r.outcome === 'denied-chain' ? 'refused by the chain' : r.outcome}</span>{' '}
+              <span className={`status ${r.outcome === 'ok' ? 'open' : r.outcome === 'no-delegated-wallet' ? 'idle' : 'closed'}`}>{r.outcome === 'ok' ? 'subscribed' : r.outcome === 'denied-policy' ? 'refused by the policy' : r.outcome === 'denied-chain' ? 'refused by the chain' : r.outcome}</span>{' '}
               {r.hash ? <TxHash hash={r.hash} /> : null} <span className="muted">{r.detail}</span>
               {r.chain ? <span className="muted"> The chain: {r.chain.allows ? 'would allow subscribe()' : `refuses too (${r.chain.reason ?? 'revert'})`}, isEligible {String(r.chain.eligible)}.</span> : null}
             </li>

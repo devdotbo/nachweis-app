@@ -64,7 +64,8 @@ async function getJson<T>(path: string): Promise<T | undefined> {
 
 export const automation = {
   status: () => getJson<StatusView>('/status'),
-  policy: (address: Address) => getJson<PolicyView>(`/policy/${address}`),
+  /** `fresh` skips the automation's short cache of the wallet lookup (right after Allow or Remove signer). */
+  policy: (address: Address, fresh = false) => getJson<PolicyView>(`/policy/${address}${fresh ? '?fresh=1' : ''}`),
   tick: async (opts: { address?: Address; target?: 'subscription' | 'fundToken' } = {}): Promise<TickResultView[]> => {
     if (!AUTOMATION_URL) throw new Error('VITE_AUTOMATION_URL is not set')
     const r = await fetch(`${AUTOMATION_URL}/tick`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(opts) })

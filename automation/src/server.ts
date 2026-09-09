@@ -29,10 +29,22 @@ function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body, (_k, v) => (typeof v === 'bigint' ? v.toString() : v)), { status, headers: { 'content-type': 'application/json', ...CORS } })
 }
 
-async function investorView(address: Address) {
+// The two screens poll every few seconds; the wallet lookup (a Privy API call in privy mode) is cached briefly.
+const DELEGATED_CACHE_MS = 10_000
+const delegatedCache = new Map<string, { at: number; value: boolean }>()
+async function isDelegated(address: Address, fresh = false): Promise<boolean> {
+  const k = address.toLowerCase()
+  const hit = delegatedCache.get(k)
+  if (!fresh && hit && Date.now() - hit.at < DELEGATED_CACHE_MS) return hit.value
+  const value = Boolean(await signer.delegated(address).catch(() => undefined))
+  delegatedCache.set(k, { at: Date.now(), value })
+  return value
+}
+
+async function investorView(address: Address, fresh = false) {
   const p = store.get(address)
   if (!p) return undefined
-  const delegated = await signer.delegated(address).catch(() => undefined)
+  const delegated = await isDelegated(address, fresh)
   return {
     address: p.address,
     policyId: p.policyId,
@@ -41,7 +53,7 @@ async function investorView(address: Address) {
     plain: describeRules(p.rules),
     expiry: expiryOf(p.rules),
     denyAll: hasDenyAll(p.rules),
-    delegated: Boolean(delegated),
+    delegated,
     createdAt: p.createdAt,
     updatedAt: p.updatedAt,
   }
@@ -75,7 +87,7 @@ const server = Bun.serve({
     }
     const m = url.pathname.match(/^\/policy\/(0x[0-9a-fA-F]{40})$/)
     if (m && req.method === 'GET') {
-      const v = await investorView(getAddress(m[1]!))
+      const v = await investorView(getAddress(m[1]!), url.searchParams.get('fresh') === '1')
       return v ? json(v) : json({ error: 'no policy for this address yet: the automation creates it when the registry emits Approved' }, 404)
     }
     if (url.pathname === '/tick' && req.method === 'POST') {
@@ -88,6 +100,7 @@ const server = Bun.serve({
         opts = {}
       }
       await watcher.poll()
+      delegatedCache.clear()
       try {
         const results = await runTick(cfg, client, store, signer, opts)
         return json({ results, log: store.log.slice(-20) })
