@@ -22,7 +22,7 @@
 # Usage: scripts/showcase-savings-plan-local.sh [--keep] [--app]
 #   --keep    leave anvil and the automation running (URLs and pids printed)
 #   --app     also start the Vite dev server with the dev signer and print /showcase/savings-plan (implies --keep)
-# Env: RUN_DIR (default .e2e/showcase-savings-plan, gitignored), ANVIL_PORT, AUTOMATION_PORT, APP_PORT (default: free ports).
+# Env: RUN_DIR (default .e2e/showcase-savings-plan, gitignored), ANVIL_PORT (default 8554), AUTOMATION_PORT (default 8796), APP_PORT (default: a free port).
 # Nothing touches a public chain: every transaction goes to the local anvil. No Privy call is made.
 set -eEuo pipefail
 
@@ -53,7 +53,8 @@ NOBODY=0x90F79bf6EB2c4f870365E785982E1f101E93b906                        # anvil
 POLICY=0xd27260f1ca509ba75dea6cd27b2985a96e423550e16db3350d2945e215e3d05f # keccak256("nachweis.pid.over18.v1")
 ZERO32=0x0000000000000000000000000000000000000000000000000000000000000000
 free_port() { python3 -c 'import socket;s=socket.socket();s.bind(("127.0.0.1",0));print(s.getsockname()[1]);s.close()'; }
-ANVIL_PORT="${ANVIL_PORT:-$(free_port)}"; AUTOMATION_PORT="${AUTOMATION_PORT:-$(free_port)}"; APP_PORT="${APP_PORT:-$(free_port)}"
+# Ports per the lead's allocation for the demo scripts (anvil 8554, automation 8796); the app port is free unless set.
+ANVIL_PORT="${ANVIL_PORT:-8554}"; AUTOMATION_PORT="${AUTOMATION_PORT:-8796}"; APP_PORT="${APP_PORT:-$(free_port)}"
 RPC="http://127.0.0.1:$ANVIL_PORT"
 AUTO="http://127.0.0.1:$AUTOMATION_PORT"
 APP_URL="http://127.0.0.1:$APP_PORT"

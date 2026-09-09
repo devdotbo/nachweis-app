@@ -15,7 +15,7 @@ import { AUTOMATION_URL, FUND_TOKEN, POLICY_ID, PRIVY_APP_ID, REGISTRY, REQUIRED
 import { automation, useAutomationPoll } from '../../lib/automation'
 import { useDecision, useEligible, useRegistryStatus } from '../../lib/chain'
 import { bitFlags, formatExpiry, shortAddress, shortHex, tierLabel } from '../../lib/format'
-import type { Wallet } from '../../lib/wallet'
+import { useWallet, type Wallet } from '../../lib/wallet'
 import { CHECKER, FUND_TOKEN_B, SECOND_WALLET, SUBSCRIPTION_B, UNATTESTED_WALLET } from './config'
 import { LOCAL_CHAIN, OPERATOR_ON_BOARD, useBalanceOf, useCheckerFlags, useDemoAmountB, useEligibleOf, useInvestorWrites, useOperatorBeats, useTokenBGate, type BeatState } from './hooks'
 
@@ -355,4 +355,9 @@ export function SavingsPlanBoard({ wallet }: { wallet: Wallet }) {
       </section>
     </main>
   )
+}
+
+/** The route entry (src/showcase/registry.ts): the board on the investor's wallet, as the investor portal connects it. */
+export function SavingsPlanDemo() {
+  return <SavingsPlanBoard wallet={useWallet('investor')} />
 }

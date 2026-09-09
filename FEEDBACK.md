@@ -1,11 +1,12 @@
 # Uniswap developer feedback
 
-Project: Attestat, repository `nachweis-app` (ETHOnline 2026). Integration: a Uniswap v4 permissioned pool on Sepolia whose allowlist checker reads the Attestat `AttestationRegistry`. Written during the integration, dated 2026-09-07; evidence labels corrected 2026-09-08. Lines marked TODO are for the Sepolia broadcast, which has not happened yet; everything else was observed on a local Sepolia fork (anvil forked from a public Sepolia RPC) against the bytecode of the contracts Uniswap has deployed there.
+Project: Attestat, repository `nachweis-app` (ETHOnline 2026). Integration: a Uniswap v4 permissioned pool on Sepolia whose allowlist checker reads the Attestat `AttestationRegistry`. Written during the integration, dated 2026-09-07; evidence labels corrected 2026-09-08; the front-end swap and item 18 added 2026-09-09. Lines marked TODO are for the Sepolia broadcast, which has not happened yet; everything else was observed on a local Sepolia fork (anvil forked from a public Sepolia RPC) against the bytecode of the contracts Uniswap has deployed there.
 
 ## Status of evidence
 
 - Every result in this file comes from a local Sepolia fork on the developer's machine: Foundry fork tests and `forge script` dry runs against the deployed Uniswap contracts at their Sepolia addresses. The deployed bytecode was exercised; no transaction was broadcast.
-- Nothing from this project is deployed on Sepolia as of 2026-09-08. There are no transaction hashes, no pool id on the public chain and no step 7 submission.
+- Since 2026-09-09 the swap also runs from the browser: the investor portal sends the same `V4_SWAP` calldata through the permissioned Universal Router from the connected wallet, on an anvil fork of Sepolia started by `scripts/pool-local.sh` (chain id 31337, the deployed Uniswap contracts at their Sepolia addresses); a Playwright run (`app/e2e/swap.spec.ts`) swaps, revokes in the issuer console and shows the refused swap with the decoded `WrappedError`. Still a fork, still not a broadcast. `docs/swap.md`.
+- Nothing from this project is deployed on Sepolia as of 2026-09-09. There are no transaction hashes, no pool id on the public chain and no step 7 submission.
 - The file will be updated with hashes and paid gas after the broadcast; until then, read "Sepolia" below as "local Sepolia fork" unless a line says broadcast.
 
 ## What was integrated
@@ -14,7 +15,8 @@ Project: Attestat, repository `nachweis-app` (ETHOnline 2026). Integration: a Un
 - The checker exercised through the real `PermissionsAdapterFactory` and `PermissionsAdapter` bytecode in unit tests, and against the deployed Sepolia factory on a local Sepolia fork.
 - A Foundry script that runs onboarding steps 1 to 6 (create adapter, allowlist and fund, verify, approve wrappers and hook, initialize the pool with `PermissionedHooks`, enable swapping). Simulated on a local Sepolia fork; all six steps succeeded, including `PoolManager.initialize` through the deployed hook.
 - A liquidity mint through the deployed `PermissionedPositionManager` (Permit2 approvals, `MINT_POSITION` + `SETTLE_PAIR`) and an exact-input swap through the deployed permissioned Universal Router (`V4_SWAP`: `SWAP_EXACT_IN_SINGLE`, `SETTLE_ALL`, `TAKE_ALL`), as scripts and as fork tests. The fork tests run the whole sequence: onboard, mint, swap as an attested investor, revoke, the same swap reverts in `PermissionedHooks.beforeSwap`, a never-attested address is rejected the same way.
-- Details and verification notes: `contracts/docs/uniswap-permissioned-pool.md`.
+- The front end (`app/src/components/swap/`): pool state from `StateView` and the adapter, the three answers the pool relies on (`registry.isEligible`, `checker.checkAllowlist`, `adapter.isAllowed`) shown before the swap, Permit2 approvals and `UniversalRouter.execute` from the wallet, an off-chain exact-input quote from `getSlot0` and `getLiquidity`, and revert decoding of `WrappedError`, `Unauthorized`, `SwappingDisabled`, `HookNotAllowed`, `NotEligible` and `ExecutionFailed` into one sentence each. The refused swap is sent with a fixed gas limit so it is mined and has a hash.
+- Details and verification notes: `contracts/docs/uniswap-permissioned-pool.md`; the door: `docs/swap.md`.
 
 Stack parts used: v4-periphery permissioned pools (factory, adapter, hooks, PermissionedPositionManager), the permissioned build of the Universal Router, Permit2, v4-core PoolManager, StateView, the developer docs (deploy, provide-liquidity and swapping pages), deployments.json.
 
@@ -48,6 +50,7 @@ Stack parts used: v4-periphery permissioned pools (factory, adapter, hooks, Perm
 15. `Unauthorized()` has the same selector in `PermissionedHooks`, `PermissionedV4Router` and `PermissionedPositionManager`. Inside a `WrappedError` the target address disambiguates; a bare `Unauthorized()` from the router or the position manager does not say which check failed (recipient, caller, hook allow-list). Distinct error names, or an argument, would help front ends show the right message.
 16. The provide-liquidity page says nothing about sizing: which price to read (`StateView.getSlot0`), how to turn amounts into `liquidity` (`LiquidityAmounts`, which lives under `test/utils` in v4-core, not in a published library), and that `amount0Max` / `amount1Max` must leave a rounding margin. All of that is standard v4, but a first-time integrator lands on this page.
 17. The permissioned Universal Router has no public `PERMIT2` getter (the position manager has `permit2()`), so a script cannot assert it is talking to the expected Permit2. The canonical address is in `deployments.json`, which is what I relied on.
+18. The `V4Quoter` listed for the permissioned set (`0x61B3f2011A92d183C7dbaDBdA940a7555Ccf9227`, allow-listed as a wrapper in step 5 of the guide) cannot quote a permissioned pool. `PermissionedHooks.beforeSwap` asks its caller for `msgSender()` (the selector is in the deployed hook bytecode; the permissioned router answers it), the quoter has no such function, and the hook call fails with empty data. `quoteExactInputSingle` therefore reverts with `UnexpectedRevertBytes(WrappedError(hook, beforeSwap, 0x, HookCallFailed()))` for every caller, `--from` or not (fork, 2026-09-09). A front end that cannot use the Trading API before step 7 has no on-chain quote; ours computes the exact-input amount from `getSlot0` and `getLiquidity` in the page (`app/src/components/swap/calldata.ts`, `quoteExactIn`), which matched the swap to the wei on the fresh single-position pool. A quoter that implements `msgSender()` (returning the `eth_call` sender), or a note that quotes need the Trading API, would close this.
 
 ## What broke
 
@@ -65,10 +68,13 @@ Stack parts used: v4-periphery permissioned pools (factory, adapter, hooks, Perm
 - Rename `kycUrl`, or document that it is a display label rather than a requirement to run KYC.
 - Add a "swap without the Trading API" code block (Permit2 approvals, `V4_SWAP` encoding with the six-field `ExactInputSingleParams`, the permissioned router address) next to the provide-liquidity page, and a sizing paragraph on that page.
 - Fix the `PermissionedHooks` source pointer in `deployments.json`, or publish the hook.
+- Give the permissioned set a quoter that passes the hook's `msgSender()` check, or say in the swapping page that quotes on permissioned pools go through the Trading API only (item 18).
 
 ## Local Sepolia fork results
 
 Not a broadcast. Fork results on 2026-09-07 (read-only public RPC, block 11655920 area): onboarding 6 steps, a full-range mint of 1000 NDF / 1000 mUSD (liquidity 999000000000000, tokenId 9 on the deployed position manager), a swap of 100 mUSD for 90.65 NDF, a revoke followed by `WrappedError(PermissionedHooks, beforeSwap, Unauthorized(), HookCallFailed())` for the identical calldata. Dry-run gas for the bootstrapping runs: 8,195,312 (mint) and 8,921,394 (mint plus swap).
+
+Fork results on 2026-09-09 (`scripts/pool-local.sh`, anvil forked at block 11664502 with chain id 31337, 24 s end to end): the same onboarding and mint (liquidity 999000000000000, tokenId 9), a probe swap of 100 mUSD for 90.652862473832711386 NDF through the permissioned Universal Router, revoke, the identical calldata refused with `Unauthorized` inside `beforeSwap`; then the browser: the investor portal's Swap door sends the swap from the dev-signer wallet, the issuer revokes in the console, the refused swap is mined as a reverted transaction and decoded on screen (`app/e2e/swap.spec.ts`, `docs/swap.md`).
 
 TODO: transaction hashes of steps 2 to 6.
 TODO: the same mint and swap broadcast on Sepolia, gas actually paid.

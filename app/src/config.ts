@@ -21,8 +21,8 @@ export const BRIDGE_URL: string = (BRIDGE_CONFIGURED ? env.VITE_BRIDGE_URL! : VE
 export const REGISTRY = addressOr(env.VITE_REGISTRY, ZERO_ADDRESS)
 export const FUND_TOKEN = addressOr(env.VITE_FUND_TOKEN, ZERO_ADDRESS)
 export const SUBSCRIPTION = addressOr(env.VITE_SUBSCRIPTION, ZERO_ADDRESS)
-/** Optional. The Swap door stays disabled until a pool address is configured (WP7). */
-export const POOL: Address | undefined = env.VITE_POOL && env.VITE_POOL !== '' ? addressOr(env.VITE_POOL, ZERO_ADDRESS) : undefined
+/** Optional. The Uniswap permissioned pool is identified by its PermissionsAdapter (VITE_POOL_ADAPTER, with VITE_POOL_STABLE; see src/components/swap/config.ts). The journey rail's Swap step stays off without it. VITE_POOL is the older name for the same address. */
+export const POOL: Address | undefined = [env.VITE_POOL_ADAPTER, env.VITE_POOL].some((v) => v && v !== '') ? addressOr(env.VITE_POOL_ADAPTER || env.VITE_POOL, ZERO_ADDRESS) : undefined
 
 /** Default policy: keccak256("nachweis.pid.over18.v1"). */
 export const DEFAULT_POLICY_ID: Hex = keccak256(stringToBytes('nachweis.pid.over18.v1'))

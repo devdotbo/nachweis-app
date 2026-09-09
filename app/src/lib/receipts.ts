@@ -5,7 +5,7 @@
 import { useSyncExternalStore } from 'react'
 import type { Address, Hex } from 'viem'
 
-export type ReceiptKind = 'attestByOperator' | 'approve' | 'revoke' | 'subscribe'
+export type ReceiptKind = 'attestByOperator' | 'approve' | 'revoke' | 'subscribe' | 'swap' | 'swapRefused'
 
 export interface Receipt {
   kind: ReceiptKind
@@ -40,4 +40,6 @@ export const RECEIPT_LABEL: Record<ReceiptKind, string> = {
   approve: 'Approved',
   revoke: 'Revoked',
   subscribe: 'Subscribed',
+  swap: 'Swapped in the permissioned pool',
+  swapRefused: 'Swap refused by the pool',
 }
