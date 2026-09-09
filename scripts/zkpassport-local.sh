@@ -31,7 +31,7 @@ POLICY=$(cast keccak "nachweis.pid.over18.v1")
 DOMAIN=localhost
 SCOPE=attestat-over18
 TTL=2592000
-CHAIN_ID=31337
+CHAIN_ID="${CHAIN_ID:-31337}"   # 11155111 lets the app card bind the chain (the zkPassport SDK knows no name for 31337)
 
 mkdir -p "$RUN_DIR"
 PIDS="$RUN_DIR/pids"
