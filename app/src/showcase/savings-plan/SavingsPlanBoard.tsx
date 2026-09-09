@@ -11,12 +11,12 @@ import { Link } from 'react-router'
 import { ConnectCard } from '../../components/ConnectCard'
 import { StandingOrderCard } from '../../components/StandingOrderCard'
 import { TxHash } from '../../components/TxLine'
-import { AUTOMATION_URL, FUND_TOKEN, POLICY_ID, PRIVY_APP_ID, REGISTRY } from '../../config'
+import { AUTOMATION_URL, FUND_TOKEN, POLICY_ID, PRIVY_APP_ID, REGISTRY, REQUIRED_BITS } from '../../config'
 import { automation, useAutomationPoll } from '../../lib/automation'
 import { useDecision, useEligible, useRegistryStatus } from '../../lib/chain'
 import { bitFlags, formatExpiry, shortAddress, shortHex, tierLabel } from '../../lib/format'
 import type { Wallet } from '../../lib/wallet'
-import { CHECKER, FUND_TOKEN_B, SECOND_WALLET, SUBSCRIPTION_B, UNATTESTED_WALLET, WARP_SECONDS } from './config'
+import { CHECKER, FUND_TOKEN_B, SECOND_WALLET, SUBSCRIPTION_B, UNATTESTED_WALLET } from './config'
 import { LOCAL_CHAIN, OPERATOR_ON_BOARD, useBalanceOf, useCheckerFlags, useDemoAmountB, useEligibleOf, useInvestorWrites, useOperatorBeats, useTokenBGate, type BeatState } from './hooks'
 
 /** Section 8 of the case, verbatim. */
@@ -133,7 +133,8 @@ export function SavingsPlanBoard({ wallet }: { wallet: Wallet }) {
   }
   const transferOpen = address === undefined ? undefined : Boolean(open && recipientAddress && recipientEligible)
 
-  const decisionChip = !address ? 'no wallet' : eligible ? 'eligible' : status.revoked ? 'revoked' : !status.hasDecision ? 'no decision' : !status.approved ? 'awaiting approval' : status.expiry <= BigInt(Math.floor(Date.now() / 1000)) ? 'expired' : 'not eligible'
+  // Not eligible with approval, no revoke and the bits present leaves one cause: the chain's clock passed the expiry (the browser clock may differ on anvil).
+  const decisionChip = !address ? 'no wallet' : eligible ? 'eligible' : status.revoked ? 'revoked' : !status.hasDecision ? 'no decision' : !status.approved ? 'awaiting approval' : (decision.bits & REQUIRED_BITS) !== REQUIRED_BITS ? 'bits missing' : 'expired'
 
   return (
     <main className="page">
@@ -317,8 +318,8 @@ export function SavingsPlanBoard({ wallet }: { wallet: Wallet }) {
             </div>
             <div className="beat">
               <h3>Expiry</h3>
-              <p className="hint">{LOCAL_CHAIN ? `Moves anvil's clock ${WARP_SECONDS / 3600} hours forward (evm_increaseTime); a decision whose expiry is behind the clock closes every door. ${SENTENCES.expiryLocal}` : `${SENTENCES.expiryLocal} This chain's clock cannot be moved; the decision expires at ${formatExpiry(decision.expiry)}.`}</p>
-              <button type="button" className="btn btn-yellow btn-sm" onClick={() => ops.warp(WARP_SECONDS)} disabled={!LOCAL_CHAIN || ops.beat.status === 'pending'}>
+              <p className="hint">{LOCAL_CHAIN ? `Moves anvil's clock to one minute past this decision's expiry (evm_increaseTime, ${formatExpiry(decision.expiry)}); a decision whose expiry is behind the clock closes every door. ${SENTENCES.expiryLocal}` : `${SENTENCES.expiryLocal} This chain's clock cannot be moved; the decision expires at ${formatExpiry(decision.expiry)}.`}</p>
+              <button type="button" className="btn btn-yellow btn-sm" onClick={() => ops.warp(decision.expiry)} disabled={!LOCAL_CHAIN || !status.hasDecision || ops.beat.status === 'pending'}>
                 Move the clock past the expiry
               </button>
             </div>

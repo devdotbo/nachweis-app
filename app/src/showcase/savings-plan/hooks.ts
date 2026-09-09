@@ -131,10 +131,12 @@ export function useOperatorBeats() {
       const decision = { policyId: POLICY_ID, bits: REQUIRED_BITS, tier: TIER_A, expiry: now + BigInt(DECISION_TTL_SECONDS), statusRef: ZERO32, revoked: false }
       return run('Attest by operator', 'attestByOperator', subject, () => send('attestByOperator', [subject, decision]))
     },
-    /** anvil only: evm_increaseTime then evm_mine, so every door reads a clock past the expiry. */
-    warp: async (seconds: number) => {
+    /** anvil only: evm_increaseTime to one minute past the decision's expiry, then evm_mine, so every door reads a clock past it. */
+    warp: async (expiry: bigint) => {
       setBeat({ status: 'pending', label: 'Expiry (local clock)' })
       try {
+        const now = client ? (await client.getBlock()).timestamp : BigInt(Math.floor(Date.now() / 1000))
+        const seconds = Number(expiry > now ? expiry - now : 0n) + 60
         for (const [method, params] of [
           ['evm_increaseTime', [seconds]],
           ['evm_mine', []],

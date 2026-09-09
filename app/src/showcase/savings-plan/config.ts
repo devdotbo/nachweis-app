@@ -15,5 +15,3 @@ export const CHECKER = addressOf(env.VITE_CHECKER)
 /** Prefilled transfer recipients: a second wallet the operator attested for the demo, and one nobody attested. */
 export const SECOND_WALLET = addressOf(env.VITE_SHOWCASE_SECOND_WALLET)
 export const UNATTESTED_WALLET: Address = addressOf(env.VITE_SHOWCASE_UNATTESTED) ?? '0x90F79bf6EB2c4f870365E785982E1f101E93b906'
-/** How far the expiry beat moves the local clock (seconds). */
-export const WARP_SECONDS = 24 * 3600
