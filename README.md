@@ -8,7 +8,7 @@ Attestat helps token issuers accept EUDI identity evidence and apply their appro
 
 Spoken line: "Your ID wallet should work where you invest."
 
-ETHOnline 2026 submission, Continuity entry. Pre-existing work, event changes to it, adapted third-party code and new code are listed in [DISCLOSURE.md](DISCLOSURE.md). How the project is run (wiki as specification and decision record, work packages with acceptance tests, evidence labels) is in [docs/process.md](docs/process.md); the human and AI contributions are in [docs/ai-attribution.md](docs/ai-attribution.md).
+ETHOnline 2026 submission, Classic entry (decision of 2026-09-09: Attestat is a new project; the builder's own public verifier library is disclosed as pre-existing work). Pre-existing work, event changes to it, adapted third-party code and new code are listed in [DISCLOSURE.md](DISCLOSURE.md). How the project is run (wiki as specification and decision record, work packages with acceptance tests, evidence labels) is in [docs/process.md](docs/process.md); the human and AI contributions are in [docs/ai-attribution.md](docs/ai-attribution.md).
 
 ## What happens
 
