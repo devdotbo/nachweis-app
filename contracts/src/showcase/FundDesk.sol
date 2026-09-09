@@ -18,7 +18,11 @@ import {IEligibility} from "../interfaces/IEligibility.sol";
 ///         Demo simplifications, stated on purpose:
 ///         - A distribution is paid per unit over the investor's current FundToken balance at claim
 ///           time, without a balance snapshot at distribution time. Units bought or received after a
-///           distribution still claim it; units sent away lose it.
+///           distribution still claim it; units sent away lose it, and the receiver's claim is served
+///           only from what is left of that distribution: each distribution pays out at most its total
+///           (paidOut), so units that were already claimed against and then sent on do not pay twice.
+///           A claim after the distribution is exhausted reverts NothingToClaim. The desk therefore
+///           always holds every outstanding unit's par value plus the unpaid distribution remainders.
 ///         - FundToken has no burn, so redeemed units stay in the desk as inventory. New subscriptions
 ///           are served from that inventory first and minted only for the remainder.
 ///         - Rounding dust from per-unit math stays in the desk.
@@ -60,6 +64,9 @@ contract FundDesk is Ownable {
 
     /// @notice claimed[id][investor]
     mapping(uint256 => mapping(address => bool)) public claimed;
+
+    /// @notice Stable paid out so far per distribution; never exceeds distributions[id].total.
+    mapping(uint256 => uint256) public paidOut;
 
     constructor(IERC20 stable_, address owner_) Ownable(owner_) {
         stable = stable_;
@@ -156,10 +163,13 @@ contract FundDesk is Ownable {
         emit Distributed(id, totalStable, perUnit);
     }
 
-    /// @notice Stable the investor can claim for one distribution, based on the current balance.
+    /// @notice Stable the investor can claim for one distribution: the pro-rata share of the current
+    ///         balance, capped at what the distribution has not paid out yet.
     function claimable(address investor, uint256 id) public view returns (uint256) {
         if (claimed[id][investor]) return 0;
-        return token.balanceOf(investor) * distributions[id].perUnit / 1e18;
+        uint256 share = token.balanceOf(investor) * distributions[id].perUnit / 1e18;
+        uint256 remaining = distributions[id].total - paidOut[id];
+        return share < remaining ? share : remaining;
     }
 
     /// @notice Sum over all distributions. Bounded loop, demo size.
@@ -175,6 +185,7 @@ contract FundDesk is Ownable {
         paid = claimable(msg.sender, id);
         if (paid == 0) revert NothingToClaim();
         claimed[id][msg.sender] = true;
+        paidOut[id] += paid;
         stable.safeTransfer(msg.sender, paid);
         emit Claimed(id, msg.sender, paid);
     }
@@ -187,6 +198,7 @@ contract FundDesk is Ownable {
             uint256 amount = claimable(msg.sender, id);
             if (amount == 0) continue;
             claimed[id][msg.sender] = true;
+            paidOut[id] += amount;
             stable.safeTransfer(msg.sender, amount);
             emit Claimed(id, msg.sender, amount);
             paid += amount;
