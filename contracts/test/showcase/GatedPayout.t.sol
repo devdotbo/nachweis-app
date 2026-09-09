@@ -58,7 +58,9 @@ contract GatedPayoutTest is Test {
     }
 
     function _decision(uint64 expiry) internal pure returns (Decision memory) {
-        return Decision({policyId: POLICY, bits: REQUIRED, tier: 1, expiry: expiry, statusRef: keccak256("status/0"), revoked: false});
+        return Decision({
+            policyId: POLICY, bits: REQUIRED, tier: 1, expiry: expiry, statusRef: keccak256("status/0"), revoked: false
+        });
     }
 
     /// Operator path: evidence and approval in one transaction.
@@ -234,7 +236,9 @@ contract GatedPayoutTest is Test {
         address other = makeAddr("other-payer");
         token.mint(other, AMOUNT);
         (address[] memory rs, uint256[] memory as_) = _one(alice, AMOUNT);
-        vm.expectRevert(abi.encodeWithSelector(IERC20Errors.ERC20InsufficientAllowance.selector, address(gate), 0, AMOUNT));
+        vm.expectRevert(
+            abi.encodeWithSelector(IERC20Errors.ERC20InsufficientAllowance.selector, address(gate), 0, AMOUNT)
+        );
         vm.prank(other);
         gate.payout(rs, as_, AMOUNT, RUN);
     }
