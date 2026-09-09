@@ -13,12 +13,14 @@
 #   -> approve again: subscribe 100 mUSD once more, 50 NDF from the desk's inventory and 50 minted: 860 mUSD, 150 NDF
 #   -> prints SHOWCASE-INVESTOR-MONEY-LOCAL PASS
 #
-# Usage: scripts/showcase-investor-money-local.sh [--keep] [--app]
+# Usage: scripts/showcase-investor-money-local.sh [--keep] [--app] [--test]
 #   --keep    leave anvil running (URL and pid printed) with the addresses in RUN_DIR/env.json
-#   --app     also deploy Deploy.s.sol against the same registry and start the Vite dev server with the dev
-#             signer keys, VITE_DESK and the addresses, for hand-clicking /showcase/investor-money and /issuer
-#             on anvil (implies --keep; the flow above has already run, so the investor is approved and holds
-#             860 mUSD and 150 NDF when the page opens)
+#   --app     after the flow, also deploy Deploy.s.sol and start the Vite dev server with the dev signer keys,
+#             VITE_DESK and the addresses, for hand-clicking /showcase/investor-money and /issuer on anvil
+#             (implies --keep; the investor is then approved and holds 860 mUSD and 150 NDF when the page opens)
+#   --test    browser run instead of the cast flow: deploy, mint the operator's treasury, start the app, then
+#             `bunx playwright test e2e/showcase-investor-money.spec.ts` clicks the beats above from a fresh
+#             investor (attest, revoke and approve by cast, the operator's action), then stop (exit code = test result)
 # Env: RUN_DIR (default .e2e/showcase-investor-money, gitignored), ANVIL_PORT, APP_PORT (default: free ports).
 # Nothing touches a public chain: every transaction goes to the local anvil. No Privy app is involved
 # (the page then offers the dev signer; with VITE_PRIVY_APP_ID it would offer email sign-in instead).
@@ -26,18 +28,19 @@ set -eEuo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 RUN_DIR="${RUN_DIR:-$ROOT/.e2e/showcase-investor-money}"
-KEEP=0; APP=0
+KEEP=0; APP=0; TEST=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --keep) KEEP=1; shift ;;
     --app) APP=1; KEEP=1; shift ;;
-    -h|--help) sed -n '2,25p' "$0"; exit 0 ;;
+    --test) TEST=1; shift ;;
+    -h|--help) sed -n '2,28p' "$0"; exit 0 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
 done
 
 export PATH="$HOME/.foundry/bin:$HOME/.bun/bin:$PATH"
-for tool in anvil forge cast jq python3; do
+for tool in anvil forge cast jq python3 node bun; do
   command -v "$tool" >/dev/null || { echo "missing tool: $tool" >&2; exit 1; }
 done
 
@@ -114,6 +117,34 @@ TOKEN=$(echo "$DEPLOY_OUT" | awk '/FundToken:/ {print $2}' | head -1)
 expect "FundToken.issuer is the desk" "$(cast call --rpc-url "$RPC" "$TOKEN" "issuer()(address)")" "$DESK"
 expect "FundDesk.token" "$(cast call --rpc-url "$RPC" "$DESK" "token()(address)")" "$TOKEN"
 say "AttestationRegistry $REGISTRY, MockStable $STABLE, FundDesk $DESK, FundToken $TOKEN (issuer = desk)"
+
+start_app() { # writes RUN_DIR/env.json (mode, appUrl, addresses) and starts Vite with the dev signer keys
+  APP_PORT="${APP_PORT:-$(free_port)}"
+  APP_URL="http://127.0.0.1:$APP_PORT"
+  [ -d "$ROOT/app/node_modules/vite" ] || (cd "$ROOT/app" && bun install --silent) || die "bun install failed in app/"
+  (cd "$ROOT/app" && exec env -u VITE_MOCK -u VITE_PRIVY_APP_ID -u VITE_AUTOMATION_URL VITE_CHAIN_ID=31337 VITE_RPC_URL="$RPC" VITE_REGISTRY="$REGISTRY" VITE_DESK="$DESK" \
+    VITE_FUND_TOKEN="${MAIN_TOKEN:-$TOKEN}" VITE_SUBSCRIPTION="${SUBSCRIPTION:-}" VITE_DEV_PRIVATE_KEY=$K1 VITE_DEV_OPERATOR_KEY=$K0 \
+    node node_modules/vite/bin/vite.js --port "$APP_PORT" --strictPort --host 127.0.0.1 > "$RUN_DIR/app.log" 2>&1) & echo $! >> "$PIDS"
+  for _ in $(seq 1 200); do curl -fs -m 5 "$APP_URL/" >/dev/null 2>&1 && break; sleep 0.3; done
+  curl -fs -m 5 "$APP_URL/" >/dev/null 2>&1 || die "the app did not come up ($RUN_DIR/app.log)"
+  jq -n --arg mode showcase-investor-money --arg appUrl "$APP_URL" --arg rpcUrl "$RPC" --arg registry "$REGISTRY" --arg stable "$STABLE" --arg desk "$DESK" --arg token "$TOKEN" \
+    --arg operator "$OPERATOR" --arg investor "$INVESTOR" --arg policyId "$POLICY" --arg operatorKey "$K0" --arg runDir "$RUN_DIR" \
+    '$ARGS.named + {chainId: 31337}' > "$RUN_DIR/env.json"
+}
+
+if [ $TEST -eq 1 ]; then
+  # Browser run: the spec clicks the beats from a fresh investor; only the operator's treasury is minted here.
+  send $K0 "$STABLE" "mint(address,uint256)" "$OPERATOR" $MUSD_1000 || die "mint to the operator failed"
+  start_app
+  say "app on $APP_URL, env for the spec: $RUN_DIR/env.json"
+  set +e; trap - ERR
+  (cd "$ROOT/app" && APP_E2E_ENV="$RUN_DIR/env.json" bunx playwright test e2e/showcase-investor-money.spec.ts)
+  rc=$?
+  set -e
+  [ $KEEP -eq 1 ] || stop_all
+  [ $rc -eq 0 ] && say "BROWSER SHOWCASE (investor-money) OK" || say "BROWSER SHOWCASE (investor-money) FAILED (exit $rc); logs in $RUN_DIR"
+  exit $rc
+fi
 
 # ------------------------------------------------------------------ 3. test stablecoin: 1,000 mUSD each to the investor and the operator's treasury
 send $K0 "$STABLE" "mint(address,uint256)" "$INVESTOR" $MUSD_1000 || die "mint to the investor failed"
@@ -203,15 +234,10 @@ if [ $APP -eq 1 ]; then
   MAIN_TOKEN=$(echo "$MAIN_OUT" | awk '/FundToken:/ {print $2}' | head -1)
   SUBSCRIPTION=$(echo "$MAIN_OUT" | awk '/Subscription:/ {print $2}' | head -1)
   MAIN_REGISTRY=$(echo "$MAIN_OUT" | awk '/AttestationRegistry:/ {print $2}' | head -1)
-  # Deploy.s.sol deploys its own registry; point the app at the desk's registry, where the investor is approved.
-  # The product FundToken then reads the other registry; only the desk's doors matter on this run.
-  APP_PORT="${APP_PORT:-$(free_port)}"
-  [ -d "$ROOT/app/node_modules/vite" ] || (cd "$ROOT/app" && bun install --silent) || die "bun install failed in app/"
-  (cd "$ROOT/app" && exec env -u VITE_MOCK -u VITE_PRIVY_APP_ID -u VITE_AUTOMATION_URL VITE_CHAIN_ID=31337 VITE_RPC_URL="$RPC" VITE_REGISTRY="$REGISTRY" VITE_DESK="$DESK" \
-    VITE_FUND_TOKEN="$MAIN_TOKEN" VITE_SUBSCRIPTION="$SUBSCRIPTION" VITE_DEV_PRIVATE_KEY=$K1 VITE_DEV_OPERATOR_KEY=$K0 \
-    bun run dev -- --port "$APP_PORT" --strictPort > "$RUN_DIR/app.log" 2>&1) & echo $! >> "$PIDS"
-  for _ in $(seq 1 100); do curl -fs "http://127.0.0.1:$APP_PORT/" >/dev/null 2>&1 && break; sleep 0.3; done
-  say "app: http://127.0.0.1:$APP_PORT/showcase/investor-money (investor, dev signer = anvil key 1) and http://127.0.0.1:$APP_PORT/issuer (operator = anvil key 0); product Deploy.s.sol registry $MAIN_REGISTRY unused, Subscription $SUBSCRIPTION"
+  # Deploy.s.sol deploys its own registry; the app points at the desk's registry, where the investor is approved.
+  # The product FundToken and Subscription then read the other registry; only the desk's doors matter on this run.
+  start_app
+  say "app: $APP_URL/showcase/investor-money (investor, dev signer = anvil key 1) and $APP_URL/issuer (operator = anvil key 0); product Deploy.s.sol registry $MAIN_REGISTRY unused, Subscription $SUBSCRIPTION"
 fi
 if [ $KEEP -eq 1 ]; then
   echo "kept running: anvil $RPC (pids in $PIDS; stop with: while read p; do kill \$p; done < $PIDS)"
