@@ -67,3 +67,10 @@ export const PRIVY_APP_ID: string | undefined = env.VITE_PRIVY_APP_ID && env.VIT
 export const PRIVY_SIGNER_ID: string | undefined = env.VITE_PRIVY_SIGNER_ID && env.VITE_PRIVY_SIGNER_ID !== '' ? env.VITE_PRIVY_SIGNER_ID : undefined
 /** The issuer's automation (automation/): GET /status, GET /policy/:address, POST /tick. Unset: no standing-order card, no automation log. */
 export const AUTOMATION_URL: string | undefined = env.VITE_AUTOMATION_URL && env.VITE_AUTOMATION_URL !== '' ? env.VITE_AUTOMATION_URL.replace(/\/+$/, '') : undefined
+
+/**
+ * Showcase, investor money (docs/showcase/investor-money.md): the FundDesk address. Optional. The desk knows its
+ * own fund token and stablecoin (desk.token(), desk.stable()), so this is the only address the route needs.
+ * Unset: /showcase/investor-money says so and the issuer console shows no desk panel.
+ */
+export const DESK: Address | undefined = env.VITE_DESK && env.VITE_DESK !== '' ? addressOr(env.VITE_DESK, ZERO_ADDRESS) : undefined

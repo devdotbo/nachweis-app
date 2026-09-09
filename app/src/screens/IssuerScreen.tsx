@@ -5,17 +5,19 @@ import { EventLog } from '../components/EventLog'
 import { Receipts } from '../components/HistoryCard'
 import { IssuerPending } from '../components/IssuerPending'
 import { RevokeByAddress } from '../components/RevokeByAddress'
-import { AUTOMATION_URL, POLICY_ID, REQUIRED_BITS } from '../config'
+import { AUTOMATION_URL, DESK, POLICY_ID, REQUIRED_BITS } from '../config'
 import { useRegistryEvents, useRegistryTx } from '../lib/chain'
 import { shortHex } from '../lib/format'
 import { useSessions } from '../lib/sessions'
 import type { Wallet } from '../lib/wallet'
+import { DeskPanel } from '../showcase/investor-money/DeskPanel'
 
 const SECTIONS = [
   ['#queue', 'Queue'],
   ['#decisions', 'Decisions'],
   ['#history', 'Event history'],
   ...(AUTOMATION_URL ? ([['#automation', 'Standing orders']] as const) : []),
+  ...(DESK ? ([['#desk', 'Fund desk']] as const) : []),
   ['#revoke', 'Revoke by address'],
 ] as const
 
@@ -85,6 +87,7 @@ export function IssuerScreen({ wallet }: { wallet: Wallet }) {
       </section>
       <EventLog />
       <AutomationLog />
+      <DeskPanel operator={wallet.address} />
       <RevokeByAddress operator={wallet.address} />
     </main>
   )
