@@ -13,7 +13,7 @@ function BlockTag() {
   return (
     <span className={`tag${data !== undefined ? ' live' : ''}`} title={data !== undefined ? `latest block ${data.toString()}` : 'waiting for the first block'}>
       {chain.name}
-      {data !== undefined ? ` · block ${data.toString()}` : ''}
+      {data !== undefined ? `, block ${data.toString()}` : ''}
     </span>
   )
 }
