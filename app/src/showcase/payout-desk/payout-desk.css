@@ -1,0 +1,24 @@
+/* Payout desk showcase (WP38). Only what styles.css does not already have; hairlines, no fills beyond tables. */
+.pd-officers{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px}
+.pd-officers .caption{flex-basis:100%}
+.pd-policy{margin:0;padding-left:18px;font-size:.86rem;color:var(--ink-soft);display:flex;flex-direction:column;gap:3px}
+.pd-policy li{overflow-wrap:anywhere}
+.pd-sub{font-size:.86rem;font-weight:500;color:var(--ink-mute)}
+.pd-note{display:flex;flex-direction:column;gap:8px;align-items:flex-start}
+.pd-note .tag{color:var(--yellow-ink);border-color:rgba(255,204,0,.6);background:var(--yellow-wash)}
+.pd-amount{width:110px;min-width:0;flex:none;text-align:right}
+.pd-run{display:flex;flex-direction:column;gap:8px}
+.pd-run .top{display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap}
+.pd-run .meta{display:flex;gap:12px;align-items:center;flex-wrap:wrap;font-size:.84rem;color:var(--ink-mute)}
+.pd-items{display:grid;grid-template-columns:max-content max-content max-content minmax(0,1fr);gap:4px 14px;font-size:.84rem;align-items:baseline}
+.pd-items .mono{font-size:.78rem}
+.pd-items .amount{font-variant-numeric:tabular-nums;text-align:right}
+.pd-bypass{display:flex;flex-direction:column;gap:8px;align-items:flex-start}
+.pd-bypass .result{display:flex;flex-direction:column;gap:2px;font-size:.85rem}
+.pd-log{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:3px;font-size:.82rem}
+.pd-log li{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:12px;align-items:baseline}
+.pd-log li span:last-child{overflow-wrap:anywhere}
+.pd-kvs .btn{margin-left:10px;vertical-align:middle}
+.pd-inline{display:inline-flex;gap:8px;align-items:center;flex-wrap:wrap}
+@media (max-width:640px){.pd-items{grid-template-columns:max-content minmax(0,1fr)}}
+.pd-amount.pd-invalid{border-color:var(--red)}

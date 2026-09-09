@@ -1,0 +1,22 @@
+{
+  "name": "attestat-payout-desk",
+  "version": "0.1.0",
+  "description": "Showcase: contractor payout desk. A company treasury (Privy server wallet under a policy) pays contractors through GatedPayout, which refuses any recipient without a live Attestat decision.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "start": "bun run src/server.ts",
+    "setup": "bun run src/setup.ts",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@privy-io/node": "0.34.0",
+    "viem": "2.56.3"
+  },
+  "devDependencies": {
+    "bun-types": "1.4.2",
+    "typescript": "5.9.3"
+  }
+}
