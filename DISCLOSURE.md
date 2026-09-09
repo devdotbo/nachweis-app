@@ -14,7 +14,7 @@ Product name: Attestat. Repository, crate, package and on-chain identifiers keep
 
 ## 2. Event changes to pre-existing code (the relay branch)
 
-The verifier was modified during the event on a branch. Branch `nachweis-relay` in the worktree `/Users/bioharz/git/ethglobal/nachweis-verifier-relay` (a git worktree of the repository above), base `a08d72c`, 8 commits, all dated 2026-09-07, 13 files changed, 2,650 insertions, 32 deletions:
+The verifier was modified during the event on a branch. Branch `nachweis-relay` in the worktree `/Users/bioharz/git/ethglobal/nachweis-verifier-relay` (a git worktree of the repository above), base `a08d72c`, 10 commits dated 2026-09-07 and 2026-09-08, 13 files changed, 3,589 insertions, 165 deletions (sum over the exported patch series, `git apply --stat` on `vendor/verifier-relay-patches/*.patch`, counted 2026-09-09):
 
 ```
 cbbd2f8 Add blind-relay session table, client JWK validation and address-bound nonce
@@ -25,6 +25,8 @@ e53b000 Test the blind-relay path end to end over the real router
 79a80f6 Test verifier mode end to end over the real router
 fa21004 Document verifier mode for the bridge
 8517398 Record the josekit dev-dependency of verifier-service in Cargo.lock
+86785d4 Minimize GET /result/:id, gate plaintext behind RESULT_TOKEN, cap and expire bridge sessions
+7262a32 Document the minimized result, RESULT_TOKEN and the bridge session bounds
 ```
 
 Files: `Cargo.lock`, `README.md`, `docs/blind-relay.md`, `docs/bridge-mode.md`, `verifier-service/Cargo.toml`, `verifier-service/src/{bridge.rs,handlers.rs,lib.rs,main.rs,relay.rs,state.rs}`, `verifier-service/tests/{bridge_http.rs,relay_http.rs}`.
@@ -34,7 +36,7 @@ Publication status on 2026-09-08: the branch is not pushed to any remote (`git b
 1. In this repository: `scripts/export-relay-patches.sh` exports the series with `git format-patch a08d72c..HEAD` into `vendor/verifier-relay-patches/` with a README naming the base commit, the upstream repository and the licence. Applying the patches to a clone of `Klartext-ID/klartext-verifier` at `a08d72c` with `git am` reproduces the branch. The exported patches are committed here, so the relay work is public as soon as this repository is.
 2. Pushing the branch to `Klartext-ID/klartext-verifier` is the builder's decision and is not done as of this writing.
 
-Later event commits on that branch (WP17, result minimization and result-endpoint authentication) are re-exported by the same script; the README in the patch directory states the exported head.
+The last two commits are the WP17 work (result minimization and result-endpoint authentication); the README in the patch directory states the exported head (`7262a32`).
 
 ## 3. Adapted or copied third-party code in this repository
 

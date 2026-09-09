@@ -11,7 +11,7 @@ Nothing in this file touches a live network. Every `--broadcast` below goes to a
 
 ## Known blockers (read first)
 
-TODO-1 (contracts, resolved on main): `forge build` failed on a clean checkout because solc 0.8.28 does not allow reading a non-library contract's constant through the contract type (`FundToken.DEFAULT_REQUIRED_BITS` in the three scripts). Commit `1162f2f` replaced the expression with the literal `uint256(0x3)`. `forge clean && forge build && forge test` on main now gives 87 passed, 0 failed, 10 fork tests skipped (re-verified 2026-09-07 on branch `wp9c-consistency`). The "scratch copy" mentions below refer to the run made before that fix; the commands are the same on main.
+TODO-1 (contracts, resolved on main): `forge build` failed on a clean checkout because solc 0.8.28 does not allow reading a non-library contract's constant through the contract type (`FundToken.DEFAULT_REQUIRED_BITS` in the three scripts). Commit `1162f2f` replaced the expression with the literal `uint256(0x3)`. `forge clean && forge build && forge test` on main now gives 152 passed, 0 failed, 20 fork tests skipped (re-verified 2026-09-09 on main `56424b4` after the WP31 to WP38 merges; 87 passed, 10 skipped on 2026-09-07 on branch `wp9c-consistency`). The "scratch copy" mentions below refer to the run made before that fix; the commands are the same on main.
 
 TODO-2 (fixture expiry, resolved by WP9b): the prover fixture's `expiry` is now the issuer credential `exp`, 1819756800 (2027-09-01), so a plain `anvil` with the wall-clock timestamp works: no `--timestamp` flag and no time window. `Sp1PidVerifier`, `NoirPidVerifier` and `isEligible` compare the expiry with `block.timestamp`, which stays below it until 2027-09-01. WP9b also re-minted the vector: subject `0xF99EDdE971F4e9c88715a79CA78963284A2955dC`, challenge `7426bd0ea9dbe592f719371e370251246c99a1838fe3c2bf5646e90221f69df2`, nonce `0x306863157ddb59f4e5a56f41aa8591e68b574c8c3475c43d9bd469220be90762` (`prover-sp1/fixtures/input.json`, `calldata-groth16.json`); section 5 uses these values.
 
@@ -50,12 +50,12 @@ export W=/Users/bioharz/git/ethglobal/nachweis-app          # repo root
 | step | command | expected | status |
 |---|---|---|---|
 | 2.1 | `cd $W/contracts && forge clean && forge build` | `Compiler run successful!` | verified 2026-09-07 on `wp9c-consistency` (main plus the POLICY_ID default change); TODO-1 is fixed on main |
-| 2.2 | `cd $W/contracts && forge test` | `87 tests passed, 0 failed, 10 skipped` (the 10 are fork tests, skipped without `SEPOLIA_RPC_URL`) | verified 2026-09-07 on `wp9c-consistency`: 87 passed, 0 failed, 10 skipped |
+| 2.2 | `cd $W/contracts && forge test` | `152 tests passed, 0 failed, 20 skipped` (the 20 are fork tests, skipped without `SEPOLIA_RPC_URL`) | verified 2026-09-09 on main `56424b4`: 152 passed, 0 failed, 20 skipped (2026-09-07 on `wp9c-consistency`: 87 passed, 10 skipped) |
 | 2.3 | `cd $W/service && cargo build --release` | `Finished release profile` | verified locally 2026-09-07 (7.7 s incremental; the first build compiles sp1-sdk and takes minutes) |
-| 2.4 | `cd $W/service && cargo test` | 3 unit tests plus `mock_pipeline_attests_and_revokes_on_anvil ... ok` | verified locally 2026-09-07 with `contracts/out` populated from the scratch build. Note: when `contracts/out` is missing the test runs `forge build` first; if that fails the test passes with a `SKIP` message instead of running; check for `SKIP` with `cargo test --test anvil -- --nocapture` |
+| 2.4 | `cd $W/service && cargo test` | 12 unit tests plus `cargo test --test anvil` 3 tests (`mock_pipeline_attests_and_revokes_on_anvil ... ok`; verified 2026-09-09 on main `56424b4`) | verified locally 2026-09-07 with `contracts/out` populated from the scratch build. Note: when `contracts/out` is missing the test runs `forge build` first; if that fails the test passes with a `SKIP` message instead of running; check for `SKIP` with `cargo test --test anvil -- --nocapture` |
 | 2.5 | `cd $W/app && bun install && bun run build` | `416 packages installed`, then `tsc` clean and `vite build` into `dist/` (one chunk-size warning) | verified locally 2026-09-07 |
 | 2.6 | `cd $W/prover-sp1/script && cargo build --release` | builds the guest through `build.rs`; produces `$W/prover-sp1/target/elf-compilation/riscv64im-succinct-zkvm-elf/release/nachweis-pid-program` | verified locally 2026-09-07 (1 m 28 s) |
-| 2.7 | `cd $W/circuits/pid-sdjwt && nargo test && nargo compile` | `4 tests passed`; `target/pid_sdjwt.json` | verified locally 2026-09-07 |
+| 2.7 | `cd $W/circuits/pid-sdjwt && nargo test && nargo compile` | `9 tests passed`; `target/pid_sdjwt.json` | verified locally 2026-09-07 (4 tests then), 9 tests on 2026-09-09 on main `56424b4` |
 
 The Noir proof itself (`bb prove`, `bb write_solidity_verifier`) is documented in `circuits/README.md`; it is not part of the demo sequence because the generated verifier and the proof fixture are already committed under `contracts/`.
 
@@ -406,7 +406,7 @@ What to record for the video (screen recording only, no speedups): the Etherscan
 | item | status |
 |---|---|
 | tool versions | verified |
-| `forge build`, `forge test` | verified on `wp9c-consistency` (TODO-1 fixed on main by `1162f2f`): 87 passed, 10 skipped |
+| `forge build`, `forge test` | verified on `wp9c-consistency` (TODO-1 fixed on main by `1162f2f`): 87 passed, 10 skipped; on main `56424b4` (2026-09-09): 152 passed, 20 skipped |
 | `cargo build --release`, `cargo test` (service, incl. anvil e2e) | verified |
 | `bun install`, `bun run build` (app) | verified |
 | SP1 guest and host build | verified |

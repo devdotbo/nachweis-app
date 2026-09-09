@@ -17,7 +17,7 @@ about 4 to 6 s on an M3 Max and 1.9 GB of memory.
 ```
 cd companion && bun install
 bun run src/cli.ts help
-bun test                      # 21 tests: nonce vectors, statement pre-check on the SP1 fixture, minted
+bun test                      # 22 tests: nonce vectors, statement pre-check on the SP1 fixture, minted
                               # presentation vs gen-prover.ts, x5c leaf round trip, JWE round trip, public inputs,
                               # two-device handoff parser (JSON, URI, bridge body, rejections)
 ```
