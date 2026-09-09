@@ -65,7 +65,7 @@ export interface ProbeResult {
 }
 
 /** Desk service base URL. Default: the port scripts/showcase-backoffice-local.sh starts it on. */
-export const BACKOFFICE_URL: string = ((import.meta.env.VITE_BACKOFFICE_URL as string | undefined) || 'http://127.0.0.1:8791').replace(/\/+$/, '')
+export const BACKOFFICE_URL: string = ((import.meta.env.VITE_BACKOFFICE_URL as string | undefined) || 'http://127.0.0.1:8794').replace(/\/+$/, '')
 
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
   const r = await fetch(`${BACKOFFICE_URL}${path}`, { ...init, headers: { 'content-type': 'application/json', ...(init?.headers ?? {}) } })

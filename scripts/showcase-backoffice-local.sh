@@ -13,14 +13,14 @@
 #
 # Usage: scripts/showcase-backoffice-local.sh [--keep]
 #   --keep    leave anvil and the desk running and start the app (Vite) with the addresses, for clicking
-# Env: ANVIL_PORT (default 8548), DESK_PORT (default 8791), APP_PORT (default 5179), RUN_DIR (default .e2e/showcase-backoffice)
+# Env: ANVIL_PORT (default 8548), DESK_PORT (default 8794), APP_PORT (default 5179), RUN_DIR (default .e2e/showcase-backoffice)
 # Nothing touches a public chain: every transaction goes to the local anvil.
 set -eEuo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 RUN_DIR="${RUN_DIR:-$ROOT/.e2e/showcase-backoffice}"
 ANVIL_PORT="${ANVIL_PORT:-8548}"
-DESK_PORT="${DESK_PORT:-8791}"
+DESK_PORT="${DESK_PORT:-8794}"
 APP_PORT="${APP_PORT:-5179}"
 RPC="http://127.0.0.1:$ANVIL_PORT"
 DESK="http://127.0.0.1:$DESK_PORT"
