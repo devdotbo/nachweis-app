@@ -100,13 +100,13 @@ async function updateRules(cfg: Config) {
   console.log(`policy ${p.id} rules replaced (${rules.length} ALLOW rules): gate ${process.env.GATED_PAYOUT}, token ${process.env.PAYOUT_TOKEN}, cap ${cfg.cap}`)
 }
 
-async function trySign(privy: PrivyClient, cfg: Config, label: string, to: Address, data: `0x${string}`, officers: ('A' | 'B')[]) {
+async function trySign(privy: PrivyClient, cfg: Config, label: string, to: Address, data: `0x${string}`, officers: ('A' | 'B')[], chainId = cfg.chainId) {
   try {
     const r = await privy
       .wallets()
       .ethereum()
       .signTransaction(cfg.privy!.walletId, {
-        params: { transaction: { to, data, value: '0x0', chain_id: cfg.chainId, nonce: 0, gas_limit: 300000, max_fee_per_gas: '0x3b9aca00', max_priority_fee_per_gas: '0x3b9aca00', type: 2 } },
+        params: { transaction: { to, data, value: '0x0', chain_id: chainId, nonce: 0, gas_limit: 300000, max_fee_per_gas: '0x3b9aca00', max_priority_fee_per_gas: '0x3b9aca00', type: 2 } },
         authorization_context: authorizationContext(cfg, officers),
       })
     console.log(`${label}: SIGNED (${r.signed_transaction.length / 2 - 1} bytes)`)
@@ -136,7 +136,7 @@ async function check(cfg: Config) {
     transfer: await trySign(privy, cfg, `4. transfer(contractor, 100 mUSD) on the stablecoin, bypassing the gate`, token, transfer, both),
     otherContract: await trySign(privy, cfg, `5. payout calldata to another contract`, contractor, payoutUnderCap, both),
     oneOfficer: cfg.privy!.keyB ? await trySign(privy, cfg, `6. payout(100 mUSD) to the gate with officer A only`, gate, payoutUnderCap, ['A']) : 'skipped (no officer B key)',
-    wrongChain: await trySign(privy, cfg, `7. payout(100 mUSD) to the gate on chain 1`, gate, payoutUnderCap, both).catch(() => 'error'),
+    wrongChain: await trySign(privy, cfg, `7. payout(100 mUSD) to the gate on chain 1`, gate, payoutUnderCap, both, 1),
   }
   let personal = 'refused'
   try {
