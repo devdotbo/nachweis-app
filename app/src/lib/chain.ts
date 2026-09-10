@@ -3,10 +3,11 @@
  * time: wagmi against Sepolia, or the in-memory mock (VITE_MOCK=1).
  */
 import { useCallback, useEffect, useState } from 'react'
-import type { Address, Hex } from 'viem'
+import { BaseError, ContractFunctionRevertedError, type Address, type Hex } from 'viem'
 import { usePublicClient, useReadContract, useWriteContract } from 'wagmi'
 import { FUND_TOKEN, MOCK, POLICY_ID, REGISTRY, REQUIRED_BITS, SUBSCRIPTION } from '../config'
 import { fundTokenAbi, registryAbi, subscriptionAbi } from './contracts'
+import { shortAddress } from './format'
 import { mockApprove, mockAttest, mockDecisionOf, mockIsEligible, mockRevoke, mockStatusOf, mockSubscribe, useMockState } from './mockChain'
 import { addReceipt, type ReceiptKind } from './receipts'
 import { EMPTY_DECISION, EMPTY_STATUS, type Decision, type RegistryEvent, type RegistryStatus, type TxState } from './types'
@@ -221,11 +222,25 @@ function useRegistryTxChain(actor?: Address): RegistryTx {
     attest: (subject, decision) => run('attestByOperator', () => send(REGISTRY, registryAbi, 'attestByOperator', [subject, decision]), { subject, from: actor }),
     approve: (subject, policyId) => run('approve', () => send(REGISTRY, registryAbi, 'approve', [subject, policyId]), { subject, from: actor }),
     revoke: (subject, policyId) => run('revoke', () => send(REGISTRY, registryAbi, 'revoke', [subject, policyId]), { subject, from: actor }),
-    subscribe: () => run('subscribe', () => send(SUBSCRIPTION, subscriptionAbi, 'subscribe', []), { subject: actor, from: actor }),
+    subscribe: () => run('subscribe', () => send(SUBSCRIPTION, subscriptionAbi, 'subscribe', []).catch((e: unknown) => Promise.reject(explainSubscribeError(e))), { subject: actor, from: actor }),
   }
 }
 
 // ---------------------------------------------------------------------------
+
+/**
+ * Door one's refusal in the Swap door's words (components/swap/calldata.ts): which contract refused, which
+ * registry it asked. Subscription.subscribe reverts NotEligible() after one isEligible read; anything else
+ * stays viem's own message.
+ */
+function explainSubscribeError(e: unknown): unknown {
+  const reverted = e instanceof BaseError ? e.walk((x) => x instanceof ContractFunctionRevertedError) : undefined
+  const name = reverted instanceof ContractFunctionRevertedError ? reverted.data?.errorName : undefined
+  if (name !== 'NotEligible' && !/NotEligible\(/.test(shortError(e))) return e
+  return new Error(
+    `Refused by Subscription.subscribe with NotEligible(): the Subscription asked the registry ${shortAddress(REGISTRY)} and isEligible(you, policy, bits) is false right now; after the issuer approves again, the same Subscribe goes through.`,
+  )
+}
 
 function shortError(e: unknown): string {
   if (e && typeof e === 'object') {

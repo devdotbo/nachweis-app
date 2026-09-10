@@ -432,4 +432,68 @@ contract FundDeskTest is Test {
         assertEq(desk.claimable(alice, 0), 5e6);
         assertEq(desk.claimable(bob, 0), 5e6);
     }
+
+    /// @dev Regression: units claimed against and then sent on must not claim the same distribution
+    ///      again. Before the paidOut cap, Bob's second claim drained 10 mUSD that backed Alice's
+    ///      subscription and his full redemption reverted with ERC20InsufficientBalance(desk, 90e6, 100e6).
+    function test_unitsSentAfterClaimDoNotClaimTwice() public {
+        _attest(alice);
+        _attest(bob);
+        _fund(alice, 1000e6);
+        _subscribe(alice, SUB);
+        _distribute(DIST);
+
+        vm.prank(alice);
+        assertEq(desk.claim(0), DIST);
+        assertEq(desk.paidOut(0), DIST);
+
+        vm.prank(alice);
+        assertTrue(token.transfer(bob, SUB * 1e12));
+        assertEq(token.balanceOf(bob), SUB * 1e12);
+
+        // The distribution is exhausted: nothing left for the same units under a new holder.
+        assertEq(desk.claimable(bob, 0), 0);
+        assertEq(desk.claimableTotal(bob), 0);
+        vm.prank(bob);
+        vm.expectRevert(FundDesk.NothingToClaim.selector);
+        desk.claim(0);
+        vm.prank(bob);
+        vm.expectRevert(FundDesk.NothingToClaim.selector);
+        desk.claimAll();
+        assertFalse(desk.claimed(0, bob));
+
+        // The desk still holds par for every outstanding unit: Bob redeems all 100 NDF for 100 mUSD.
+        vm.prank(bob);
+        token.approve(address(desk), SUB * 1e12);
+        vm.prank(bob);
+        desk.redeem(SUB * 1e12);
+        assertEq(stable.balanceOf(bob), SUB);
+        assertEq(stable.balanceOf(address(desk)), 0);
+        assertEq(desk.outstandingUnits(), 0);
+    }
+
+    /// @dev A partial remainder is paid out, never more: Alice claims her 60 percent, sends every unit to
+    ///      Bob, and Bob's claim is capped at the 4 mUSD the distribution still holds.
+    function test_claimCappedAtDistributionRemainder() public {
+        _attest(alice);
+        _attest(bob);
+        _fund(alice, 1000e6);
+        _fund(bob, 1000e6);
+        _subscribe(alice, 60e6);
+        _subscribe(bob, 40e6);
+        _distribute(DIST);
+
+        vm.prank(alice);
+        assertEq(desk.claim(0), 6e6);
+        vm.prank(alice);
+        assertTrue(token.transfer(bob, 60e18));
+
+        // Bob holds 100 NDF, pro rata 10 mUSD, but only 4 mUSD of this distribution is unpaid.
+        assertEq(desk.claimable(bob, 0), 4e6);
+        vm.prank(bob);
+        assertEq(desk.claim(0), 4e6);
+        assertEq(desk.paidOut(0), DIST);
+        assertTrue(desk.claimed(0, bob));
+        assertEq(stable.balanceOf(address(desk)), 100e6);
+    }
 }

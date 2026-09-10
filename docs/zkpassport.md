@@ -25,7 +25,7 @@ Shared files touched, each marked "WP33": contracts/src/interfaces/IProofVerifie
 
 ## Tests
 
-    cd contracts && forge test                       # 119 passed, 20 skipped without RPC (22 new unit tests)
+    cd contracts && forge test                       # 152 passed, 0 failed, 20 skipped without RPC on main 46d8349 (2026-09-09; 119 passed at the time of the WP33 branch run, 22 of them new)
     SEPOLIA_RPC_URL=... MAINNET_RPC_URL=... forge test --match-path 'test/zkpassport/*'   # 10 fork tests, read-only
     cd app && bun run typecheck && bun run build     # with and without VITE_ZKPASSPORT=1
     scripts/zkpassport-local.sh                      # anvil, MockZkPassportRoot, ZKPASSPORT-LOCAL PASS

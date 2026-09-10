@@ -12,8 +12,9 @@
 #   -> CreatePermissionedPool.s.sol: checker on the local registry, adapter via the factory, venue
 #      decision, verification, wrappers and hook approved, PoolManager.initialize, swapping enabled
 #   -> AddLiquidityPermissioned.s.sol: full-range position through the PermissionedPositionManager
-#   -> assertions with a probe account (anvil account 2): attested, swaps 100 mUSD for NDF through the
-#      permissioned router; revoked, the same swap is refused by PermissionedHooks.beforeSwap
+#   -> assertions with a probe account (anvil account 2): attested, swaps POOL_PROBE_AMOUNT (default 1 mUSD,
+#      small so the investor's first swap still quotes a fresh pool) for NDF through the permissioned
+#      router; revoked, the same swap is refused by PermissionedHooks.beforeSwap. 0 skips the probe.
 #   -> <out>/pool.json (addresses, pool id, key, fork block) and <out>/pool.env (VITE_* for the app)
 #
 # Usage: scripts/pool-local.sh [--fork-url URL] [--keep] [--out DIR]
@@ -23,7 +24,8 @@
 #   --attach     use a running anvil that already forks Sepolia with chain id 31337 and holds the
 #                registry and FundToken (scripts/app-e2e-local.sh --pool calls this form)
 #   --out        directory for pool.json, pool.env and logs (default .e2e/pool)
-# Env: SEPOLIA_RPC_URL (fork source), POOL_FEE (default 3000), TICK_SPACING (default 60),
+# Env: SEPOLIA_RPC_URL (fork source), POOL_PROBE_AMOUNT (probe swap in raw mUSD units, 6 decimals; default
+#      1000000 = 1 mUSD; 0 skips the probe), POOL_FEE (default 3000), TICK_SPACING (default 60),
 #      FUND_LIQUIDITY / STABLE_LIQUIDITY in raw units (default 1000e18 / 1000e6).
 # Expected last line: POOL-LOCAL PASS
 set -euo pipefail
@@ -63,7 +65,7 @@ POLICY=0xd27260f1ca509ba75dea6cd27b2985a96e423550e16db3350d2945e215e3d05f # kecc
 REQUIRED_BITS=3
 POOL_FEE="${POOL_FEE:-3000}"; TICK_SPACING="${TICK_SPACING:-60}"
 FUND_LIQUIDITY="${FUND_LIQUIDITY:-1000000000000000000000}"; STABLE_LIQUIDITY="${STABLE_LIQUIDITY:-1000000000}"
-SWAP_IN=100000000   # 100 mUSD, raw units (6 decimals)
+PROBE_IN="${POOL_PROBE_AMOUNT:-1000000}"   # probe swap, raw mUSD units (6 decimals); 1 mUSD keeps the pool nearly untouched, 0 skips
 # Uniswap on Sepolia, the same constants as contracts/src/uniswap/UniswapSepolia.sol.
 POOL_MANAGER=0xE03A1074c86CFeDd5C142C4F04F1a1536e203543
 FACTORY=0xE6B0d96919334C33d06266d1420F97f6f434fA2B
@@ -150,15 +152,18 @@ SLOT0=$(cast call "$STATE_VIEW" "getSlot0(bytes32)(uint160,int24,uint24,uint24)"
 say "liquidity $LIQUIDITY (position $LP_TOKEN_ID), slot0: $(echo "$SLOT0" | tr '\n' ' ')"
 
 # ------------------------------------------------------------------ 5. assertions with the probe account
+if [ "$PROBE_IN" = 0 ]; then
+  say "probe skipped (POOL_PROBE_AMOUNT=0): the pool is untouched, no swap was proven live"
+else
 # Attested and approved (attestByOperator does both): the swap goes through, the probe holds NDF.
 SWAP1=$(DEPLOYER_PRIVATE_KEY=$K0 INVESTOR_PRIVATE_KEY=$K2 ADAPTER_ADDRESS=$ADAPTER REGISTRY_ADDRESS=$REGISTRY FUND_TOKEN_ADDRESS=$TOKEN STABLE_ADDRESS=$STABLE \
-  POLICY_ID=$POLICY REQUIRED_BITS=$REQUIRED_BITS POOL_FEE=$POOL_FEE TICK_SPACING=$TICK_SPACING SWAP_AMOUNT_IN=$SWAP_IN \
+  POLICY_ID=$POLICY REQUIRED_BITS=$REQUIRED_BITS POOL_FEE=$POOL_FEE TICK_SPACING=$TICK_SPACING SWAP_AMOUNT_IN=$PROBE_IN \
   forge script script/SwapPermissioned.s.sol:SwapPermissioned --rpc-url "$RPC" --broadcast 2>&1) \
   || { echo "$SWAP1" | tail -30; die "SwapPermissioned.s.sol (eligible probe) failed"; }
 echo "$SWAP1" > "$OUT/swap-eligible.log"
 OUT1=$(echo "$SWAP1" | awk '/FundToken out:/ {print $3}' | head -1)
 [ -n "$OUT1" ] && [ "$OUT1" != 0 ] || die "eligible probe received no FundToken"
-say "eligible probe $A2: swapped $SWAP_IN mUSD raw units for $OUT1 NDF wei through the permissioned router"
+say "eligible probe $A2: swapped $PROBE_IN mUSD raw units for $OUT1 NDF wei through the permissioned router"
 
 # Revoked by the operator: the same calldata is refused inside PermissionedHooks.beforeSwap (Unauthorized,
 # wrapped by the PoolManager as WrappedError); forge reports the simulation failure and sends nothing.
@@ -166,7 +171,7 @@ cast send "$REGISTRY" "revoke(address,bytes32)" "$A2" "$POLICY" --rpc-url "$RPC"
 [ "$(cast call "$ADAPTER" "isAllowed(address,bytes2)(bool)" "$A2" 0x0001 --rpc-url "$RPC")" = false ] || die "adapter still allows the revoked probe"
 set +e
 SWAP2=$(DEPLOYER_PRIVATE_KEY=$K0 INVESTOR_PRIVATE_KEY=$K2 ATTEST_INVESTOR=false ADAPTER_ADDRESS=$ADAPTER REGISTRY_ADDRESS=$REGISTRY FUND_TOKEN_ADDRESS=$TOKEN STABLE_ADDRESS=$STABLE \
-  POLICY_ID=$POLICY REQUIRED_BITS=$REQUIRED_BITS POOL_FEE=$POOL_FEE TICK_SPACING=$TICK_SPACING SWAP_AMOUNT_IN=$SWAP_IN \
+  POLICY_ID=$POLICY REQUIRED_BITS=$REQUIRED_BITS POOL_FEE=$POOL_FEE TICK_SPACING=$TICK_SPACING SWAP_AMOUNT_IN=$PROBE_IN \
   forge script script/SwapPermissioned.s.sol:SwapPermissioned --rpc-url "$RPC" --broadcast 2>&1); RC2=$?
 set -e
 echo "$SWAP2" > "$OUT/swap-revoked.log"
@@ -174,6 +179,7 @@ echo "$SWAP2" > "$OUT/swap-revoked.log"
 # 0x82b42900 = Unauthorized(), 0x575e24b4 = beforeSwap selector, 0x90bfb865 = WrappedError (ERC-7751).
 echo "$SWAP2" | grep -qiE "Unauthorized|82b42900|WrappedError|90bfb865" || { echo "$SWAP2" | tail -15; die "the revoked probe's swap failed, but not with Unauthorized/WrappedError"; }
 say "revoked probe: swap refused (Unauthorized inside PermissionedHooks.beforeSwap, see $OUT/swap-revoked.log)"
+fi
 
 # ------------------------------------------------------------------ 6. outputs for the app
 jq -n --arg rpcUrl "$RPC" --arg chainId "$CHAIN_ID" --arg forkUrl "$FORK_URL" --arg forkBlock "$FORK_BLOCK" \

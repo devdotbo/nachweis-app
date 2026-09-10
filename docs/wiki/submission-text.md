@@ -1,0 +1,127 @@
+---
+type: reference
+title: Submission text
+updated: 2026-09-10
+sources:
+  - wiki/product.md (sentence, honesty rules)
+  - wiki/pitch.md (journey, beats 1 to 7)
+  - wiki/track-decision.md (Classic reading, verifier facts)
+  - wiki/decisions.md (2026-09-09 night: Classic; 2026-09-09 evening: proposed spine)
+  - wiki/review-fable-2026-09-09.md (fork caption, Privy condition, blockers)
+  - wiki/narrative-zk.md (ZK wordings)
+  - wiki/zk-plan.md and work-packages.md (measured numbers)
+  - wiki/sponsors.md (Uniswap and Privy tracks)
+  - nachweis-app/README.md, DISCLOSURE.md, FEEDBACK.md, docs/swap.md, docs/privy-standing-order.md, docs/evidence/browser-real-wallet-2026-09-08.md (read 2026-09-09 night, main 46d8349)
+---
+
+# Submission text
+
+Paste-ready fields for the ETHGlobal submission form (fields per wiki/submission-checklist.md:55: title, tagline, description, video link, repo link, live link, track, sponsor tracks). Everything between the "Field:" lines is copy; the bracketed notes after each field are for the builder and are not pasted. Every number cites its wiki line or the file it was read from.
+
+Draft state (OPINION, written 2026-09-09 night for the direction proposed in wiki/decisions.md, section "2026-09-09 evening", accepted by the builder 2026-09-10 morning, section "2026-09-10 morning"; the chain-record claim and the swap direction corrected 2026-09-10 after review-morning-2026-09-10.md, "Product and site"): Classic entry, new project, the builder's public Apache-2.0 verifier disclosed as his own library (FACT, decisions.md section "2026-09-09 night"; track-decision.md:96 to :108 for the reading). The pitch is the product sentence (product.md:11) and the journey of pitch.md:25 to :32. Two facts depend on the builder and appear as variants: [fork: ...] versus [Sepolia: ...] (whether the builder runs the Sepolia deploy), and [Privy claimed: ...] versus [Privy not claimed] (only if a Privy-mode run on Sepolia is green, review-fable-2026-09-09.md, filter table row "Standing order"). Paste exactly one variant of each pair.
+
+Limits recorded in this wiki: tagline under 100 characters (this page, counted 2026-09-08). No description length limit is recorded (unverified); the description below is 425 words with the fork variant (counted with `wc -w` on 2026-09-09), close to the length the earlier draft used.
+
+Honesty rules applied (wiki/product.md:44 to :48): official test wallet, sample identity; where the proof is made is stated (the browser tab on the investor's computer); simulated checks are named simulated; revocation is named manual; no "first", no "only", no yield figures, no "nothing about you on chain", no toolkit framing.
+
+## Field: project name
+
+Attestat
+
+## Field: tagline (under 100 characters)
+
+Your ID wallet should work where you invest: EUDI evidence in, one on-chain decision, two doors.
+
+[96 characters, counted with `wc -m` on 2026-09-08. Spoken line and product sentence: wiki/product.md:11 and :13.]
+
+## Field: description
+
+Attestat helps token issuers accept EUDI identity evidence and apply their approval to customers' linked crypto wallets, without putting identity documents on chain.
+
+The problem: every exchange, launchpad and fund asks for your passport and keeps a copy. The EU digital identity wallet (eIDAS 2) turns the state into a signer of a credential you hold on your phone. Attestat lets a token issuer accept that credential once and carry its own approval to the places it controls on chain.
+
+What happens in the demo, end to end: an investor opens the fund app with her own crypto wallet; her address is not permitted. Her crypto wallet signs a session challenge, so everything that follows is bound to that address. She scans a QR code, and the official German EUDI test wallet with a sample identity answers the issuer's registered request: given name, family name, over 18. The issuer's verifier relays the wallet's encrypted answer unopened. The browser tab on the investor's computer decrypts it and proves, in a Noir circuit, that a PID signed by the pinned issuer key, bound to this address, says over 18. Only that proof reaches the AttestationRegistry, which stores one record per (address, policy): policy id, predicate bits, tier, expiry, status reference. The issuer approves in a separate step; eligibility requires the evidence and the approval. Door one: the demo fund token's transfer check reads that record and she subscribes. Door two: a Uniswap v4 permissioned pool's allowlist checker reads the same record and she buys fund tokens with a test stablecoin through the pool, without a second presentation. The issuer revokes; both doors refuse the same address, and each refusal names the contract that refused.
+
+What the chain learns: one record per address and policy, holding the policy id, the predicate bits, the tier, the expiry and the bound address. No name and no document are on chain. The issuer keeps its own record of the presentation it verified. The address is public and the predicate bits bound to it are personal data; we make no claim about whether someone can link that address to a person.
+
+Honest about the demo: the wallet is the official German EUDI test wallet from the SPRIND sandbox with a sample identity, not a state-issued identity. Sanctions and every other issuer check are simulated stubs, labelled as such. Revocation is manual. The proof is made in the browser tab on the investor's computer; the verifier relayed the encrypted answer unopened and the chain does not trust our server. [fork: The video and every recorded run use a local fork of Sepolia with the real Uniswap bytecode at the published addresses; nothing is deployed to a public network.] [Sepolia: The contracts are deployed on Sepolia at the addresses in the README, and the pool runs on the permissioned-pool contracts Uniswap deployed there.]
+
+Formerly named Nachweis; the repositories and internal identifiers keep that name for this submission.
+
+[Sources: journey pitch.md:25 to :32 and the builder's official-wallet run, FACT, nachweis-app/docs/evidence/browser-real-wallet-2026-09-08.md; issuer approval as a separate on-chain condition, FACT, work-packages.md:43 (WP16); refusals naming the contract, FACT, docs/swap.md, "Refusal wording"; the fork caption verbatim from review-fable-2026-09-09.md, "The one journey"; the chain-record fields, architecture.md:20 to :31; the earlier "nothing we could use to find her" was cut on 2026-09-10 because it read as a claim that a public wallet holder cannot be identified (review-morning-2026-09-10.md, "Product and site"). Nothing is deployed as of 2026-09-09 night (FACT, handoff-fable-2026-09-10.md, "State of every repository").]
+
+## Field: how it's made
+
+Architecture: one registry, pluggable proof verifiers, two doors.
+
+Contracts (Foundry, Solidity 0.8.28): AttestationRegistry keeps an EligibilityDecision per (subject address, policyId) with fields policyId, bits, tier, expiry, statusRef, revoked, read through isEligible(subject, policyId, requiredBits) and decisionOf (FACT, wiki/architecture.md:20 to :31). Evidence and approval are separate facts per record: attestWithProof stores evidence, approve is a separate operator call, isEligible requires both plus not revoked and not expired, and revoke clears approval (FACT, work-packages.md:43). Proof verifiers are pluggable per policy: NoirPidVerifier (UltraHonk verifier generated by bb) and Sp1PidVerifier (Groth16 through the SP1 verifier gateway). FundToken and Subscription are door one; EudiAllowlistChecker is door two. Test state: forge 152 passed, 0 failed, 20 fork tests skipped without an RPC, on main 56424b4 (FACT, nachweis-app/docs/demo-runbook.md:14 and log.md 2026-09-09, builder's M3 Max).
+
+The statement both routes prove: an SD-JWT PID presentation signed by the pinned issuer key, with holder binding (KB-JWT), says age_over_18, and its nonce commits to the crypto wallet address (the KB-JWT nonce is sha256(address20 || challenge32), FACT, architecture.md:15). The crypto wallet signs the EIP-191 message "nachweis:session:<session_id>" and the bridge verifies it before anything is attested (FACT, decisions.md:35).
+
+Main route, client-side, Noir UltraHonk in the browser: the verifier is a blind relay that signs the request and stores only the wallet's encrypted response (JWE); the investor's browser tab decrypts it with WebCrypto and proves with noir_js and bb.js in a worker (circuit circuits/pid-sdjwt, adapted from eid-privacy's swiyu SD-JWT circuit to the German PID shape). Measured with the official test wallet on the builder's iPhone and a hand-clicked Chrome tab on the M3 Max, FACT, nachweis-app/docs/evidence/browser-real-wallet-2026-09-08.md: prove 11.1 s, click to attested 42.8 s, attest transaction 4,582,956 gas on anvil; verifier, bridge and app logs held zero claim names. Alternative clients on the same Rust core: the laptop companion CLI (bb prove 4.4 s on the M3 Max, FACT, work-packages.md:26) and phone provers measured on the Android emulator and the iOS simulator only (work-packages.md:32 and :33; no physical-device run).
+
+Fallback route, server-side, SP1 zkVM (Rust guest, Groth16 wrap): the issuer's verifier checks the presentation and the bridge (service/, axum plus alloy plus sp1-sdk) proves and submits. The chain sees a proof, the verification key and public values without names; the server did see the presentation, and we say so (FACT, zk-plan.md:49). Measured on the M3 Max, FACT, zk-plan.md:76: 434,181 cycles, Groth16 269.6 s, gateway verify 225,880 gas on a Sepolia fork; end to end attestWithProof 392,649 gas (work-packages.md:29).
+
+eIDAS 2 tells member states to integrate zero-knowledge proofs into the EUDI wallet, and the Architecture and Reference Framework lists what a ZK scheme must satisfy, but as of v3.0.0 no scheme is selected and wallet-side support is expected after launch (FACT, sources in wiki/narrative-zk.md). Attestat does not wait: the official test wallet presents an ordinary selective-disclosure SD-JWT, the verifier relays the encrypted response unopened, the browser tab on the investor's computer decrypts it and proves in a Noir circuit, and only that proof reaches the chain. The registry's proof verifiers are pluggable, so a wallet-side ZK proof plugs in when one ships.
+
+Identity side: OpenID4VP from the official German EUDI test wallet (SPRIND sandbox, sample identity). The builder's public verifier library (verifier-core, verifier-service, verifier-zk) does the SD-JWT checks; during the event it gained a blind-relay branch, exported as a patch series in the repository (FACT, track-decision.md:58). What neither proof checks today: the x5c chain to a trust anchor (the contracts pin the issuer key hash instead), the status list, and the challenge freshness window on the Noir route; docs/trust-boundaries.md lists the gaps (FACT, work-packages.md:44).
+
+Front end: Vite and React, an investor portal and an issuer console (journey rail, present, prove in this browser, eligibility with the proof-location caption, two doors, history, what the chain sees; issuer queue, decisions table, registry events, revoke), with a dev-signer mode for local runs and Playwright end-to-end tests in three proof modes (FACT, work-packages.md:74, WP31).
+
+Uniswap v4 permissioned pool: Uniswap's PermissionsAdapterFactory, PermissionedHooks, PermissionedPositionManager and the permissioned Universal Router are used as deployed on Sepolia (FACT, addresses in sponsors.md:24 and work-packages.md:38). The only new contract on the Uniswap side is contracts/src/uniswap/EudiAllowlistChecker.sol, lines 27 to 67; checkAllowlist at lines 58 to 61 returns SWAP_ALLOWED | LIQUIDITY_ALLOWED iff registry.isEligible(account, policyId, requiredBits) (FACT, nachweis-app/README.md:59). The investor swaps from the portal: pool state from StateView, the three answers the pool relies on (registry, checker, adapter), Permit2 approvals and UniversalRouter.execute from the connected wallet, and a refused swap decoded into words and mined with a fixed gas limit so it has a hash (FACT, docs/swap.md). On a local Sepolia fork: an attested investor buys 90.65 NDF with 100 mUSD through the pool; after revoke the identical purchase reverts in PermissionedHooks.beforeSwap with Unauthorized; a never-attested address is refused (FACT, work-packages.md:38 and docs/swap.md).
+
+Notable: the Noir circuit shares the SHA-256 prefix to keep the realistic 23-claim PID inside 2^20 gates; the SP1 guest parses the SD-JWT and KB-JWT inside the zkVM so the Groth16 proof binds the wallet address through the nonce; the wallet address is bound off chain by an EIP-191 signature instead of a wallet-side transaction; the deployed V4Quoter cannot quote a permissioned pool, so the portal quotes from getSlot0 and getLiquidity (FEEDBACK.md item 18).
+
+[Privy claimed: Privy standing order: the issuer's automation runs a recurring subscribe() for the investor from her Privy embedded wallet through a delegated signer whose policy is a copy of the on-chain decision: only this fund's Subscription contract, only until the decision's expiry, deny-all appended when the registry emits Revoked. Privy enforces the policy; Privy does not read the chain; the chain refuses too. Evidence: docs/evidence/privy-standing-order-<date>.md (FACT, docs/privy-standing-order.md sections 1, 3 and 8).] [Privy not claimed: omit this paragraph; the automation stays in the repository as engineering documentation in local mode and is not described as a Privy run.]
+
+## Field: track
+
+Classic. [FACT, decisions.md section "2026-09-09 night"; the reading under the rules and its risk: track-decision.md:96 to :108. Builder: confirm in the morning who gave the ok and on which channel, so the log can record it.]
+
+## Field: sponsor track, Uniswap (Best Uniswap Stack Contribution, open pool)
+
+Track facts: under Classic the applicable prize is the open pool, 3,000 USD, up to three teams (FACT, sponsors.md:19 and :22; the 2,000 USD pool is Continuity-only). Requirements: public open-source repository, a FEEDBACK.md, the Uniswap Developer Feedback Form at developers.uniswap.org/hackathon-feedback completed with the FEEDBACK.md link, README pointing to the exact contracts and lines (FACT, sponsors.md:21). The word KYC appears only in the step 7 field kycUrl (sponsors.md:24).
+
+Text to paste:
+
+Attestat gates a Uniswap v4 permissioned pool with an on-chain eligibility decision that a token issuer derives from EUDI wallet evidence. We use Uniswap's permissioned-pool stack as deployed on Sepolia (PermissionsAdapterFactory, PermissionedHooks, PermissionedPositionManager, permissioned Universal Router) and add one contract: EudiAllowlistChecker (contracts/src/uniswap/EudiAllowlistChecker.sol, lines 27 to 67), whose checkAllowlist (lines 58 to 61) answers from AttestationRegistry.isEligible. The same registry record also gates a fund token, so one issuer decision opens two doors and one revoke closes both. Onboarding follows the six on-chain steps of the Uniswap deploy guide in contracts/script/lib/PermissionedPoolOnboarding.sol (lines 32 to 93), driven by CreatePermissionedPool.s.sol, AddLiquidityPermissioned.s.sol and SwapPermissioned.s.sol. The investor buys the fund token with the test stablecoin mUSD from the web app (app/src/components/swap/): Permit2 approvals, V4_SWAP through the permissioned Universal Router, an off-chain exact-input quote because the deployed V4Quoter cannot quote a permissioned pool, and a refused swap decoded from the ERC-7751 WrappedError into one sentence that names PermissionedHooks.beforeSwap. Tests: contracts/test/EudiAllowlistChecker.t.sol (unattested, evidence without approval, attested and approved, revoked, expired, missing bits, other policy, ERC-165), PermissionedPoolFactory.t.sol against the real factory and adapter bytecode, PermissionedPoolSwap.fork.t.sol on a Sepolia fork (mint, swap as an attested investor, revoke, the identical swap reverts in PermissionedHooks.beforeSwap, a never-attested address refused). Developer feedback, 18 items, is in FEEDBACK.md. [fork: All Uniswap evidence is from a local fork of Sepolia with the real Uniswap bytecode at the published addresses; nothing was broadcast.] [Sepolia: Pool, adapter, mint, swap and refused swap on Sepolia: <addresses and transaction hashes from the builder's run>.]
+
+[Line references FACT, README.md:59 to :63, read 2026-09-09 on main 46d8349; the six steps, README.md:62; FEEDBACK.md item count 18, FEEDBACK.md:53. Under Classic the entry competes only in the open pool.]
+
+## Field: sponsor track, Privy (conditional)
+
+[Privy claimed: paste only if a Privy-mode run on Sepolia is green and recorded in docs/evidence/privy-standing-order-<date>.md; then the tracks are Best B2B Financial Product (needs "at least one Privy control, such as policies, signers, key quorums, or intents", FACT, spec-privy.md:28) and Best Financial Flow (Privy wallet plus a functional flow; "features requiring commercial or guided onboarding may be mocked, but they do not count", FACT, spec-privy.md:26). The submission form allows "up to 3 Partner Prizes" (FACT, https://ethglobal.com/events/ethonline2026/info/details, fetched 2026-09-09 about 20:45 by the audit teammate). Text: Attestat uses Privy as the investor's embedded wallet, a delegated signer for the issuer's automation, and a policy on that signer that is generated from the on-chain eligibility decision: allow subscribe() on this fund's Subscription contract on Sepolia until the decision's expiry, deny everything after the issuer revokes. The policy is not written by hand; the automation builds it from decisionOf when the registry emits Approved and appends a deny-all rule on Revoked. A refused run is refused by Privy before broadcast, and the chain refuses it too. The demo fund's subscribe mints without payment and the screen says so. Files: automation/src/policy.ts, automation/src/watch.ts, app/src/components/StandingOrderCard.tsx, docs/privy-standing-order.md. Evidence: <policy id, tick hashes, refusal message verbatim from the evidence record>.]
+
+[Privy not claimed: leave this field empty and do not select a Privy track; Privy does not appear in the description, the video or the sponsor list.]
+
+## Field: links
+
+- Repository (application, contracts, provers, docs): https://github.com/devdotbo/nachweis-app [PRIVATE on 2026-09-09; must be public at submission, FACT requirement in sponsors.md:21 and review-fable-2026-09-09.md, "Submission blockers"]
+- Pre-existing verifier library: https://github.com/Klartext-ID/klartext-verifier [public, Apache-2.0, FACT, track-decision.md:56; the event branch is exported as vendor/verifier-relay-patches inside nachweis-app]
+- Landing page: https://attestat.dev [hosting steps in nachweis-site/docs/hosting.md; not live as of 2026-09-08 (open-questions.md:47); unverified since]
+- Landing page source: https://github.com/devdotbo/nachweis-site
+- Demo runbook: https://github.com/devdotbo/nachweis-app/blob/main/docs/demo-runbook.md
+- Uniswap feedback: https://github.com/devdotbo/nachweis-app/blob/main/FEEDBACK.md
+- Video: [YouTube or Loom link, 2 to 4 minutes, at least 720p, the builder's own voice, no speedups, not recorded on a phone; submission-checklist.md:35 and review-fable-2026-09-09.md, "Submission blockers". Shot list: wiki/video-shotlist-spine.md]
+- Live link: [attestat.dev, or the application URL if the builder hosts the front end with COOP and COEP headers (the browser prover needs them; GitHub Pages does not send them, review-fable-2026-09-09.md, "Submission blockers"); a judge's one click must land on the flow, pitch.md:40]
+- Spec-driven artifacts: [the wiki repository devdotbo/nachweis if made public, or the copy of its pages under nachweis-app/docs; builder decides, open-questions.md:31; the review recommends the copy because a session transcript is tracked in the wiki history]
+
+## Field: prior work disclosure (Classic)
+
+Attestat is a new project started at the event kick-off; the repository nachweis-app was created on 2026-09-07 and holds no pre-event code (FACT, track-decision.md:60). Pre-existing work, disclosed: the builder's own public open-source EUDI verifier library, Klartext-ID/klartext-verifier (Apache-2.0, created 2026-06-04, last pre-event commit 2026-08-17), which Attestat uses as a dependency over HTTP; it is a general-purpose OpenID4VP and SD-JWT verifier that anyone could have consumed. During the event it gained a blind-relay and bridge-mode feature on a branch (10 commits, 13 files), exported as a patch series in vendor/verifier-relay-patches and listed as event work. Adapted third-party open-source code: the Noir circuit is adapted from eid-privacy's swiyu SD-JWT circuit (MPL-2.0) and the Android prover packaging starts from eid-privacy's zkp-android. Tooling (SP1, Noir and bb, Mopro, Uniswap v4 periphery, OpenZeppelin) is listed with versions in DISCLOSURE.md. (FACT for the verifier: track-decision.md:56 to :58 and DISCLOSURE.md section 1; adapted code: track-decision.md:94.)
+
+[Builder: (1) DISCLOSURE.md:1 is still titled "Continuity disclosure" and docs/ai-attribution.md:14 still says "Continuity entry"; both must say Classic before submission (branch wp41-docs-classic). (2) The written pre-existing-work notice to ETHGlobal was not sent as of 2026-09-09 (open-questions.md:30); the rules require it in all cases (track-decision.md:33); paste-ready text at track-decision.md:126 to :146. (3) Record who gave the "new project" ok and on which channel.]
+
+## Field: AI attribution
+
+One human builder directed the work. Code, tests, scripts and documentation were written by Claude Code agents (Anthropic Claude models, running as a lead agent with parallel teammates on named branches) under the builder's instruction, with independent reviews from OpenAI GPT models (Codex) at decision points; the builder set the product, the route, the honesty rules and every deployment or purchase decision, and speaks the video himself. The specification, the dated decision record, the work packages with acceptance tests, the measured numbers and the agent handoffs are kept in a wiki repository (spec, prompts and planning artifacts; published as stated under links). AI-assisted files are the whole repository unless marked otherwise in DISCLOSURE.md. (Team of one: checkin-2026-09-08.md:21; agent-owned work packages: work-packages.md; GPT reviews: decisions.md:55 and :59 and review-product-focus-2026-09-09.md.)
+
+[Builder: docs/ai-attribution.md and DISCLOSURE.md section 4 state 145 commits; the review counted 289 on main (review-fable-2026-09-09.md, "Submission blockers"); fix the count before submission.]
+
+## Before pasting, check
+
+- Exactly one variant of each [fork]/[Sepolia] pair and of the [Privy claimed]/[Privy not claimed] pair, against the actual state on submission day.
+- The repository visibility (public), the video link, the live link.
+- DISCLOSURE.md title and docs/ai-attribution.md:14 say Classic; the commit count is real.
+- The two questions in checkin-2026-09-11.md are answered or the track field carries the builder's decision anyway.
+- Any new measured number: cite its wiki line here first.

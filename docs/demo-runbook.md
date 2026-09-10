@@ -335,7 +335,7 @@ Wallet: MetaMask (or any injected wallet) with a custom network, chain id 31337,
 
 The six beats as clicks, and what to watch:
 
-| beat | screen (role in the header) | click | app shows | terminal shows |
+| beat | screen (the path decides the role: investor portal at `/`, issuer console at `/issuer`, `app/src/lib/role.ts`) | click | app shows | terminal shows |
 |---|---|---|---|---|
 | 1 investor | Investor: card 1 "Connect wallet", card 3 "Eligibility" | Connect | Eligibility chip `not permitted`; both doors closed | `cast call $REG isEligible …` false |
 | 2 wallet | Investor: card 2 "Present your ID" | the yellow button creates the request; QR and openid4vp link appear; the phone scans and taps once | chip `presented, awaiting issuer`; bridge state chips created, presented, verified | verifier-service log: presentation verified (names in the service, not in any response) |
@@ -369,13 +369,61 @@ The sequence to film. Two commands and one phone: `scripts/browser-real-wallet-u
 
 On camera, in Chrome on the Mac: Connect dev signer; Create presentation request (the dev signer signs the session); "Prove in this browser" (the QR appears); scan it with the official test wallet on the iPhone, consent; the tab decrypts and proves in about 30 s and shows "attested from this browser"; switch to Issuer, Approve; back to Investor, Subscribe, the FundToken balance rises. What the tab sends and to which host, the evidence to record, the fail branches and the smoke test without the phone are in `docs/browser-real-wallet.md`.
 
+With `--pool` the same stack carries door two (added 2026-09-09, WP41): anvil forks Sepolia (`SEPOLIA_RPC_URL`, else the publicnode endpoint; read-only, chain id stays 31337 as `pool-local.sh` requires) and `scripts/pool-local.sh --attach` onboards the Uniswap v4 permissioned pool on this stack's registry, exactly as `app-e2e-local.sh --pool` does: real Uniswap bytecode at the published Sepolia addresses, our checker, adapter, mUSD and liquidity deployed on the fork, the probe (anvil key 2) swaps 1 mUSD once (`POOL_PROBE_AMOUNT`, raw units, 0 skips it) so the investor's first 100 mUSD swap on camera still quotes about 90 NDF, and is refused once revoked (`POOL-LOCAL PASS` in `<run>/pool.log`). The app gets `VITE_POOL_ADAPTER` and `VITE_POOL_STABLE`, so "Two doors, one decision" shows the Swap door next to Subscribe; `env.json` carries a `pool` object, so `app/e2e/swap.spec.ts` runs against this stack too. The verifier stays pinned to the sandbox PID issuer and the tunnel is unchanged, so the phone flow is the same. Verified 2026-09-09 without the phone (dev signer K1, `cast` and `SwapPermissioned.s.sol`): attestByOperator, approve, subscribe mined, swap 100 mUSD for NDF through PermissionedHooks, revoke, subscribe reverts `NotEligible()`, swap refused with `WrappedError(PermissionedHooks, beforeSwap, Unauthorized())`.
+
+### Video run order (2026-09-10)
+
+Terminal A, from the repo root (about 60 s after the builds; the first run builds the bridge and the verifier, several minutes):
+
+```
+scripts/browser-real-wallet-up.sh --pool
+```
+
+Expected lines, in order: `relay probe: request_uri, status_url and pickup_url are on the public host (https://<name>.trycloudflare.com/request/<id>)`; `anvil on http://127.0.0.1:<port>, chain 31337, forking https://ethereum-sepolia-rpc.publicnode.com at block <n>`; `AttestationRegistry 0x…, FundToken 0x…, Subscription 0x…`; `permissioned pool on the fork: adapter 0x…, mUSD 0x…, checker 0x… reads <registry> (POOL-LOCAL PASS)`; `NoirPidVerifier 0x… pinned to 0xb4f2bfa1… (sandbox PID issuer (live, G0 record))`; `bridge on …, {"mode":"local","proof_mode":null}`; `app on http://127.0.0.1:<port> (COOP same-origin, COEP require-corp; dev signer: …; Swap door on)`; `tunnel answers: GET https://<name>.trycloudflare.com/health`; then the `BROWSER-REAL-WALLET UP` block with the app URL, the public URL and the click sequence (steps 1 to 8). Stop reading when `permissioned pool (fork)` is in the block.
+
+One Chrome tab on the Mac, the app URL from the block, 1440 px wide, the console closed. The phone next to it with the official test wallet open. Captions as text overlays in the cut, not on the page.
+
+1. Tab, Investor page: "Connect dev signer". Eligibility shows "not permitted". Both doors read "closed".
+2. "Present your ID": "Create presentation request"; "signed, sent to bridge". "Prove in this browser" is selected; click its start button; the QR appears.
+3. Phone: scan the QR with the official test wallet, consent, present. Caption here: "official test wallet, sample identity". The tab walks relay status responded, pickup, checking, witness, init, proving, verifying, submitting, submitted (about 30 s) and ends on "attested from this browser".
+4. Tab, header "Issuer": Presentations, "Approve" on the session (operator dev key); status "approved".
+5. Tab, header "Investor": Eligibility "permitted"; card "Two doors, one decision", door one: "Subscribe"; "tx confirmed", the FundToken balance rises.
+6. Same card, door two: "Swap". Caption here: "local fork of Sepolia, real Uniswap bytecode at the published addresses". The panel shows the pool liquidity and names PermissionedHooks and this app's registry; the swap runs mint mUSD (faucet), Permit2 signature, UniversalRouter.execute; "Swapped in the permissioned pool", NDF received.
+7. Tab, header "Issuer": "Revoke" with the investor address; "tx confirmed".
+8. Tab, header "Investor": the card reads "Approval withdrawn by the issuer (manual revocation). Both doors are closed until the issuer re-approves."; Subscribe shows "closed" with the button greyed out (the page does not send a subscribe it knows will revert; if one is sent against a closed door, the red line reads "Refused by Subscription.subscribe with NotEligible(): the Subscription asked the registry 0x…"). Swap shows "closed" and still sends: click "Swap"; "swap refused" with a transaction hash and "Refused by PermissionedHooks.beforeSwap. Unauthorized(): this address is not SWAP_ALLOWED …". One revoke, two doors closed. End.
+
+If the phone cannot scan (tunnel DNS not yet resolving, the wallet shows an error): wait for `tunnel answers` in Terminal A, reload the tab, repeat from step 2. If the wallet refuses the request: `docs/browser-real-wallet.md`, "fail branches". Steps 5 to 8 can be rehearsed without the phone by attesting the dev signer from Terminal B (`cast send <registry> "attestByOperator(address,(bytes32,uint256,uint8,uint64,bytes32,bool))" 0x7099…79C8 "(<policy>,3,1,<expiry>,0x00…00,false)" --private-key <anvil key 0> --rpc-url <anvil>`), then approve in the Issuer tab.
+
+Terminal A afterwards:
+
+```
+scripts/browser-real-wallet-down.sh
+```
+
+Expected: `stopped app`, `stopped bridge`, `stopped anvil`, then g0-down's verifier and tunnel lines; the logs stay in the run directory (gitignored).
+
+### Sepolia run (2026-09-10, scripted; not yet run on Sepolia)
+
+The same stack against a real Sepolia deployment instead of the fork. Two scripts, the builder's `.env` and one record file; what to provide is `docs/sepolia-checklist.md`. Rehearsed end to end on an anvil fork of Sepolia with the anvil keys on 2026-09-10 (`docs/deployments/sepolia-dry-run-2026-09-10.md`: every step, gas, one subscribe and one swap by a dev investor, and the stack attached to that deployment without anvil).
+
+```
+cp .env.example .env            # SEPOLIA_RPC_URL, DEPLOYER_PRIVATE_KEY, INVESTOR_PRIVATE_KEY, INVESTOR_ADDRESS; ETHERSCAN_API_KEY optional
+scripts/sepolia-deploy.sh --dry-run --probe        # rehearsal on an anvil fork, anvil keys, no .env key used
+scripts/sepolia-deploy.sh                          # Sepolia: deploys, configures, writes docs/deployments/sepolia-<date>.md
+scripts/browser-real-wallet-up.sh --deployment docs/deployments/sepolia-<date>.md
+```
+
+`sepolia-deploy.sh` refuses to run without `SEPOLIA_RPC_URL` and a non-placeholder `DEPLOYER_PRIVATE_KEY` in `.env`, and refuses any chain id but 11155111. Steps: `Deploy.s.sol` (registry, FundToken, Subscription), `DeployNoirVerifier.s.sol` with `PID_ISSUER_KEY_HASH` set to the sandbox PID issuer pin from `browser-real-wallet-up.sh` and `registry.setVerifier`, `CreatePermissionedPool.s.sol` (mUSD, checker, adapter, pool), `AddLiquidityPermissioned.s.sol` (1000 NDF + 1000 mUSD full range), the investor top-up (0.02 ETH to `INVESTOR_ADDRESS` when short), Etherscan verification with `ETHERSCAN_API_KEY`, and with `--probe` one `attestByOperator`, one `subscribe()` and one `SwapPermissioned.s.sol` with `INVESTOR_PRIVATE_KEY`. Each step is skipped when the record already holds its live address, so a broken run is resumed by running the same command again (`--record FILE` for a record with another name). The record ends with the `VITE_*`, bridge and automation env lines and a gas table; the script prints the env lines too. Dry-run gas of the deployer, 14.18 M: 0.028 ETH at 2 gwei, 0.284 ETH at 20 gwei, with a 1.5 margin 0.043 to 0.425 ETH.
+
+`browser-real-wallet-up.sh --deployment FILE` starts no anvil and runs no forge script: RPC and keys come from `.env` (`SEPOLIA_RPC_URL`; `DEPLOYER_PRIVATE_KEY` as operator, bridge key and the page's operator dev key; `INVESTOR_PRIVATE_KEY` as the page's investor dev signer), the addresses from the record, `VITE_CHAIN_ID=11155111`; the adapter in the record switches the Swap door on. It checks the chain id, that the registry points at the record's NoirPidVerifier, that the operator is an operator and that both keys hold ETH. Verifier, tunnel, bridge and issuer pin are as in the fork run. Expected lines: `no anvil: chain 11155111 at <rpc>, block <n> (deployment docs/deployments/sepolia-<date>.md)`; `deployment …: AttestationRegistry 0x…, FundToken 0x…, Subscription 0x… (operator 0x…)`; `NoirPidVerifier 0x… pinned to 0xb4f2bfa1… (sandbox PID issuer (live, G0 record)); EudiAllowlistChecker 0x…; permissioned pool: adapter 0x…, mUSD 0x…`; then bridge, app, tunnel and the `BROWSER-REAL-WALLET UP` block with `chain 11155111, deployment …` on the bridge line. The click sequence is the same as above; differences on camera: the app shows Etherscan links, every click waits for a Sepolia block (about 12 s), the mUSD faucet mint and the swap cost the investor real testnet gas, and the caption of step 6 reads "Sepolia, real Uniswap contracts" instead of "local fork". `--pool` and `--stub-issuer` are refused together with `--deployment`. A dry-run record (chain id 31337) attaches too: `DEPLOYMENT_RPC=<anvil url> scripts/browser-real-wallet-up.sh --deployment .e2e/sepolia-dryrun/…/record.md` against an anvil kept with `sepolia-deploy.sh --keep`.
+
 ## 8d. Privy standing order on a local chain (docs/privy-standing-order.md)
 
 `scripts/standing-order-local.sh` starts anvil and the contracts, then the issuer's automation (`automation/`) in local mode: a dev key (anvil key 1) signs for the investor and the Privy rule JSON is applied by a small evaluator, captioned "simulated Privy policy (local)"; nothing talks to Privy. It attests the investor with a 120 s expiry, runs three ticks (300 NDF), revokes (the tick is refused by the policy's deny-all rule and by the chain), re-approves (tick OK, 400 NDF), moves anvil's clock past the expiry (refused by the timestamp rule and the chain) and attests a second investor the automation holds no key for (no delegated wallet). Expected last line `STANDING-ORDER-LOCAL PASS`, about 20 s with the contracts built; `--keep` leaves anvil and the automation running. The Sepolia run with a real Privy app is the builder's, section 7 of `docs/privy-standing-order.md`.
 
 ## 9. Sepolia real run (builder, manual)
 
-Not run 2026-09-07. Nothing is deployed to any network as of this file. What the builder must have:
+Not run 2026-09-07. Nothing is deployed to any network as of this file. Since 2026-09-10 the one-command form is `scripts/sepolia-deploy.sh` (section 8c, "Sepolia run", and `docs/sepolia-checklist.md`); it covers steps 1, 3, 4, 5, the investor funding and the Etherscan verification of the table below, and with `--probe` steps 7 and 8's happy path. The table stays as the hand-driven reference and for step 2 (the SP1 verifier, not part of the video). What the builder must have:
 
 - A funded deployer key on Sepolia (`DEPLOYER_PRIVATE_KEY`; it becomes registry owner, token issuer, operator and adapter owner). Roughly 12 M gas across all scripts at Sepolia prices; the two dry runs of the pool scripts alone estimated 8.2 M and 8.9 M.
 - A funded investor key (`INVESTOR_PRIVATE_KEY`, anything with a few hundredths of Sepolia ETH) and, for the browser beats, the same key imported into the wallet on the phone or laptop.

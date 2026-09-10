@@ -44,7 +44,17 @@ export class Watcher {
       const latest = await this.client.getBlockNumber()
       if (latest < this.next) return
       const events = await readEvents(this.client, this.cfg, this.next, latest)
-      for (const e of events) await this.handle(e)
+      for (const e of events) {
+        if (await this.handle(e)) continue
+        // Stop here: the cursor goes back to this event's block, so the next poll reads it again
+        // (and everything after it). Handlers are idempotent, so a replay of the block's earlier
+        // events is harmless (onRevoked returns early when the deny-all exists; onApproved only
+        // touches the backend when the rules differ).
+        this.next = e.blockNumber
+        this.lastBlock = e.blockNumber > 0n ? e.blockNumber - 1n : undefined
+        this.store.add('watch', `WATCH RETRY ${e.kind} ${e.subject} block ${e.blockNumber}: policy update failed, next poll retries from block ${e.blockNumber}`, { address: e.subject, hash: e.txHash })
+        return
+      }
       this.next = latest + 1n
       this.lastBlock = latest
     } catch (e) {
@@ -58,12 +68,15 @@ export class Watcher {
     return { chainId: this.cfg.chainId, subscription: this.cfg.subscription }
   }
 
-  private async handle(e: RegistryEvent): Promise<void> {
+  /** True when the event was mirrored; false when the policy update failed (logged, to be retried). */
+  private async handle(e: RegistryEvent): Promise<boolean> {
     try {
       if (e.kind === 'Approved') await this.onApproved(e.subject, e)
       else await this.onRevoked(e.subject, e)
+      return true
     } catch (err) {
       this.store.add('error', `WATCH ERROR ${e.kind} ${e.subject} block ${e.blockNumber}: ${shortError(err)}`, { address: e.subject, hash: e.txHash })
+      return false
     }
   }
 

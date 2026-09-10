@@ -22,3 +22,6 @@ prover-sp1/**/*.log
 # local e2e run state (scripts/e2e-local.sh)
 .e2e/
 target/
+
+# exported chat transcripts at the repository root (name pattern of the export tool)
+/20??-??-??-??????-*.txt

@@ -11,15 +11,15 @@ The team is one human builder. The code in this repository and on the verifier's
 The human builder:
 
 - Set the product: an issuer-side EUDI integration for token issuers, the privacy boundary, and the honesty rules for what may be claimed (wiki `product.md`, `pitch.md`).
-- Made and dated every product and route decision: Continuity entry with the pre-existing verifier disclosed, the ZK route order (client-side Noir with a blind relay first, SP1 server-side as fallback), the sponsor scope (Uniswap committed, Privy conditional, Chainlink dropped), the name Attestat, the iPhone-plus-Mac main path, the decision that issuer approval is enforced on chain (wiki `decisions.md`, each entry dated).
+- Made and dated every product and route decision: the Classic entry with the pre-existing verifier disclosed as his own public library (track open on 2026-09-09, decided the same night), the ZK route order (client-side Noir with a blind relay first, SP1 server-side as fallback), the sponsor scope (Uniswap committed, Privy conditional, Chainlink dropped), the name Attestat, the iPhone-plus-Mac main path, the decision that issuer approval is enforced on chain (wiki `decisions.md`, each entry dated).
 - Bought and holds the domains (attestat.dev, .app, .xyz, .tech), the GitHub repositories, the signing identities and any testnet keys. No key was given to an agent.
-- Operates the physical devices: the official German EUDI test wallet on the iPhone, the Mac that runs the companion prover, the test hardware. Every official-wallet run and every on-device measurement is the builder's action; as of 2026-09-08 none has been recorded (see `../DISCLOSURE.md` and the wiki work-package table).
+- Operates the physical devices: the official German EUDI test wallet on the iPhone, the Mac that runs the companion prover, the test hardware. Every official-wallet run and every on-device measurement is the builder's action; two official-wallet runs are on record (`evidence/g0-2026-09-08.md`, `evidence/browser-real-wallet-2026-09-08.md`), no physical-device proving run is (see `../DISCLOSURE.md` and the wiki work-package table).
 - Reviewed and accepted or rejected each work package against its written acceptance test, ordered the independent reviews, and decides what enters the video and the submission form.
 - Will publish: flip the repository public, submit the ETHGlobal form and check-ins, submit the Uniswap Developer Feedback Form, record the video in his own voice.
 
 The agents:
 
-- Wrote the contracts, the bridge service, the front end, the SP1 guest and host, the circuit adaptation, the companion prover, the mobile prover core and apps, the scripts and the documentation, in git worktrees, one work package per branch, with small commits (145 commits on `main` on 2026-09-07, single author identity, see `../DISCLOSURE.md`).
+- Wrote the contracts, the bridge service, the front end, the SP1 guest and host, the circuit adaptation, the companion prover, the mobile prover core and apps, the scripts and the documentation, in git worktrees, one work package per branch, with small commits (289 commits on `main` from 2026-09-07 to 2026-09-09 up to `46d8349`, 52 of them merges, single author identity, see `../DISCLOSURE.md` section 4 for the counting commands).
 - Ran the local tests, fork tests, emulator and simulator runs and recorded the numbers in the READMEs and the wiki. Every number carries the machine it was measured on.
 - Wrote the wiki pages on the builder's instruction. The builder does not edit the wiki directly.
 
@@ -28,7 +28,7 @@ The agents:
 | Component | AI assistance | Human contribution | Notes |
 |---|---|---|---|
 | `contracts/` | written by Claude Code agents (registry, fund token, subscription, SP1 and Noir adapters, Uniswap checker, scripts, tests) | acceptance tests set in the work packages; review; decision to enforce issuer approval on chain (2026-09-08) | Uniswap interface files and the SP1 interface are copied third-party code, see `../DISCLOSURE.md` section 3 |
-| `service/` | written by Claude Code agents | privacy boundary and route decisions | independent review (Codex, 2026-09-08) found the unauthenticated issuer routes; fix is work package WP17 |
+| `service/` | written by Claude Code agents | privacy boundary and route decisions | independent review (Codex, 2026-09-08) found the unauthenticated issuer routes; fixed in work package WP17 (the last two patches of the relay series, `../DISCLOSURE.md` section 2) |
 | `app/` | written by Claude Code agents, Playwright runs by agents | product copy rules, honesty box wording, name | |
 | `prover-sp1/` | written by Claude Code agents on the SP1 toolchain | choice of SP1 as the fallback route | |
 | `circuits/pid-sdjwt/` | adapted by Claude Code agents from the eid-privacy circuit (MPL-2.0) | choice of the eid-privacy circuit over writing one | the upstream circuit is human-written third-party code |
@@ -44,12 +44,12 @@ Work package WP4 (circuit adaptation) was at one point assigned to a GPT-based a
 
 The workflow is spec-driven. The specs are wiki pages; the prompts are handoff pages; the plan is the work-package table and the log.
 
-- Wiki repository: `devdotbo/nachweis` (private during the build; to be published with the submission, the builder decides). Read order for a judge: `AGENTS.md` (schema and writing rules), `index.md`, `wiki/decisions.md`, `wiki/work-packages.md` (acceptance test and evidence class per package), `log.md` (one dated line per turn).
-- Handoff pages (the prompts given to agents): `wiki/handoff-*.md`, including the independent review of 2026-09-08 that produced the current work order.
-- Research memos that preceded the build: `raw/` in the wiki repository, each with its origin path.
+- Wiki repository: `devdotbo/nachweis`, private during the build and staying private (an exported session transcript is committed in its history). The spec-driven artifacts are therefore copied into this repository: [wiki/README.md](wiki/README.md) gives the read order, names the wiki commit the copy was taken from and lists the redactions. Read order for a judge: [wiki/AGENTS.md](wiki/AGENTS.md) (schema and writing rules), [wiki/index.md](wiki/index.md), [wiki/decisions.md](wiki/decisions.md), [wiki/work-packages.md](wiki/work-packages.md) (acceptance test and evidence class per package), [wiki/log.md](wiki/log.md) (one dated line per turn).
+- Handoff pages (the prompts given to agents): [wiki/handoff-astra.md](wiki/handoff-astra.md), [wiki/handoff-fable-2026-09-08.md](wiki/handoff-fable-2026-09-08.md) (the independent review of 2026-09-08 that produced the work order of that day), [wiki/handoff-fable-2026-09-09.md](wiki/handoff-fable-2026-09-09.md), [wiki/handoff-fable-2026-09-10.md](wiki/handoff-fable-2026-09-10.md), [wiki/handoff-2026-09-10-morning.md](wiki/handoff-2026-09-10-morning.md). The later independent reviews are [wiki/review-fable-2026-09-09.md](wiki/review-fable-2026-09-09.md), [wiki/review-product-focus-2026-09-09.md](wiki/review-product-focus-2026-09-09.md) and [wiki/review-morning-2026-09-10.md](wiki/review-morning-2026-09-10.md).
+- Research memos that preceded the build: the `raw/` directory of the private wiki repository, each memo with its origin path. They are not published; the wiki pages that draw on them cite them by name.
 - Specs in this repository: `docs/spec-*.md`. `docs/spec-issuer-approval.md` and `docs/spec-g0.md` were added on 2026-09-08 by other work packages (WP16, WP18); their content is theirs.
 - Runbooks that double as acceptance records: `docs/demo-runbook.md`, `docs/e2e-local.md`, `docs/two-device.md`.
-- The session transcripts of the agent runs are not in either repository. They exist on the builder's machine; publishing them is the builder's decision.
+- The session transcripts of the agent runs are not in this repository (`.gitignore` excludes the export tool's file pattern at the repository root). One exported transcript is committed in the private wiki repository's history; that is one reason the wiki stays private. The transcripts exist on the builder's machine; publishing them is the builder's decision. Where a copied wiki page linked into a transcript, the copy says "(session transcript, not published)" and keeps the quoted words.
 
 ## How to read the evidence
 

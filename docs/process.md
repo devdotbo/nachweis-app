@@ -46,4 +46,4 @@ One human builder directs the agents, makes and dates every product decision, ho
 4. [FEEDBACK.md](../FEEDBACK.md): Uniswap developer feedback, with its status-of-evidence section.
 5. [demo-runbook.md](demo-runbook.md), [e2e-local.md](e2e-local.md), [two-device.md](two-device.md): the local runs and what each one establishes.
 6. Specs: `docs/spec-*.md` (issuer approval, G0 runbook; added 2026-09-08).
-7. The wiki repository for decisions and the log, once published.
+7. The wiki pages for decisions and the log: copied from the private wiki repository into [wiki/](wiki/README.md), with the redactions listed there.
