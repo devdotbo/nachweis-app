@@ -6,7 +6,7 @@ Project: Attestat, repository `nachweis-app` (ETHOnline 2026). Integration: a Un
 
 - Every result in this file comes from a local Sepolia fork on the developer's machine: Foundry fork tests and `forge script` dry runs against the deployed Uniswap contracts at their Sepolia addresses. The deployed bytecode was exercised; no transaction was broadcast.
 - Since 2026-09-09 the swap also runs from the browser: the investor portal sends the same `V4_SWAP` calldata through the permissioned Universal Router from the connected wallet, on an anvil fork of Sepolia started by `scripts/pool-local.sh` (chain id 31337, the deployed Uniswap contracts at their Sepolia addresses); a Playwright run (`app/e2e/swap.spec.ts`) swaps, revokes in the issuer console and shows the refused swap with the decoded `WrappedError`. Still a fork, still not a broadcast. `docs/swap.md`.
-- Nothing from this project is deployed on Sepolia as of 2026-09-09. There are no transaction hashes, no pool id on the public chain and no step 7 submission.
+- Deployed on Sepolia on 2026-09-10 (`docs/deployments/sepolia-2026-09-10.md`): checker 0x967A701c99D467EB9d6192bE87D4742c90aF7046, adapter 0xc440aD626959d97a689Ba0465f2F1eD293a0b20D, pool id 0x5ea00f1b6307f536f4880101648c0428df57a3e645cbb60c25e00a0ba29cbec7, liquidity position 9, with transaction hashes and Etherscan links in that record; not verified on Etherscan. No step 7 submission.
 - The file will be updated with hashes and paid gas after the broadcast; until then, read "Sepolia" below as "local Sepolia fork" unless a line says broadcast.
 
 ## What was integrated
