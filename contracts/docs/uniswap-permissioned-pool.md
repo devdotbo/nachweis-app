@@ -1,6 +1,6 @@
 # Uniswap v4 permissioned pool for the Nachweis FundToken
 
-Status: contracts, scripts and tests done; every script is dry-run only. Nothing has been broadcast to Sepolia from this repository. The full sequence (onboard, mint liquidity, swap, revoke, swap fails) passes on a Sepolia fork against the live Uniswap contracts.
+Status: contracts, scripts and tests done. The full sequence (onboard, mint liquidity, swap, revoke, swap fails) passes on a Sepolia fork against the live Uniswap contracts. On 2026-09-10 the onboarding, pool creation and liquidity scripts were broadcast to Sepolia through `scripts/sepolia-deploy.sh`; addresses, transaction hashes and the on-chain checks are in [docs/deployments/sepolia-2026-09-10.md](../../docs/deployments/sepolia-2026-09-10.md) (not verified on Etherscan).
 
 ## What it is
 

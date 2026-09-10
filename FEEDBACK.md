@@ -56,7 +56,7 @@ Stack parts used: v4-periphery permissioned pools (factory, adapter, hooks, Perm
 
 - Nothing in the Uniswap contracts. The one failing test during development was my expectation of the token's error in step 3 (item 4 above). The liquidity mint and both swap directions of the fork tests (allowed, revoked, never attested) passed on the first run against the deployed contracts.
 - Tooling, not Uniswap: `developers.uniswap.org/docs/...` answers a 303 to `/llms.mdx/...` for non-browser clients, which my fetch tool refused to follow. `curl -L` with a browser user agent worked.
-- TODO (Sepolia broadcast): gas, reverts, and whether `PoolManager.initialize` behaves as in the fork simulation.
+- Sepolia broadcast (2026-09-10, `docs/deployments/sepolia-2026-09-10.md`): `PoolManager.initialize` behaved as in the fork simulation, 67,549 gas in block 11676826, `getSlot0` afterwards sqrtPriceX96 79228162514264337593543950336000000, tick 276324, lp fee 3000; no revert in any of the 33 transactions (every receipt status 1); the adapter creation through the factory cost 1,786,327 gas, the liquidity mint through the PermissionedPositionManager 559,293 gas, the deployer 14,077,799 gas in total.
 
 ## Suggestions
 

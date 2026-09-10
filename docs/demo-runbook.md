@@ -7,7 +7,7 @@ Each step carries one of two labels:
 - verified locally 2026-09-07: the command was run on that day and produced the output shown.
 - not run: with the reason.
 
-Nothing in this file touches a live network. Every `--broadcast` below goes to a local anvil, except in the last section, which is the builder's manual Sepolia run.
+Everything in this file is local except section 8c "Sepolia run", which touches Sepolia (deployment of 2026-09-10, record `docs/deployments/sepolia-2026-09-10.md`); every other `--broadcast` below goes to a local anvil, and section 9 is the hand-driven reference for the same Sepolia steps.
 
 ## Known blockers (read first)
 
