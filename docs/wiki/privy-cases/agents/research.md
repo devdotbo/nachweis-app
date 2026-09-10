@@ -28,7 +28,7 @@ sources:
   - https://privy.io/blog/securely-equipping-openclaw-agents-with-privy-wallets (post dated 2026-02-06, fetched 2026-09-09)
   - github.com/privy-io/examples, node-sdk, privy-agentic-wallets-skill (gh CLI 2026-09-09)
   - registry.npmjs.org for @privy-io/node, @privy-io/react-auth, @privy-io/wagmi (2026-09-09)
-  - /Users/bioharz/git/ethglobal/nachweis-app main 5f5ceb9 (opus inventory 2026-09-09, read-only)
+  - nachweis-app main 5f5ceb9 (opus inventory 2026-09-09, read-only)
 ---
 
 # Research notes: agents and automation
@@ -115,10 +115,10 @@ Every item is FACT from the named page unless labelled otherwise. Quotes are ver
 
 ## 10. Repository facts the case relies on (opus inventory 2026-09-09, main 5f5ceb9)
 
-- Decision struct: /Users/bioharz/git/ethglobal/nachweis-app/contracts/src/interfaces/IEligibility.sol:11 to 18 (policyId, bits, tier, expiry uint64, statusRef, revoked).
-- Registry: /Users/bioharz/git/ethglobal/nachweis-app/contracts/src/AttestationRegistry.sol. `approve` :114 to 120 (onlyOperator, clears revoked, emits `Approved` :52). `revoke` :124 to 130 (emits `Revoked(subject, policyId, operator)` :51). `isEligible` :187 to 191: approved, not revoked, `expiry > block.timestamp`, bits. Expiry is read-side only; no setter, no event at expiry. `attestByOperator` :106 to 110 (stores and approves in one call, useful for a short-expiry test).
-- Subscription: /Users/bioharz/git/ethglobal/nachweis-app/contracts/src/Subscription.sol:23 to 27. `subscribe()` takes no payment, checks `isEligible(msg.sender, ...)` :25, mints `demoAmount` (100e18 by Deploy default) :26, emits `Subscribed`. The check is on `msg.sender`, the wallet address, not on who authorised the signature inside Privy.
-- FundToken transfer check: /Users/bioharz/git/ethglobal/nachweis-app/contracts/src/FundToken.sol:61 to 66 (`isEligible(to)` at :63; transfers to `issuer` and burns bypass it :62). No redeem or refund function.
-- Bridge routes: /Users/bioharz/git/ethglobal/nachweis-app/service/src/api.rs:88 to 112; approve :669 and revoke :695, :722 behind `BRIDGE_ISSUER_TOKEN` (config.rs:141); operator key `OPERATOR_PRIVATE_KEY` (config.rs:124, chain.rs:207 to 221).
-- App: connectors in /Users/bioharz/git/ethglobal/nachweis-app/app/src/lib/WalletProvider.tsx:34 to 39 (dev signer and `injected()` only; the header comment at :6 names Privy as the intended replacement); `useWallet` in app/src/lib/wallet.ts:87; writes in app/src/lib/chain.ts:204 to 207 (`subscribe` :207); Subscribe button in app/src/components/DoorsCard.tsx:35; env in app/src/config.ts (14 `VITE_*` names, no Privy). No `@privy-io/*`, no account abstraction packages.
-- Stack script: /Users/bioharz/git/ethglobal/nachweis-app/scripts/browser-real-wallet-up.sh starts g0-up, anvil :129, Deploy :135, NoirVerifier :155, checker :159, bridge :171 to 174, Vite :180 to 183.
+- Decision struct: nachweis-app/contracts/src/interfaces/IEligibility.sol:11 to 18 (policyId, bits, tier, expiry uint64, statusRef, revoked).
+- Registry: nachweis-app/contracts/src/AttestationRegistry.sol. `approve` :114 to 120 (onlyOperator, clears revoked, emits `Approved` :52). `revoke` :124 to 130 (emits `Revoked(subject, policyId, operator)` :51). `isEligible` :187 to 191: approved, not revoked, `expiry > block.timestamp`, bits. Expiry is read-side only; no setter, no event at expiry. `attestByOperator` :106 to 110 (stores and approves in one call, useful for a short-expiry test).
+- Subscription: nachweis-app/contracts/src/Subscription.sol:23 to 27. `subscribe()` takes no payment, checks `isEligible(msg.sender, ...)` :25, mints `demoAmount` (100e18 by Deploy default) :26, emits `Subscribed`. The check is on `msg.sender`, the wallet address, not on who authorised the signature inside Privy.
+- FundToken transfer check: nachweis-app/contracts/src/FundToken.sol:61 to 66 (`isEligible(to)` at :63; transfers to `issuer` and burns bypass it :62). No redeem or refund function.
+- Bridge routes: nachweis-app/service/src/api.rs:88 to 112; approve :669 and revoke :695, :722 behind `BRIDGE_ISSUER_TOKEN` (config.rs:141); operator key `OPERATOR_PRIVATE_KEY` (config.rs:124, chain.rs:207 to 221).
+- App: connectors in nachweis-app/app/src/lib/WalletProvider.tsx:34 to 39 (dev signer and `injected()` only; the header comment at :6 names Privy as the intended replacement); `useWallet` in app/src/lib/wallet.ts:87; writes in app/src/lib/chain.ts:204 to 207 (`subscribe` :207); Subscribe button in app/src/components/DoorsCard.tsx:35; env in app/src/config.ts (14 `VITE_*` names, no Privy). No `@privy-io/*`, no account abstraction packages.
+- Stack script: nachweis-app/scripts/browser-real-wallet-up.sh starts g0-up, anvil :129, Deploy :135, NoirVerifier :155, checker :159, bridge :171 to 174, Vite :180 to 183.

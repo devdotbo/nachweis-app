@@ -3,11 +3,11 @@ type: plan
 title: Privy case, investor money: subscribe, distributions and redemption in stablecoin to an email-only investor
 updated: 2026-09-09
 sources:
-  - /Users/bioharz/git/ethglobal/nachweis/wiki/privy-cases/BRIEF.md
-  - /Users/bioharz/git/ethglobal/nachweis/wiki/privy-cases/investor-money/research.md (all docs.privy.io pages fetched 2026-09-09, URLs there)
-  - /Users/bioharz/git/ethglobal/nachweis/wiki/handoff-fable-2026-09-09.md, product.md, spec-privy.md
-  - /Users/bioharz/git/ethglobal/nachweis-app (opus inventory 2026-09-09, read-only, main 5f5ceb9)
-  - /Users/bioharz/git/ethglobal/nachweis/raw/2026-09-06-product-pitch-legal.md, raw/2026-09-06-live-gated-products.md
+  - wiki/privy-cases/BRIEF.md
+  - wiki/privy-cases/investor-money/research.md (all docs.privy.io pages fetched 2026-09-09, URLs there)
+  - wiki/handoff-fable-2026-09-09.md, product.md, spec-privy.md
+  - nachweis-app (opus inventory 2026-09-09, read-only, main 5f5ceb9)
+  - raw/2026-09-06-product-pitch-legal.md, raw/2026-09-06-live-gated-products.md
 ---
 
 # Investor money: the fund desk for an investor who only has an email address

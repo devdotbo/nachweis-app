@@ -7,8 +7,8 @@ sources:
   - https://www.privy.io/pricing (fetched 2026-09-09)
   - https://github.com/privy-io/examples and https://github.com/privy-io/node-sdk (read with gh 2026-09-09)
   - registry.npmjs.org package metadata (read 2026-09-09)
-  - /Users/bioharz/git/ethglobal/nachweis-app main 5f5ceb9 (opus inventory 2026-09-09, read-only)
-  - /Users/bioharz/git/ethglobal/nachweis/raw/2026-09-06-product-pitch-legal.md, 2026-09-06-live-gated-products.md
+  - nachweis-app main 5f5ceb9 (opus inventory 2026-09-09, read-only)
+  - raw/2026-09-06-product-pitch-legal.md, 2026-09-06-live-gated-products.md
   - https://eur-lex.europa.eu/legal-content/EN/TXT/HTML/?uri=CELEX:32024R1183 (fetched 2026-09-09)
 ---
 
@@ -76,26 +76,26 @@ All Privy statements are FACT from the named page unless labelled otherwise. "GA
 
 react-auth 3.40.0 depends on viem 2.56.0; the app pins viem ^2.56.3 (FACT, app/package.json via inventory).
 
-## 2. Code facts (FACT, /Users/bioharz/git/ethglobal/nachweis-app main 5f5ceb9, opus inventory 2026-09-09)
+## 2. Code facts (FACT, nachweis-app main 5f5ceb9, opus inventory 2026-09-09)
 
-- Decision struct: /Users/bioharz/git/ethglobal/nachweis-app/contracts/src/interfaces/IEligibility.sol:11 to 18: policyId, bits, tier, expiry, statusRef, revoked.
-- isEligible: /Users/bioharz/git/ethglobal/nachweis-app/contracts/src/AttestationRegistry.sol:187 to 191: `approved[subject][policyId] && !d.revoked && d.expiry > block.timestamp && (d.bits & requiredBits) == requiredBits`.
+- Decision struct: nachweis-app/contracts/src/interfaces/IEligibility.sol:11 to 18: policyId, bits, tier, expiry, statusRef, revoked.
+- isEligible: nachweis-app/contracts/src/AttestationRegistry.sol:187 to 191: `approved[subject][policyId] && !d.revoked && d.expiry > block.timestamp && (d.bits & requiredBits) == requiredBits`.
 - attestWithProof :155 to 179 (permissionless, 4 public inputs subject, policyId, bits, expiry; reverts if revoked at :170; nonce replay refused :171 to 176; does not set approved). approve :114 to 120 (onlyOperator). revoke :124 to 130 (sets revoked, clears approved). attestByOperator :106 to 110 (stores and approves, overwrites revoked records). Events :40 to 52. No renewal function; expiry enforced only in isEligible.
-- FundToken: /Users/bioharz/git/ethglobal/nachweis-app/contracts/src/FundToken.sol:61 to 66, `_update` checks `registry.isEligible(to, policyId, REQUIRED_BITS)` for the recipient only; exempt `to == address(0)` and `to == issuer` (redemption by transfer to the issuer, :62). policyId and REQUIRED_BITS are immutable constructor arguments (:20, :23). mint :55 to 58 by issuer or subscription.
-- Subscription: /Users/bioharz/git/ethglobal/nachweis-app/contracts/src/Subscription.sol:23 to 28, `subscribe()` takes no payment, checks isEligible for msg.sender, mints `demoAmount`.
-- Checker: /Users/bioharz/git/ethglobal/nachweis-app/contracts/src/uniswap/EudiAllowlistChecker.sol:58 to 61, `checkAllowlist(account, token)` returns SWAP_ALLOWED|LIQUIDITY_ALLOWED when isEligible.
+- FundToken: nachweis-app/contracts/src/FundToken.sol:61 to 66, `_update` checks `registry.isEligible(to, policyId, REQUIRED_BITS)` for the recipient only; exempt `to == address(0)` and `to == issuer` (redemption by transfer to the issuer, :62). policyId and REQUIRED_BITS are immutable constructor arguments (:20, :23). mint :55 to 58 by issuer or subscription.
+- Subscription: nachweis-app/contracts/src/Subscription.sol:23 to 28, `subscribe()` takes no payment, checks isEligible for msg.sender, mints `demoAmount`.
+- Checker: nachweis-app/contracts/src/uniswap/EudiAllowlistChecker.sol:58 to 61, `checkAllowlist(account, token)` returns SWAP_ALLOWED|LIQUIDITY_ALLOWED when isEligible.
 - No second issuer, second policyId, redeem or recurring code exists. Deploy.s.sol logs registry, fund token, subscription, operator, policyId (:40 to 44).
-- App: /Users/bioharz/git/ethglobal/nachweis-app/app/src/lib/WalletProvider.tsx (chain :21 to 30, connectors :33 to 38, transport :43); subscribe call app/src/lib/chain.ts:207; DoorsCard.tsx:13 to 17 (Subscribe), :41 to 48 (Swap button disabled); no swap call in the app. Bridge signs with OPERATOR_PRIVATE_KEY (service/src/config.rs:124, chain.rs:208 to 221); no webhook or event listener in the service.
+- App: nachweis-app/app/src/lib/WalletProvider.tsx (chain :21 to 30, connectors :33 to 38, transport :43); subscribe call app/src/lib/chain.ts:207; DoorsCard.tsx:13 to 17 (Subscribe), :41 to 48 (Swap button disabled); no swap call in the app. Bridge signs with OPERATOR_PRIVATE_KEY (service/src/config.rs:124, chain.rs:208 to 221); no webhook or event listener in the service.
 - Privy mentions: app/README.md:100 and app/src/lib/WalletProvider.tsx:6 (a Privy provider could replace the WalletProvider body); no dependency.
 - Default policyId: keccak256("nachweis.pid.over18.v1").
 
 ## 3. Legal and market facts used
 
-- "Whoever operates the allowlist and is regulated is the obliged entity; an attestation reused by a second venue does not transfer that venue's duty." (OPINION on FACT in /Users/bioharz/git/ethglobal/nachweis/raw/2026-09-06-product-pitch-legal.md:140; the underlying FACTs are AMLR Art 22(1)(a), Art 22(6)(b), Art 77 at :109 to 111 and :138 to 139.)
+- "Whoever operates the allowlist and is regulated is the obliged entity; an attestation reused by a second venue does not transfer that venue's duty." (OPINION on FACT in raw/2026-09-06-product-pitch-legal.md:140; the underlying FACTs are AMLR Art 22(1)(a), Art 22(6)(b), Art 77 at :109 to 111 and :138 to 139.)
 - Eligibility predicates that a venue may enforce without a customer due diligence relationship: "Age over 18, consumer product, no AML relationship: Yes"; "Residency or nationality exclusion for a sale or airdrop: Yes for the jurisdictional exclusion" (same memo :125 to 126). A pure crypto-asset issuer or offeror is not in the AMLR Art 3 list of obliged entities (FACT, same memo :51).
-- COUNT 0 of live products where an on-chain portable attestation is consumed on chain by more than one independent app; ERC-3643 cross-issuer reuse in production: none found; Spiko's allowlist is per issuer, run by Spiko's relayer, and Spiko allowlists protocols as contracts (FACT and COUNT, /Users/bioharz/git/ethglobal/nachweis/raw/2026-09-06-live-gated-products.md:18, :33, :40, :98, :175).
+- COUNT 0 of live products where an on-chain portable attestation is consumed on chain by more than one independent app; ERC-3643 cross-issuer reuse in production: none found; Spiko's allowlist is per issuer, run by Spiko's relayer, and Spiko allowlists protocols as contracts (FACT and COUNT, raw/2026-09-06-live-gated-products.md:18, :33, :40, :98, :175).
 - 5 of 5 core EU exchanges store their own verified self-hosted address for reuse inside that exchange; 0 accept a proof made at another VASP (COUNT, same memo :22).
 - eIDAS 2 Art 5a(9): the wallet is revoked "(a) upon the explicit request of the user", "(b) where the security of the European Digital Identity Wallet has been compromised", "(c) upon the death of the user or cease of activity of the legal person"; Art 5a(8): Member States "provide validation mechanisms free-of-charge, in order to: (a) ensure that the authenticity and validity of European Digital Identity Wallets can be verified" (FACT, https://eur-lex.europa.eu/legal-content/EN/TXT/HTML/?uri=CELEX:32024R1183, fetched 2026-09-09; the page is truncated after Art 5c in the fetch, revocation-list articles unverified).
-- Art 5f(2): private relying parties in the listed sectors must accept the wallet no later than 36 months after the implementing acts (FACT, /Users/bioharz/git/ethglobal/nachweis/wiki/narrative-zk.md:36, fetched 2026-09-08).
+- Art 5f(2): private relying parties in the listed sectors must accept the wallet no later than 36 months after the implementing acts (FACT, wiki/narrative-zk.md:36, fetched 2026-09-08).
 - ARF v3.0.0 Annex 2 Topic 53 defines ZKP_01 to ZKP_09 including validity and non-revocation predicates (FACT, product-pitch-legal memo :117).
 - EDPB: store only a proof-of-existence form on chain; a wallet-bound attestation with a boolean and an expiry qualifies (CLAIM, product-pitch-legal memo :148).

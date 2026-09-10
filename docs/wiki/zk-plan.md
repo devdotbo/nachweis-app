@@ -3,14 +3,14 @@ type: plan
 title: ZK plan: routes, facts, kill tests
 updated: 2026-09-08
 sources:
-  - /Users/bioharz/git/ethglobal/nachweis/raw/2026-09-07-real-zk-routes.md (including the addendum)
-  - /Users/bioharz/git/ethglobal/nachweis/raw/2026-09-06-zk-feasibility.md
-  - /Users/bioharz/git/ethglobal/nachweis-app/prover-sp1/NOTES.md
+  - raw/2026-09-07-real-zk-routes.md (including the addendum)
+  - raw/2026-09-06-zk-feasibility.md
+  - nachweis-app/prover-sp1/NOTES.md
 ---
 
 # ZK plan
 
-Order decided 2026-09-07 (/Users/bioharz/git/ethglobal/nachweis/wiki/decisions.md): primary experiment client-side proving with blind relay; fallback R1 SP1 server-side; exhibit R4 Multipaz on-phone Longfellow, optional. Statement proved in every route: a PID from the official test wallet, signed under the sandbox trust anchor, holder-bound to this crypto address, says over 18. Names never enter the proof.
+Order decided 2026-09-07 (wiki/decisions.md): primary experiment client-side proving with blind relay; fallback R1 SP1 server-side; exhibit R4 Multipaz on-phone Longfellow, optional. Statement proved in every route: a PID from the official test wallet, signed under the sandbox trust anchor, holder-bound to this crypto address, says over 18. Names never enter the proof.
 
 ## Routes
 
@@ -26,9 +26,9 @@ Order decided 2026-09-07 (/Users/bioharz/git/ethglobal/nachweis/wiki/decisions.m
 
 ## Facts
 
-Client-side circuit (FACT, https://eid-privacy.github.io/wp2/2026/06/19/noir-benchmarking-mobile.html, fetched 2026-09-07 per the addendum): Noir circuit d10_swiyu_jwt verifies an unmodified SD-JWT credential with holder binding and an age proof; Swiss swiyu test SD-JWT, re-signed with custom issuer keys; Galaxy A54 5G, native Android app built with Mopro, Barretenberg backend; proving time average 18.419 s (best 16.154, worst 21.013); proof 14,656 bytes, circuit 2.5 MB, setup 32 MB; authors call it entirely unoptimised. Noir source: /Users/bioharz/git/ethglobal/nachweis-refs/eid-privacy-zkp-pocs/noir/d10_swiyu_jwt (siblings c03 to c09) and the benchmark variant /Users/bioharz/git/ethglobal/nachweis-refs/eid-privacy-noir-benchmarks/circuits/jwt-swiyu; the Android app https://github.com/eid-privacy/zkp-android (local clone /Users/bioharz/git/ethglobal/nachweis-refs/eid-privacy-zkp-android, commit 1f1fcedf, 2026-06-19, MPL 2.0) ships compiled artifacts only and is the Mopro packaging reference. Not run in a browser; bb.js unverified. Target device Pixel 10; no measurement on it yet.
+Client-side circuit (FACT, https://eid-privacy.github.io/wp2/2026/06/19/noir-benchmarking-mobile.html, fetched 2026-09-07 per the addendum): Noir circuit d10_swiyu_jwt verifies an unmodified SD-JWT credential with holder binding and an age proof; Swiss swiyu test SD-JWT, re-signed with custom issuer keys; Galaxy A54 5G, native Android app built with Mopro, Barretenberg backend; proving time average 18.419 s (best 16.154, worst 21.013); proof 14,656 bytes, circuit 2.5 MB, setup 32 MB; authors call it entirely unoptimised. Noir source: [local path, withheld] (siblings c03 to c09) and the benchmark variant [local path, withheld]; the Android app https://github.com/eid-privacy/zkp-android (local clone [local path, withheld], commit 1f1fcedf, 2026-06-19, MPL 2.0) ships compiled artifacts only and is the Mopro packaging reference. Not run in a browser; bb.js unverified. Target device Pixel 10; no measurement on it yet.
 
-SP1 spike, measured 2026-09-07 on the builder's M3 Max (16 cores, 128 GB), FACT, /Users/bioharz/git/ethglobal/nachweis-app/prover-sp1/NOTES.md:
+SP1 spike, measured 2026-09-07 on the builder's M3 Max (16 cores, 128 GB), FACT, nachweis-app/prover-sp1/NOTES.md:
 
 - SP1 6.1.0 pinned (semver ^6 pulls 6.7.0 and the guest link fails); patched p256 and sha2 crates.
 - Guest statement: issuer JWT ES256 verifies under the private-input issuer key, vct matches; every disclosure anchored in a signed _sd, nested age_equal_or_over included; over18 from the disclosure named "18"; KB-JWT ES256 under cnf.jwk, typ kb+jwt, aud, sd_hash; nonce == lowercase hex(sha256(address20 || challenge32)); expiry = min(issuer exp, KB exp).
@@ -40,7 +40,7 @@ SP1 spike, measured 2026-09-07 on the builder's M3 Max (16 cores, 128 GB), FACT,
 - vkey 0x00b092add2a7d3fffa027c1178c7b0d77155f3c9e078925928fcfce4b39a4cc9.
 - Sepolia SP1VerifierGateway 0x397A5f7f3dBd538f23DE225B51f532c34448dA9B routes selector 0x4388a21c to 0xb69f2584CBcFf99a58C4e7002E8b89Af54a6f4e2 (VERSION v6.1.0, read-only eth_call, no transaction sent).
 - Caveats: the proof is over a minted vector, because no recorded fixture carries age_equal_or_over.18; x5c chain, status list and freshness are outside the guest (the contract pins issuerKeyHash and compares expiry); no Sepolia deployment or transaction yet.
-- On-chain adapter (WP2b, merged 2026-09-07, FACT /Users/bioharz/git/ethglobal/nachweis-app/contracts/src/sp1/Sp1PidVerifier.sol): a Sepolia fork test against the real SP1VerifierGateway verifies the Groth16 fixture at about 280k gas and rejects tampered public values and a tampered proof (read-only fork, no transaction). This closes the "gas unverified" caveat of the spike; the live transaction is still outstanding.
+- On-chain adapter (WP2b, merged 2026-09-07, FACT nachweis-app/contracts/src/sp1/Sp1PidVerifier.sol): a Sepolia fork test against the real SP1VerifierGateway verifies the Groth16 fixture at about 280k gas and rejects tampered public values and a tampered proof (read-only fork, no transaction). This closes the "gas unverified" caveat of the spike; the live transaction is still outstanding.
 
 Verifier facts (FACT, read 2026-09-06 and 2026-09-07): the pre-existing verifier is not a ZK system except verifier-zk (Longfellow, mdoc). The SD-JWT residence model in pid.rs:72-90 uses address.resident_country while the German PID reference uses address.country and similar for SD-JWT; irrelevant to the over-18 statement, relevant if residence is ever requested. Ethereum address binding was not implemented before the event; WP3 builds it.
 

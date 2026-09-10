@@ -4,8 +4,8 @@ title: Showcase brief (toolkit pitch, one landing page and one demo per case)
 updated: 2026-09-09
 sources:
   - builder message 2026-09-09 night ("build all of the cases", "a landing page that is also a pitch", "gallery with all the functions, demos and use cases", "our main product is the toolkit that plugs into the EUDI (optional zkPassport) and those other systems and has ZK")
-  - /Users/bioharz/git/ethglobal/nachweis/wiki/privy-cases/ (five cases, evaluation)
-  - /Users/bioharz/git/ethglobal/nachweis/wiki/product.md, pitch.md
+  - wiki/privy-cases/ (five cases, evaluation)
+  - wiki/product.md, pitch.md
 ---
 
 # Showcase brief
@@ -18,9 +18,9 @@ The product sentence stays (product.md). The showcase adds: "Attestat is the too
 
 ## Landing page rules (nachweis-site)
 
-- Site repository: /Users/bioharz/git/ethglobal/nachweis-site (main 3727280). The current page is index.html with style.css, app.js, fonts/. Read it first; the case page must be as impressive as the current page or better and must feel like the same family (same fonts, same colour system, same tone), not a template.
+- Site repository: nachweis-site (main 3727280). The current page is index.html with style.css, app.js, fonts/. Read it first; the case page must be as impressive as the current page or better and must feel like the same family (same fonts, same colour system, same tone), not a template.
 - Load the frontend-design skill (Skill tool, name frontend-design:frontend-design) before designing. No emojis, no stock illustrations, no dashes as clause separators in copy.
-- Location: /Users/bioharz/git/ethglobal/nachweis-site/showcase/<slug>/index.html with its own CSS inline or in showcase/<slug>/style.css; shared assets from ../../fonts and ../../style.css may be reused. Relative links only. Must render from a plain static server (bunx serve or python3 -m http.server) with no build step.
+- Location: nachweis-site/showcase/<slug>/index.html with its own CSS inline or in showcase/<slug>/style.css; shared assets from ../../fonts and ../../style.css may be reused. Relative links only. Must render from a plain static server (bunx serve or python3 -m http.server) with no build step.
 - Content order: hero with the case sentence in plain words and one visual of the flow; who buys and who uses; "otherwise not possible" in three sentences with the source named; how it works (EUDI presentation, ZK proof, on-chain decision, the Privy part, the refusal or revoke beat) as a diagram or stepper drawn in HTML and CSS or inline SVG; what the chain sees (the Decision struct, no name); the demo (a link to the demo route and a captioned screenshot placeholder if no screenshot exists yet); the honesty box (official test wallet, sample identity; where the proof is made; simulated checks; manual revocation; "no identity documents on chain, and nothing we could use to find her"); footer linking to the gallery (../index.html) and the main page (../../index.html).
 - Every sentence obeys product.md's honesty rules. Sponsors named only where integrated (Privy, Uniswap). No "first", no "only", no yield figures, no "KYC".
 - Do not commit; the lead commits. Do not edit index.html at the site root or any other case's directory.

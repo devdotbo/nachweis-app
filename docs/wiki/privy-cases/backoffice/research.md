@@ -13,7 +13,7 @@ sources:
   - https://docs.privy.io/api-reference/webhooks/overview.md, wallets/gas-and-asset-management/assets/transaction-event-webhooks.md, basics/nodejs/setup.md (fetched 2026-09-09)
   - https://www.privy.io/pricing (fetched 2026-09-09, HTML flattened to text)
   - npm registry (npm view, 2026-09-09) and github.com/privy-io via gh (2026-09-09)
-  - opus inventory of /Users/bioharz/git/ethglobal/nachweis-app main 5f5ceb9 (read-only, 2026-09-09)
+  - opus inventory of nachweis-app main 5f5ceb9 (read-only, 2026-09-09)
 ---
 
 # Research notes: Privy controls for an issuer back office

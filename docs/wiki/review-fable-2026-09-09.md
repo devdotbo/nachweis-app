@@ -4,12 +4,12 @@ title: Fable verdict on focus, 2026-09-09 evening
 updated: 2026-09-09
 status: Verdict and proposed direction for the builder; nothing implemented
 sources:
-  - /Users/bioharz/git/ethglobal/nachweis/wiki/review-product-focus-2026-09-09.md (GPT review, 9cdea71)
-  - /Users/bioharz/git/ethglobal/nachweis/wiki/handoff-fable-2026-09-10.md
-  - /Users/bioharz/git/ethglobal/nachweis/2026-09-09-201235-from-lastet-agent.txt (read in full by one teammate)
-  - /Users/bioharz/git/ethglobal/nachweis/raw/reviews-2026-09-09/review-focus-fable-2026-09-09.md (product filter teammate)
-  - /Users/bioharz/git/ethglobal/nachweis/raw/reviews-2026-09-09/integration-map-2026-09-09.md (journey teammate)
-  - /Users/bioharz/git/ethglobal/nachweis/raw/reviews-2026-09-09/audit-submission-2026-09-09.md (submission teammate)
+  - wiki/review-product-focus-2026-09-09.md (GPT review, 9cdea71)
+  - wiki/handoff-fable-2026-09-10.md
+  - 2026-09-09-201235-from-lastet-agent.txt (read in full by one teammate)
+  - raw/reviews-2026-09-09/review-focus-fable-2026-09-09.md (product filter teammate)
+  - raw/reviews-2026-09-09/integration-map-2026-09-09.md (journey teammate)
+  - raw/reviews-2026-09-09/audit-submission-2026-09-09.md (submission teammate)
   - defect reproduction report (teammate message, scratch copies only, no repo change)
   - nachweis-app main 46d8349, nachweis-site main 693821e, read-only
 ---

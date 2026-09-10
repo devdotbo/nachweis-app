@@ -7,8 +7,8 @@ sources:
   - https://www.privy.io/pricing (fetched 2026-09-09)
   - privy-io GitHub organisation via gh CLI (2026-09-09)
   - npm registry dist-tags (2026-09-09)
-  - /Users/bioharz/git/ethglobal/nachweis-app (opus inventory 2026-09-09, read-only, main 5f5ceb9)
-  - /Users/bioharz/git/ethglobal/nachweis/raw/2026-09-06-product-pitch-legal.md, raw/2026-09-06-live-gated-products.md
+  - nachweis-app (opus inventory 2026-09-09, read-only, main 5f5ceb9)
+  - raw/2026-09-06-product-pitch-legal.md, raw/2026-09-06-live-gated-products.md
 ---
 
 # Research notes: investor-money case
@@ -62,18 +62,18 @@ Every item is FACT from the named page on 2026-09-09 unless labelled otherwise. 
 
 ## 7. Repository facts the design depends on (opus inventory 2026-09-09, read-only)
 
-- /Users/bioharz/git/ethglobal/nachweis-app/contracts/src/Subscription.sol:23 to :27: `subscribe()` takes no payment; checks `isEligible(msg.sender, policyId, REQUIRED_BITS)` then `token.mint(msg.sender, demoAmount)`. No redeem, no price.
-- /Users/bioharz/git/ethglobal/nachweis-app/contracts/src/FundToken.sol:55 `mint` only by `issuer` or `subscription`; :48 `setSubscription` issuer-only, one-shot; :61 to :66 `_update` requires `isEligible(to, ...)` unless `to` is zero or the issuer. The sender is never checked; burn is exempt; the issuer can always receive.
-- /Users/bioharz/git/ethglobal/nachweis-app/contracts/src/AttestationRegistry.sol:187 `isEligible`, :114 `approve`, :124 `revoke`; Decision struct in contracts/src/interfaces/IEligibility.sol:11 to :18.
-- /Users/bioharz/git/ethglobal/nachweis-app/contracts/src/test/MockStable.sol: "Mock Stable", "mUSD", 6 decimals, permissionless `mint`; used by contracts/script/CreatePermissionedPool.s.sol:66 and PermissionedPoolScriptBase.s.sol:36. No USDC in the repository.
-- /Users/bioharz/git/ethglobal/nachweis-app/contracts/script/Deploy.s.sol:22 to :45: registry, setOperator, FundToken("Nachweis Demo Fund","NDF"), Subscription(demoAmount 100e18), setSubscription; env DEPLOYER_PRIVATE_KEY, OPERATOR_ADDRESS, POLICY_ID, REQUIRED_BITS, DEMO_AMOUNT; addresses only logged.
-- /Users/bioharz/git/ethglobal/nachweis-app/app/src/lib/WalletProvider.tsx:22 to :31 chain (sepolia or defineChain 31337), :34 to :39 connectors (dev signer per role behind `__NACHWEIS_DEV_SIGNER__`, then `injected()`), :44 http transport; comment at :5 names the Privy replacement. app/src/lib/wallet.ts:55 to :90 `useChainWallet` (connect, signMessage via `useSignMessage`). app/src/lib/chain.ts:194 to :207 writes (`subscribe` at :207), reads at :97 to :135. app/src/components/DoorsCard.tsx:13 to :17 calls `subscribe`. app/src/components/PresentCard.tsx:35 signs `nachweis:session:<id>` (bridge.ts:128 to :130) with EIP-191.
+- nachweis-app/contracts/src/Subscription.sol:23 to :27: `subscribe()` takes no payment; checks `isEligible(msg.sender, policyId, REQUIRED_BITS)` then `token.mint(msg.sender, demoAmount)`. No redeem, no price.
+- nachweis-app/contracts/src/FundToken.sol:55 `mint` only by `issuer` or `subscription`; :48 `setSubscription` issuer-only, one-shot; :61 to :66 `_update` requires `isEligible(to, ...)` unless `to` is zero or the issuer. The sender is never checked; burn is exempt; the issuer can always receive.
+- nachweis-app/contracts/src/AttestationRegistry.sol:187 `isEligible`, :114 `approve`, :124 `revoke`; Decision struct in contracts/src/interfaces/IEligibility.sol:11 to :18.
+- nachweis-app/contracts/src/test/MockStable.sol: "Mock Stable", "mUSD", 6 decimals, permissionless `mint`; used by contracts/script/CreatePermissionedPool.s.sol:66 and PermissionedPoolScriptBase.s.sol:36. No USDC in the repository.
+- nachweis-app/contracts/script/Deploy.s.sol:22 to :45: registry, setOperator, FundToken("Nachweis Demo Fund","NDF"), Subscription(demoAmount 100e18), setSubscription; env DEPLOYER_PRIVATE_KEY, OPERATOR_ADDRESS, POLICY_ID, REQUIRED_BITS, DEMO_AMOUNT; addresses only logged.
+- nachweis-app/app/src/lib/WalletProvider.tsx:22 to :31 chain (sepolia or defineChain 31337), :34 to :39 connectors (dev signer per role behind `__NACHWEIS_DEV_SIGNER__`, then `injected()`), :44 http transport; comment at :5 names the Privy replacement. app/src/lib/wallet.ts:55 to :90 `useChainWallet` (connect, signMessage via `useSignMessage`). app/src/lib/chain.ts:194 to :207 writes (`subscribe` at :207), reads at :97 to :135. app/src/components/DoorsCard.tsx:13 to :17 calls `subscribe`. app/src/components/PresentCard.tsx:35 signs `nachweis:session:<id>` (bridge.ts:128 to :130) with EIP-191.
 - app/package.json: wagmi ^2.19.5, viem ^2.56.3, @tanstack/react-query ^5.102.8, react ^19.2.8, vite ^8.2.2, qrcode ^1.5.4; no `@privy-io/*` anywhere (grep 2026-09-09: three prose mentions only).
 - service/src/api.rs:96 to :108 routes; no change needed for this case.
 - scripts/browser-real-wallet-up.sh: anvil key 0 is deployer, operator and bridge (:55), key 1 the investor (:56); Deploy.s.sol at :134 to :164; Vite env at :178 to :188.
 
 ## 8. Regulatory and market facts used in "otherwise not possible"
 
-- /Users/bioharz/git/ethglobal/nachweis/raw/2026-09-06-live-gated-products.md:186 (FACT from the memo, COUNT of the memo's survey): tokenized-stock and fund secondaries "do not check eligibility for secondary holders at all ... their primary market is issuer KYC with a wallet whitelist for mint and redeem." No live product accepts an external attestation without a contract.
-- /Users/bioharz/git/ethglobal/nachweis/raw/2026-09-06-product-pitch-legal.md:41: Regulation (EU) 2023/1113 (Travel Rule) applies from 2024-12-30; for transfers above EUR 1,000 to or from a self-hosted address the CASP "shall take adequate measures to assess whether that address is owned or controlled by" the originator or beneficiary (Art 14(5), Art 16(2)); EBA/GL/2024/11 paragraph 83(d) accepts "requesting the customer to digitally sign a specific message ... with the key corresponding to that address". AMLR 2024/1624 Art 40 adds risk measures for self-hosted transfers from 2027-07-10.
+- raw/2026-09-06-live-gated-products.md:186 (FACT from the memo, COUNT of the memo's survey): tokenized-stock and fund secondaries "do not check eligibility for secondary holders at all ... their primary market is issuer KYC with a wallet whitelist for mint and redeem." No live product accepts an external attestation without a contract.
+- raw/2026-09-06-product-pitch-legal.md:41: Regulation (EU) 2023/1113 (Travel Rule) applies from 2024-12-30; for transfers above EUR 1,000 to or from a self-hosted address the CASP "shall take adequate measures to assess whether that address is owned or controlled by" the originator or beneficiary (Art 14(5), Art 16(2)); EBA/GL/2024/11 paragraph 83(d) accepts "requesting the customer to digitally sign a specific message ... with the key corresponding to that address". AMLR 2024/1624 Art 40 adds risk measures for self-hosted transfers from 2027-07-10.
 - Same memo :138 to :139: a predicate never replaces AMLR Art 22(1)(a) data and Art 77 retention for an obliged entity; the EUDI wallet changes the verification step (Art 22(6)(b)), not the retention step. The case keeps the issuer's compliance file out of scope and out of the chain, as product.md requires.

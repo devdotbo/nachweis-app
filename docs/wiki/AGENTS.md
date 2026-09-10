@@ -1,6 +1,6 @@
 # Nachweis wiki: schema
 
-This directory is the product wiki and orchestration record for Nachweis, the ETHOnline 2026 submission (pattern: /Users/bioharz/git/ethglobal/nachweis/llm-wiki.md). It exists so that any agent, or the builder after a break, can resume with a clear head: what was decided, what is running, what is open, and where the code lives. The builder does not write into these files; agents do, on the builder's instruction. Code lives in other repositories (see wiki/repos.md), never here.
+This directory is the product wiki and orchestration record for Nachweis, the ETHOnline 2026 submission (pattern: llm-wiki.md). It exists so that any agent, or the builder after a break, can resume with a clear head: what was decided, what is running, what is open, and where the code lives. The builder does not write into these files; agents do, on the builder's instruction. Code lives in other repositories (see wiki/repos.md), never here.
 
 Read this file first, then index.md, then wiki/decisions.md, then wiki/work-packages.md, then the newest entries in log.md.
 

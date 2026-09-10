@@ -13,13 +13,13 @@ sources:
   - https://docs.privy.io/basics/react/advanced/configuring-evm-networks (fetched 2026-09-09)
   - https://docs.privy.io/wallets/actions/swap/overview.md, transfer/overview.md, earn/overview, wallets/funding/add-funds.md, financial-flows/payments (fetched 2026-09-09)
   - https://www.privy.io/pricing (fetched 2026-09-09)
-  - /Users/bioharz/git/ethglobal/nachweis-app/app/src/lib/WalletProvider.tsx, wallet.ts, devSigner.ts, chain.ts, app/src/bridge.ts (opus inventory 2026-09-09, read-only)
-  - /Users/bioharz/git/ethglobal/nachweis/wiki/track-decision.md
+  - nachweis-app/app/src/lib/WalletProvider.tsx, wallet.ts, devSigner.ts, chain.ts, app/src/bridge.ts (opus inventory 2026-09-09, read-only)
+  - wiki/track-decision.md
 ---
 
 # Privy integration spec
 
-Status: proposed. Nothing is built; no Privy dependency exists in nachweis-app (FACT, inventory 2026-09-09: `@privy-io/*` in no package.json; three comments mention Privy as a possible replacement for the body of app/src/lib/WalletProvider.tsx). Decision: the builder decides after ETHGlobal answers the notice in /Users/bioharz/git/ethglobal/nachweis/wiki/track-decision.md. Dependency on that answer: this package is worth building only if the entry is eligible for Privy's open tracks; both are open tracks with no Continuity pool (FACT, prize page).
+Status: proposed. Nothing is built; no Privy dependency exists in nachweis-app (FACT, inventory 2026-09-09: `@privy-io/*` in no package.json; three comments mention Privy as a possible replacement for the body of app/src/lib/WalletProvider.tsx). Decision: the builder decides after ETHGlobal answers the notice in wiki/track-decision.md. Dependency on that answer: this package is worth building only if the entry is eligible for Privy's open tracks; both are open tracks with no Continuity pool (FACT, prize page).
 
 ## What the prize asks (FACT, https://ethglobal.com/events/ethonline2026/prizes/privy, fetched 2026-09-09)
 

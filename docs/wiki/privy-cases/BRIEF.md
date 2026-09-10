@@ -4,9 +4,9 @@ title: Privy business-case brief (shared instructions for the case teammates)
 updated: 2026-09-09
 sources:
   - builder message 2026-09-09 night (Privy prize text pasted, decision that Attestat is a new project, request for business cases)
-  - /Users/bioharz/git/ethglobal/nachweis/wiki/handoff-fable-2026-09-09.md
-  - /Users/bioharz/git/ethglobal/nachweis/wiki/spec-privy.md
-  - /Users/bioharz/git/ethglobal/nachweis/wiki/product.md
+  - wiki/handoff-fable-2026-09-09.md
+  - wiki/spec-privy.md
+  - wiki/product.md
 ---
 
 # Privy business-case brief
@@ -15,11 +15,11 @@ sources:
 
 The builder decided (2026-09-09 night, FACT): Attestat is a new project, not a Continuity entry; the Privy open tracks are in scope. The Uniswap pool alone is not enough as a demonstration. We want a business case, built with Privy, that shows something that is otherwise not possible: a product that exists only because a customer can bring EUDI identity evidence to a crypto wallet without the business ever holding an identity document, and Attestat carries the decision on chain.
 
-Five teammates each write one unique case in their own directory under /Users/bioharz/git/ethglobal/nachweis/wiki/privy-cases/<slug>/. An evaluator then scores all five, the best one is built this week, the others stay as documentation.
+Five teammates each write one unique case in their own directory under wiki/privy-cases/<slug>/. An evaluator then scores all five, the best one is built this week, the others stay as documentation.
 
 ## What exists today (FACT, read the handoff for detail)
 
-- Monorepo /Users/bioharz/git/ethglobal/nachweis-app (main 5f5ceb9): contracts (AttestationRegistry with evidence plus approval, FundToken, Subscription, Uniswap v4 permissioned pool checker, NoirPidVerifier, Sp1PidVerifier), service (Rust bridge), app (React 19, wagmi 2, viem 2, Vite; two screens: investor and issuer), circuits (Noir pid-sdjwt), companion (bun), prover-sp1, prover-android and prover-ios, scripts.
+- Monorepo nachweis-app (main 5f5ceb9): contracts (AttestationRegistry with evidence plus approval, FundToken, Subscription, Uniswap v4 permissioned pool checker, NoirPidVerifier, Sp1PidVerifier), service (Rust bridge), app (React 19, wagmi 2, viem 2, Vite; two screens: investor and issuer), circuits (Noir pid-sdjwt), companion (bun), prover-sp1, prover-android and prover-ios, scripts.
 - Flow that is green with the official German EUDI test wallet on the iPhone: wallet answers the web app's relay request, the browser tab decrypts and proves (11 s), the bridge submits attestWithProof, the issuer approves, Subscribe mints 100 NDF, swap in the permissioned pool, revoke closes both doors. All on anvil; nothing is deployed on Sepolia yet (the builder holds the key; deployment is planned).
 - No Privy dependency exists. No Privy dashboard account or app id exists on this machine (checked 2026-09-09 night). Any live Privy call needs the builder to create a Privy app in the morning; design so that everything else works without it and the Privy-dependent path is wired and switchable by one env var.
 - Decision on chain: struct Decision {policyId, bits, tier, expiry, statusRef, revoked} per (subject, policyId); isEligible(subject, policyId, requiredBits) requires evidence plus approval, not revoked, not expired. Bits: 1 identity evidence, 2 over 18.
@@ -34,7 +34,7 @@ Best financial flow, 2,500 USD: "Build a seamless experience for funding, moving
 
 The case must answer, with evidence, "what becomes possible that is otherwise not possible". Not "nicer", not "cheaper": a workflow that a business cannot run today because it would have to collect and store identity documents, or cannot trust a wallet address, or cannot express a policy over identity without holding identity. EUDI evidence plus the on-chain decision is the enabling fact; Privy is the wallet, control and money-movement layer that makes the business workflow run.
 
-Research is required, not optional. Use WebFetch and WebSearch on docs.privy.io (policies, signers, key quorums, intents, server wallets, session signers, embedded wallets, funding, transfers, swaps, Earn, webhooks, automated transactions, testnet support, pricing and self-serve limits), the Privy GitHub organisation (`gh` CLI, recipes and examples), and the EUDI or eIDAS material already in the wiki (/Users/bioharz/git/ethglobal/nachweis/wiki/narrative-zk.md, product.md, open-questions.md). For every Privy feature you rely on, record: is it generally available, self-serve in the dashboard, working on Sepolia or another testnet, which SDK and version, and the URL fetched with today's date. Mark anything you could not confirm as unverified. Never guess a feature into existence.
+Research is required, not optional. Use WebFetch and WebSearch on docs.privy.io (policies, signers, key quorums, intents, server wallets, session signers, embedded wallets, funding, transfers, swaps, Earn, webhooks, automated transactions, testnet support, pricing and self-serve limits), the Privy GitHub organisation (`gh` CLI, recipes and examples), and the EUDI or eIDAS material already in the wiki (wiki/narrative-zk.md, product.md, open-questions.md). For every Privy feature you rely on, record: is it generally available, self-serve in the dashboard, working on Sepolia or another testnet, which SDK and version, and the URL fetched with today's date. Mark anything you could not confirm as unverified. Never guess a feature into existence.
 
 Read the repository code you rely on (paths and line numbers), via an opus subagent for inventories and greps; read ranges yourself only where the design depends on them.
 
@@ -58,7 +58,7 @@ Keep the page under about 2,500 words. Put research notes (fetched facts with UR
 
 ## Rules
 
-- Wiki conventions: /Users/bioharz/git/ethglobal/nachweis/AGENTS.md (FACT, CLAIM, OPINION, COUNT labels; absolute paths; dated sources). English. No dashes as clause separators. No emojis.
+- Wiki conventions: AGENTS.md (FACT, CLAIM, OPINION, COUNT labels; absolute paths; dated sources). English. No dashes as clause separators. No emojis.
 - Do not write into any other wiki page and do not touch nachweis-app. The lead merges and logs.
 - Do not send anything to ETHGlobal, Privy, or any external party. Do not create accounts.
 - Quota: one bounded task, then return. Spawn opus subagents for inventories and greps; keep your own context small.

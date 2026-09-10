@@ -3,11 +3,11 @@ type: plan
 title: Privy case, lifecycle lens: the attested savings plan (one decision, recurring purchases, several doors, one revoke)
 updated: 2026-09-09
 sources:
-  - /Users/bioharz/git/ethglobal/nachweis/wiki/privy-cases/BRIEF.md
-  - /Users/bioharz/git/ethglobal/nachweis/wiki/privy-cases/lifecycle/research.md (every Privy URL with fetch date 2026-09-09)
-  - /Users/bioharz/git/ethglobal/nachweis-app main 5f5ceb9 (opus inventory 2026-09-09, read-only)
-  - /Users/bioharz/git/ethglobal/nachweis/raw/2026-09-06-product-pitch-legal.md, 2026-09-06-live-gated-products.md
-  - /Users/bioharz/git/ethglobal/nachweis/wiki/spec-privy.md, product.md, narrative-zk.md
+  - wiki/privy-cases/BRIEF.md
+  - wiki/privy-cases/lifecycle/research.md (every Privy URL with fetch date 2026-09-09)
+  - nachweis-app main 5f5ceb9 (opus inventory 2026-09-09, read-only)
+  - raw/2026-09-06-product-pitch-legal.md, 2026-09-06-live-gated-products.md
+  - wiki/spec-privy.md, product.md, narrative-zk.md
 ---
 
 # The attested savings plan
@@ -69,7 +69,7 @@ Second track, Best financial flow, is also met: the subscribe transaction from t
 
 ## 6. What changes in the code
 
-App (/Users/bioharz/git/ethglobal/nachweis-app/app/):
+App (nachweis-app/app/):
 - package.json: add `@privy-io/react-auth` 3.40.0 and `@privy-io/wagmi` 4.0.17 (bun add; versions FACT, npm 2026-09-09).
 - src/lib/WalletProvider.tsx: wrap with PrivyProvider and the `@privy-io/wagmi` WagmiProvider when `VITE_PRIVY_APP_ID` is set; unchanged provider otherwise (design from spec-privy.md).
 - src/config.ts and .env.example: `VITE_PRIVY_APP_ID`, `VITE_PRIVY_SIGNER_ID`, `VITE_FUND_TOKEN_B`.
@@ -78,7 +78,7 @@ App (/Users/bioharz/git/ethglobal/nachweis-app/app/):
 - src/components/DoorsCard.tsx: a "Transfer 20 NDF" input and button (wagmi writeContract on FundToken transfer; Privy's transfer action is an alternative if the watchlist step is quick).
 - src/screens/IssuerScreen.tsx: a "Plan" panel with "Stop plan (policy DENY)" calling the runner's admin endpoint; an "Issuer B" panel with the mint button.
 
-Scripts (/Users/bioharz/git/ethglobal/nachweis-app/scripts/):
+Scripts (nachweis-app/scripts/):
 - New scripts/plan-runner.ts (bun): loop every `PLAN_INTERVAL_SECS`; `PLAN_SIGNER=dev` signs `subscribe()` with a local key (anvil, Playwright, no Privy); `PLAN_SIGNER=privy` calls `@privy-io/node` 0.34.0 with the app id, app secret, authorization key and wallet id; exposes `/status` and `/stop`; logs the revert reason; sets the policy to DENY through the same SDK.
 - contracts/script/DeploySecondIssuer.s.sol: deploys FundTokenB with the existing registry and policyId and a second issuer key; script only.
 - scripts/browser-real-wallet-up.sh: start the runner in dev mode.

@@ -11,7 +11,7 @@ sources:
   - gh repo list zkpassport (2026-09-09)
   - Ethereum Sepolia and mainnet reads through public RPCs with cast (2026-09-09, Sepolia block 11664394, mainnet block 25936170)
   - https://certificates.zkpassport.id/testnet and /mainnet packaged certificate files for the current roots (fetched 2026-09-09)
-  - /Users/bioharz/git/ethglobal/nachweis/wiki/narrative-zk.md and product.md (dates and honesty rules)
+  - wiki/narrative-zk.md and product.md (dates and honesty rules)
 ---
 
 # zkPassport as a second evidence route (WP33)
@@ -118,7 +118,7 @@ FACT (limitations.md): only ICAO 9303 documents "whose issuing country publish t
 
 ## How the route is wired in Attestat
 
-Design (built 2026-09-09 on branch wp33-zkpassport in /Users/bioharz/git/ethglobal/nachweis-app-wt-service):
+Design (built 2026-09-09 on branch wp33-zkpassport in nachweis-app):
 
 - `contracts/src/zkpassport/ZkPassportVerifier.sol` implements IProofVerifier. Proof argument: 32-byte route tag keccak256("nachweis.zkpassport.v1") followed by abi.encode(ProofVerificationParams) exactly as the SDK returns it. The adapter replaces `serviceConfig` with its immutables (domain, scope, devMode, validity window), calls the root verifier, requires `verified`, requires `isAgeAboveOrEqual(18)`, reads the bound data and requires the bound address to equal publicInputs[0] and the bound chain id to equal `block.chainid`, requires policyId, bits and expiry to match; expiry is the proof date plus DECISION_TTL (immutable, default 30 days). Failure is a typed revert, like the other adapters.
 - Bits: 1 (identity evidence) | 2 (over 18) | 4 (route marker: passport chip via zkPassport) = 0x7. Consumers requiring 0x3 (fund token, subscription, pool checker) accept it unchanged; the Attested event and the UIs can tell the routes apart. The EUDI route keeps 0x3.

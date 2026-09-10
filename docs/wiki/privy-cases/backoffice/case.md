@@ -3,10 +3,10 @@ type: plan
 title: Privy case, back office: a document-blind compliance desk for the issuer's allowlist
 updated: 2026-09-09
 sources:
-  - /Users/bioharz/git/ethglobal/nachweis/wiki/privy-cases/BRIEF.md (2026-09-09)
-  - /Users/bioharz/git/ethglobal/nachweis/wiki/privy-cases/backoffice/research.md (all Privy pages fetched 2026-09-09, URLs there)
-  - /Users/bioharz/git/ethglobal/nachweis/wiki/handoff-fable-2026-09-09.md, product.md, spec-privy.md
-  - /Users/bioharz/git/ethglobal/nachweis-app main 5f5ceb9 (opus inventory 2026-09-09, read-only)
+  - wiki/privy-cases/BRIEF.md (2026-09-09)
+  - wiki/privy-cases/backoffice/research.md (all Privy pages fetched 2026-09-09, URLs there)
+  - wiki/handoff-fable-2026-09-09.md, product.md, spec-privy.md
+  - nachweis-app main 5f5ceb9 (opus inventory 2026-09-09, read-only)
   - https://ethglobal.com/events/ethonline2026/prizes/privy (prize text as pasted in the brief, 2026-09-09)
 ---
 
