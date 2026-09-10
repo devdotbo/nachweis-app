@@ -1,5 +1,7 @@
 # Nachweis wiki: index
 
+Start here, 2026-09-11 morning: read the [morning brief for 2026-09-11](handoff-2026-09-11-morning.md) first (state of both repos, what is on Sepolia, the Sepolia journey recorded green with 14 transactions, gates on app 2f826a1, the phone rehearsal commands, the builder-only list, risks). Caption gate met: beats 7 and 8 are on Sepolia, fork as fallback; the phone leg on Sepolia is still unverified; Privy undecided.
+
 Start here, 2026-09-10 morning: the builder accepted the narrowing (verbatim "ok"), check-in 2 is optional, a Sepolia key is being prepared, Privy is undecided (decisions.md "2026-09-10 morning"). Read the [independent review](review-morning-2026-09-10.md) and the [morning handoff](handoff-2026-09-10-morning.md) first; the shot list and the submission text carry the review's corrections as of 2026-09-10.
 
 Morning review, 2026-09-10: [Independent review of the overnight focus branches](review-morning-2026-09-10.md). FACT: the 155 local contract tests and 19 automation tests reproduce on wp41-all; typechecks and build pass. The full official-wallet, pool and revocation journey remains unverified. Port 8787 serves the original site; the actual focus branch preview is at http://127.0.0.1:8788/. OPINION: retain the narrowing and fixes, reconcile the recording and privacy story, finish one phone acceptance run, and treat Sepolia and Privy as separate optional gates. The review records remaining policy recovery and spec publication limits. No new builder decision is recorded.
