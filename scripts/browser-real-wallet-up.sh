@@ -27,6 +27,13 @@
 #                   THIS stack's registry (real Uniswap bytecode at the published Sepolia addresses,
 #                   docs/swap.md); the app gets VITE_POOL_ADAPTER and VITE_POOL_STABLE, env.json a `pool`
 #                   object. Verifier, issuer pin and tunnel are unchanged; the same phone flow attests.
+#   --deployment F  Sepolia run: attach to the deployment recorded in F (docs/deployments/sepolia-<date>.md,
+#                   written by scripts/sepolia-deploy.sh) instead of starting anvil and deploying. Registry,
+#                   FundToken, Subscription, NoirPidVerifier, checker, adapter and mUSD come from F; RPC and
+#                   keys from .env: SEPOLIA_RPC_URL, DEPLOYER_PRIVATE_KEY (operator, bridge key and the
+#                   page's operator dev key) and INVESTOR_PRIVATE_KEY (the page's investor dev signer).
+#                   Excludes --pool and --stub-issuer. A record with CHAIN_ID=31337 (a dry-run fork kept
+#                   with sepolia-deploy.sh --keep) needs DEPLOYMENT_RPC=<anvil url> and keeps the anvil keys.
 # Env (all optional):
 #   PID_ISSUER_KEY_HASH  bytes32 pinned in NoirPidVerifier [sandbox PID issuer, see above]; ignored with --stub-issuer
 #   G0_ENV               env.sh of a g0-up run whose verifier and tunnel are still up: reuse them instead of starting new ones
@@ -45,11 +52,12 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 RUN_ROOT="${RUN_ROOT:-$ROOT/docs/evidence/private/runs}"
 RUN_DIR="${RUN_DIR:-$RUN_ROOT/$(date +%Y%m%d-%H%M%S)-browser}"
 SANDBOX_ISSUER_HASH=0xb4f2bfa1df99f06e588d39931b2cfd517a2befe8737c7f86bfa5c668d2abe079   # sha256 of the sandbox PID issuer's SEC1 key (G0 record, live)
-STUB_ISSUER=0; POOL=0
+STUB_ISSUER=0; POOL=0; DEPLOYMENT=""; DEPLOYMENT_CHAIN=31337
 while [ $# -gt 0 ]; do
   case "$1" in
     --stub-issuer) STUB_ISSUER=1; shift ;;
     --pool) POOL=1; shift ;;
+    --deployment) DEPLOYMENT="$2"; shift 2 ;;
     -h|--help) sed -n '2,40p' "$0"; exit 0 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
@@ -91,6 +99,26 @@ wait_http() { # url, seconds
   for _ in $(seq 1 $(( $2 * 5 ))); do curl -fs "$1" >/dev/null 2>&1 && return 0; sleep 0.2; done
   return 1
 }
+if [ -n "$DEPLOYMENT" ]; then
+  [ $POOL -eq 0 ] && [ $STUB_ISSUER -eq 0 ] || die "--deployment excludes --pool and --stub-issuer"
+  [ -f "$DEPLOYMENT" ] || die "deployment record $DEPLOYMENT does not exist"
+  rec() { grep -m1 "^$1=" "$DEPLOYMENT" | cut -d= -f2-; }
+  DEPLOYMENT_CHAIN=$(rec CHAIN_ID)
+  if [ "$DEPLOYMENT_CHAIN" = 11155111 ]; then
+    # shellcheck disable=SC1091
+    [ -f "$ROOT/.env" ] && { set -a; . "$ROOT/.env"; set +a; }
+    [ -n "${SEPOLIA_RPC_URL:-}" ] && [ -n "${DEPLOYER_PRIVATE_KEY:-}" ] && [ -n "${INVESTOR_PRIVATE_KEY:-}" ] \
+      || die "a Sepolia deployment needs SEPOLIA_RPC_URL, DEPLOYER_PRIVATE_KEY and INVESTOR_PRIVATE_KEY in $ROOT/.env"
+    RPC="$SEPOLIA_RPC_URL"; K0="$DEPLOYER_PRIVATE_KEY"; K1="$INVESTOR_PRIVATE_KEY"
+    OPERATOR=$(cast wallet address --private-key "$K0"); INVESTOR=$(cast wallet address --private-key "$K1")
+    unset DEPLOYER_PRIVATE_KEY INVESTOR_PRIVATE_KEY ETHERSCAN_API_KEY   # children get K0/K1 explicitly, nothing else
+  else
+    RPC="${DEPLOYMENT_RPC:-}"; [ -n "$RPC" ] || die "a dry-run deployment (chain $DEPLOYMENT_CHAIN) needs DEPLOYMENT_RPC=<the anvil url kept by sepolia-deploy.sh --keep>"
+  fi
+  [ "$(cast chain-id --rpc-url "$RPC" 2>/dev/null)" = "$DEPLOYMENT_CHAIN" ] || die "$RPC does not answer chain id $DEPLOYMENT_CHAIN of $DEPLOYMENT"
+  [ "$(cast balance "$OPERATOR" --rpc-url "$RPC")" != 0 ] || die "operator $OPERATOR holds no ETH on chain $DEPLOYMENT_CHAIN"
+  [ "$(cast balance "$INVESTOR" --rpc-url "$RPC")" != 0 ] || die "investor $INVESTOR holds no ETH on chain $DEPLOYMENT_CHAIN (sepolia-deploy.sh step 5, INVESTOR_ADDRESS)"
+fi
 say "run directory $RUN_DIR"
 
 # ------------------------------------------------------------------ 1. verifier in relay mode plus tunnel (g0-up.sh)
@@ -134,6 +162,7 @@ case "$PROBE_REQUEST_URI" in
 esac
 
 # ------------------------------------------------------------------ 2. anvil (with --pool: a fork of Sepolia, as app-e2e-local.sh --pool)
+if [ -n "$DEPLOYMENT" ]; then say "no anvil: chain $DEPLOYMENT_CHAIN at $RPC, block $(cast block-number --rpc-url "$RPC") (deployment $DEPLOYMENT)"; else
 ANVIL_ARGS=(--port "$ANVIL_PORT" --silent); ANVIL_WAIT=50
 if [ $POOL -eq 1 ]; then
   FORK_URL="${SEPOLIA_RPC_URL:-https://ethereum-sepolia-rpc.publicnode.com}"
@@ -143,8 +172,33 @@ anvil "${ANVIL_ARGS[@]}" > "$RUN_DIR/anvil.log" 2>&1 & echo $! > "$RUN_DIR/anvil
 for _ in $(seq 1 $ANVIL_WAIT); do cast chain-id --rpc-url "$RPC" >/dev/null 2>&1 && break; sleep 0.2; done
 cast chain-id --rpc-url "$RPC" >/dev/null 2>&1 || die "anvil did not come up ($RUN_DIR/anvil.log)"
 if [ $POOL -eq 1 ]; then say "anvil on $RPC, chain 31337, forking $FORK_URL at block $(cast block-number --rpc-url "$RPC")"; else say "anvil on $RPC"; fi
+fi
 
-# ------------------------------------------------------------------ 3. contracts
+# ------------------------------------------------------------------ 3. contracts (from the record with --deployment)
+if [ -n "$DEPLOYMENT" ]; then
+  REGISTRY=$(rec REGISTRY); TOKEN=$(rec FUND_TOKEN); SUBSCRIPTION=$(rec SUBSCRIPTION); NOIR_VERIFIER=$(rec NOIR_VERIFIER); CHECKER=$(rec CHECKER)
+  ADAPTER=$(rec ADAPTER); STABLE=$(rec MOCK_STABLE); ISSUER_HASH=$(rec ISSUER_KEY_HASH); ISSUER_JSON=""
+  for v in REGISTRY TOKEN SUBSCRIPTION NOIR_VERIFIER CHECKER; do [[ "${!v}" =~ ^0x[0-9a-fA-F]{40}$ ]] || die "$DEPLOYMENT carries no $v"; done
+  [[ "$ISSUER_HASH" =~ ^0x[0-9a-fA-F]{64}$ ]] || die "$DEPLOYMENT carries no ISSUER_KEY_HASH"
+  if [ "$ISSUER_HASH" = "$SANDBOX_ISSUER_HASH" ]; then ISSUER_LABEL="sandbox PID issuer (live, G0 record)"; else ISSUER_LABEL="issuer pin from $DEPLOYMENT"; fi
+  [ "$(cast call "$REGISTRY" "verifierOf(bytes32)(address)" "$POLICY" --rpc-url "$RPC")" = "$NOIR_VERIFIER" ] || die "registry $REGISTRY does not point at NoirPidVerifier $NOIR_VERIFIER for $POLICY"
+  [ "$(cast call "$REGISTRY" "isOperator(bytes32,address)(bool)" "$POLICY" "$OPERATOR" --rpc-url "$RPC")" = true ] || die "$OPERATOR is not an operator for $POLICY on $REGISTRY"
+  POOL_ENV=(); POOL_JSON='null'
+  if [[ "$ADAPTER" =~ ^0x[0-9a-fA-F]{40}$ ]]; then
+    POOL=1; mkdir -p "$RUN_DIR/pool"
+    printf 'VITE_POOL_ADAPTER=%s\nVITE_POOL_STABLE=%s\nVITE_POOL_FEE=%s\nVITE_POOL_TICK_SPACING=%s\n' "$ADAPTER" "$STABLE" "$(rec POOL_FEE)" "$(rec TICK_SPACING)" > "$RUN_DIR/pool/pool.env"
+    while read -r line; do [ -n "$line" ] && POOL_ENV+=("$line"); done < "$RUN_DIR/pool/pool.env"
+    LIQUIDITY=$(cast call 0xE1Dd9c3fA50EDB962E442f60DfBc432e24537E4C "getLiquidity(bytes32)(uint128)" "$(rec POOL_ID)" --rpc-url "$RPC" | awk '{print $1}')   # StateView on Sepolia
+    jq -n --arg rpcUrl "$RPC" --arg chainId "$DEPLOYMENT_CHAIN" --arg deployment "$DEPLOYMENT" --arg forkBlock "$(rec DEPLOY_BLOCK)" --arg liquidity "$LIQUIDITY" \
+      --arg registry "$REGISTRY" --arg fundToken "$TOKEN" --arg subscription "$SUBSCRIPTION" --arg stable "$STABLE" --arg checker "$CHECKER" --arg adapter "$ADAPTER" \
+      --arg poolId "$(rec POOL_ID)" --arg currency0 "$(rec CURRENCY0)" --arg currency1 "$(rec CURRENCY1)" --arg fee "$(rec POOL_FEE)" --arg tickSpacing "$(rec TICK_SPACING)" \
+      --arg policyId "$POLICY" --arg requiredBits "$REQUIRED_BITS" --arg lpTokenId "$(rec LP_TOKEN_ID)" \
+      '$ARGS.named | .chainId |= tonumber | .forkBlock |= tonumber | .fee |= tonumber | .tickSpacing |= tonumber' > "$RUN_DIR/pool/pool.json"
+    POOL_JSON=$(cat "$RUN_DIR/pool/pool.json")
+  fi
+  say "deployment $DEPLOYMENT: AttestationRegistry $REGISTRY, FundToken $TOKEN, Subscription $SUBSCRIPTION (operator $OPERATOR)"
+  say "NoirPidVerifier $NOIR_VERIFIER pinned to $ISSUER_HASH ($ISSUER_LABEL); EudiAllowlistChecker $CHECKER$([ $POOL -eq 1 ] && echo "; permissioned pool: adapter $ADAPTER, mUSD $STABLE")"
+else
 DEPLOY_OUT=$(cd "$ROOT/contracts" && DEPLOYER_PRIVATE_KEY=$K0 POLICY_ID=$POLICY forge script script/Deploy.s.sol:Deploy --rpc-url "$RPC" --broadcast 2>&1) || { echo "$DEPLOY_OUT" | tail -20; die "Deploy.s.sol failed"; }
 REGISTRY=$(echo "$DEPLOY_OUT" | awk '/AttestationRegistry:/ {print $2}' | head -1)
 TOKEN=$(echo "$DEPLOY_OUT" | awk '/FundToken:/ {print $2}' | head -1)
@@ -183,6 +237,7 @@ CHECKER_OUT=$(cd "$ROOT/contracts" && forge create src/uniswap/EudiAllowlistChec
 CHECKER=$(echo "$CHECKER_OUT" | awk '/Deployed to:/ {print $3}' | head -1)
 [ -n "$CHECKER" ] || die "no checker address in the forge create output"
 say "NoirPidVerifier $NOIR_VERIFIER pinned to $ISSUER_HASH ($ISSUER_LABEL); EudiAllowlistChecker $CHECKER"
+fi
 
 # ------------------------------------------------------------------ 4. bridge, local mode
 BRIDGE_BIN="$ROOT/service/target/release/nachweis-bridge"
@@ -199,7 +254,7 @@ say "bridge on $BRIDGE_URL, $(curl -s "$BRIDGE_URL/health" | jq -c '{mode,proof_
 
 # ------------------------------------------------------------------ 5. the app: Vite dev server (COOP and COEP from vite.config.ts), dev signer
 [ -d "$ROOT/app/node_modules/vite" ] || (cd "$ROOT/app" && bun install --silent) || die "bun install failed in app/"
-(cd "$ROOT/app" && exec env -u VITE_MOCK VITE_BRIDGE_URL="$BRIDGE_URL" VITE_VERIFIER_URL="$VERIFIER_URL" VITE_CHAIN_ID=31337 VITE_RPC_URL="$RPC" \
+(cd "$ROOT/app" && exec env -u VITE_MOCK VITE_BRIDGE_URL="$BRIDGE_URL" VITE_VERIFIER_URL="$VERIFIER_URL" VITE_CHAIN_ID=$DEPLOYMENT_CHAIN VITE_RPC_URL="$RPC" \
   VITE_REGISTRY="$REGISTRY" VITE_FUND_TOKEN="$TOKEN" VITE_SUBSCRIPTION="$SUBSCRIPTION" VITE_POLICY_ID="$POLICY" VITE_REQUIRED_BITS=$REQUIRED_BITS \
   VITE_DEV_PRIVATE_KEY="$K1" VITE_DEV_OPERATOR_KEY="$K0" "${POOL_ENV[@]}" \
   node node_modules/vite/bin/vite.js --port "$APP_PORT" --strictPort --host 127.0.0.1 > "$RUN_DIR/app.log" 2>&1) & echo $! > "$RUN_DIR/app.pid"
@@ -241,8 +296,10 @@ jq -n --arg mode browser --arg appUrl "$APP_URL" --arg rpcUrl "$RPC" --arg verif
   echo "issuer_key_hash=$ISSUER_HASH ($ISSUER_LABEL)"
   echo "investor=$INVESTOR"
   echo "operator=$OPERATOR"
+  echo "chain_id=$DEPLOYMENT_CHAIN"
+  [ -z "$DEPLOYMENT" ] || echo "deployment=$DEPLOYMENT"
   if [ $POOL -eq 1 ]; then
-    echo "pool=1 (fork of $FORK_URL at block $(jq -r .forkBlock <<< "$POOL_JSON"))"
+    if [ -n "$DEPLOYMENT" ]; then echo "pool=1 (deployment $DEPLOYMENT)"; else echo "pool=1 (fork of $FORK_URL at block $(jq -r .forkBlock <<< "$POOL_JSON"))"; fi
     echo "pool_adapter=$(jq -r .adapter <<< "$POOL_JSON")"
     echo "pool_stable=$(jq -r .stable <<< "$POOL_JSON")"
     echo "pool_checker=$(jq -r .checker <<< "$POOL_JSON")"
@@ -272,7 +329,7 @@ BROWSER-REAL-WALLET UP ($(( $(date +%s) - T0 )) s)
   app (open in Chrome on this Mac):  $APP_URL
   public tunnel (the wallet's host):  $PUBLIC_URL
   verifier (the tab's relay host):    $VERIFIER_URL
-  bridge / anvil:                     $BRIDGE_URL / $RPC
+  bridge / chain rpc:                 $BRIDGE_URL / $RPC (chain $DEPLOYMENT_CHAIN${DEPLOYMENT:+, deployment $DEPLOYMENT})
   NoirPidVerifier pinned to:          $ISSUER_HASH ($ISSUER_LABEL)
   run directory (gitignored):         $RUN_DIR
 $([ $POOL -eq 1 ] && printf '  permissioned pool (fork):           adapter %s, mUSD %s, pool.json %s\n' "$(jq -r .adapter <<< "$POOL_JSON")" "$(jq -r .stable <<< "$POOL_JSON")" "$RUN_DIR/pool/pool.json")
