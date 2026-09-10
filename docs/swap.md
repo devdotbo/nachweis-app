@@ -4,7 +4,7 @@ Door two of "one permission, two doors". The investor swaps the demo stable for 
 
 Evidence class of the runs and numbers on this page: L (local). The pool runs on an anvil fork of Sepolia against the Uniswap contracts deployed there (`contracts/src/uniswap/UniswapSepolia.sol`). Numbers were measured on the builder's M3 Max on 2026-09-09.
 
-Since 2026-09-10 the same pool also exists on Sepolia itself (chain id 11155111, record [deployments/sepolia-2026-09-10.md](deployments/sepolia-2026-09-10.md), not verified on Etherscan): pool id `0x5ea00f1b6307f536f4880101648c0428df57a3e645cbb60c25e00a0ba29cbec7`, adapter [0xc440aD626959d97a689Ba0465f2F1eD293a0b20D](https://sepolia.etherscan.io/address/0xc440aD626959d97a689Ba0465f2F1eD293a0b20D), checker [0x967A701c99D467EB9d6192bE87D4742c90aF7046](https://sepolia.etherscan.io/address/0x967A701c99D467EB9d6192bE87D4742c90aF7046), mUSD [0x645476358892F920991e544394EA24fF6Df5204A](https://sepolia.etherscan.io/address/0x645476358892F920991e544394EA24fF6Df5204A). The stack attaches to it without anvil: `scripts/browser-real-wallet-up.sh --deployment docs/deployments/sepolia-2026-09-10.md` (`demo-runbook.md`, "Sepolia run"); the Sepolia swap and refused swap are in `evidence/sepolia-journey-2026-09-10.md` if present.
+Since 2026-09-10 the same pool also exists on Sepolia itself (chain id 11155111, record [deployments/sepolia-2026-09-10.md](deployments/sepolia-2026-09-10.md), not verified on Etherscan): pool id `0x5ea00f1b6307f536f4880101648c0428df57a3e645cbb60c25e00a0ba29cbec7`, adapter [0xc440aD626959d97a689Ba0465f2F1eD293a0b20D](https://sepolia.etherscan.io/address/0xc440aD626959d97a689Ba0465f2F1eD293a0b20D), checker [0x967A701c99D467EB9d6192bE87D4742c90aF7046](https://sepolia.etherscan.io/address/0x967A701c99D467EB9d6192bE87D4742c90aF7046), mUSD [0x645476358892F920991e544394EA24fF6Df5204A](https://sepolia.etherscan.io/address/0x645476358892F920991e544394EA24fF6Df5204A). The stack attaches to it without anvil: `scripts/browser-real-wallet-up.sh --deployment docs/deployments/sepolia-2026-09-10.md` (`demo-runbook.md`, "Sepolia run"); the Sepolia swap and refused swap are in [evidence/sepolia-journey-2026-09-10.md](evidence/sepolia-journey-2026-09-10.md).
 
 ## Run it
 
@@ -80,7 +80,7 @@ Swap from the page: tx <hash>, gas <n>, sent 100 mUSD, received <n> NDF; estimat
 Revoke from the console: tx <hash>.
 Refused swap from the page: tx <hash> (status reverted), title "Refused by PermissionedHooks.beforeSwap", inner Unauthorized().
 Screenshots: app/_preview/e2e/sp1-mock/06-swap-open.png, 07-swap-confirmed.png, 08-issuer-revoked-for-swap.png, 09-swap-refused.png (copied to docs/ui/ as investor-11…, investor-12…, issuer-07…, investor-13…).
-Not done: step 7; a sell direction (NDF in). Sepolia broadcast done 2026-09-10 (docs/deployments/sepolia-2026-09-10.md); the Sepolia journey is a separate record, docs/evidence/sepolia-journey-2026-09-10.md, if present.
+Not done: step 7; a sell direction (NDF in). Sepolia broadcast done 2026-09-10 (docs/deployments/sepolia-2026-09-10.md); the Sepolia journey is recorded in [evidence/sepolia-journey-2026-09-10.md](evidence/sepolia-journey-2026-09-10.md).
 ```
 
 ## Files
