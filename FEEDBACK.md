@@ -1,6 +1,6 @@
 # Uniswap developer feedback
 
-Project: Attestat, repository `nachweis-app` (ETHOnline 2026). Integration: a Uniswap v4 permissioned pool on Sepolia whose allowlist checker reads the Attestat `AttestationRegistry`. Written during the integration, dated 2026-09-07; evidence labels corrected 2026-09-08; the front-end swap and item 18 added 2026-09-09. Lines marked TODO are for the Sepolia broadcast, which has not happened yet; everything else was observed on a local Sepolia fork (anvil forked from a public Sepolia RPC) against the bytecode of the contracts Uniswap has deployed there.
+Project: Attestat, repository `nachweis-app` (ETHOnline 2026). Integration: a Uniswap v4 permissioned pool on Sepolia whose allowlist checker reads the Attestat `AttestationRegistry`. Written during the integration, dated 2026-09-07; evidence labels corrected 2026-09-08; the front-end swap and item 18 added 2026-09-09. Lines marked TODO are for the Sepolia broadcast, which happened on 2026-09-10 (`docs/deployments/sepolia-2026-09-10.md`: checker, adapter, pool and liquidity on Sepolia, not verified on Etherscan) and is not yet written into those lines; everything else was observed on a local Sepolia fork (anvil forked from a public Sepolia RPC) against the bytecode of the contracts Uniswap has deployed there.
 
 ## Status of evidence
 

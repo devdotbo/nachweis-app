@@ -2,7 +2,9 @@
 
 Door two of "one permission, two doors". The investor swaps the demo stable for the fund token in a Uniswap v4 permissioned pool from the investor portal, with the connected wallet. The pool's hook asks the Attestat registry before the swap; after the issuer revokes, the same Swap is refused and the portal shows the revert in words.
 
-Evidence class of everything on this page: L (local). The pool runs on an anvil fork of Sepolia against the Uniswap contracts deployed there (`contracts/src/uniswap/UniswapSepolia.sol`); nothing has been broadcast to Sepolia. Numbers were measured on the builder's M3 Max on 2026-09-09.
+Evidence class of the runs and numbers on this page: L (local). The pool runs on an anvil fork of Sepolia against the Uniswap contracts deployed there (`contracts/src/uniswap/UniswapSepolia.sol`). Numbers were measured on the builder's M3 Max on 2026-09-09.
+
+Since 2026-09-10 the same pool also exists on Sepolia itself (chain id 11155111, record [deployments/sepolia-2026-09-10.md](deployments/sepolia-2026-09-10.md), not verified on Etherscan): pool id `0x5ea00f1b6307f536f4880101648c0428df57a3e645cbb60c25e00a0ba29cbec7`, adapter [0xc440aD626959d97a689Ba0465f2F1eD293a0b20D](https://sepolia.etherscan.io/address/0xc440aD626959d97a689Ba0465f2F1eD293a0b20D), checker [0x967A701c99D467EB9d6192bE87D4742c90aF7046](https://sepolia.etherscan.io/address/0x967A701c99D467EB9d6192bE87D4742c90aF7046), mUSD [0x645476358892F920991e544394EA24fF6Df5204A](https://sepolia.etherscan.io/address/0x645476358892F920991e544394EA24fF6Df5204A). The stack attaches to it without anvil: `scripts/browser-real-wallet-up.sh --deployment docs/deployments/sepolia-2026-09-10.md` (`demo-runbook.md`, "Sepolia run"); the Sepolia swap and refused swap are in `evidence/sepolia-journey-2026-09-10.md` if present.
 
 ## Run it
 

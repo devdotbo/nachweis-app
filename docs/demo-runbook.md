@@ -402,7 +402,13 @@ scripts/browser-real-wallet-down.sh
 
 Expected: `stopped app`, `stopped bridge`, `stopped anvil`, then g0-down's verifier and tunnel lines; the logs stay in the run directory (gitignored).
 
-### Sepolia run (2026-09-10, scripted; not yet run on Sepolia)
+### Sepolia run (2026-09-10, deployed)
+
+Deployment exists: `scripts/sepolia-deploy.sh` ran on Sepolia (chain id 11155111) on 2026-09-10, 33 transactions in blocks 11676804 to 11676836, every receipt status 1; the record is `docs/deployments/sepolia-2026-09-10.md` (addresses, transaction hashes with Etherscan links, gas, the env lines below, the on-chain checks). Not verified on Etherscan (no API key). The journey on this deployment is recorded in `docs/evidence/sepolia-journey-2026-09-10.md` if present. The concrete command for the stack against that deployment:
+
+```
+scripts/browser-real-wallet-up.sh --deployment docs/deployments/sepolia-2026-09-10.md
+```
 
 The same stack against a real Sepolia deployment instead of the fork. Two scripts, the builder's `.env` and one record file; what to provide is `docs/sepolia-checklist.md`. Rehearsed end to end on an anvil fork of Sepolia with the anvil keys on 2026-09-10 (`docs/deployments/sepolia-dry-run-2026-09-10.md`: every step, gas, one subscribe and one swap by a dev investor, and the stack attached to that deployment without anvil).
 
@@ -423,7 +429,7 @@ scripts/browser-real-wallet-up.sh --deployment docs/deployments/sepolia-<date>.m
 
 ## 9. Sepolia real run (builder, manual)
 
-Not run 2026-09-07. Nothing is deployed to any network as of this file. Since 2026-09-10 the one-command form is `scripts/sepolia-deploy.sh` (section 8c, "Sepolia run", and `docs/sepolia-checklist.md`); it covers steps 1, 3, 4, 5, the investor funding and the Etherscan verification of the table below, and with `--probe` steps 7 and 8's happy path. The table stays as the hand-driven reference and for step 2 (the SP1 verifier, not part of the video). What the builder must have:
+Not run by hand. The deployment was made on 2026-09-10 by the one-command form `scripts/sepolia-deploy.sh` (record `docs/deployments/sepolia-2026-09-10.md`; section 8c, "Sepolia run"). That script (section 8c, "Sepolia run", and `docs/sepolia-checklist.md`); it covers steps 1, 3, 4, 5, the investor funding and the Etherscan verification of the table below, and with `--probe` steps 7 and 8's happy path. The table stays as the hand-driven reference and for step 2 (the SP1 verifier, not part of the video). What the builder must have:
 
 - A funded deployer key on Sepolia (`DEPLOYER_PRIVATE_KEY`; it becomes registry owner, token issuer, operator and adapter owner). Roughly 12 M gas across all scripts at Sepolia prices; the two dry runs of the pool scripts alone estimated 8.2 M and 8.9 M.
 - A funded investor key (`INVESTOR_PRIVATE_KEY`, anything with a few hundredths of Sepolia ETH) and, for the browser beats, the same key imported into the wallet on the phone or laptop.
