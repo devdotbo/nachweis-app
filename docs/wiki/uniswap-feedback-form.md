@@ -5,7 +5,7 @@ updated: 2026-09-09
 sources:
   - https://developers.uniswap.org/hackathon-feedback (fields fetched 2026-09-08)
   - https://ethglobal.com/events/ethonline2026/prizes/uniswap-foundation (requirement fetched 2026-09-08)
-  - /Users/bioharz/git/ethglobal/nachweis-app/FEEDBACK.md (main 46d8349, read 2026-09-09; 18 items since the swap door of 2026-09-09)
+  - nachweis-app/FEEDBACK.md (main 46d8349, read 2026-09-09; 18 items since the swap door of 2026-09-09)
 ---
 
 # Uniswap Developer Feedback Form

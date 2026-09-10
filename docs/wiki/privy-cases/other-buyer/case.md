@@ -3,11 +3,11 @@ type: plan
 title: Privy business case, other buyer: the contractor payout desk
 updated: 2026-09-09
 sources:
-  - /Users/bioharz/git/ethglobal/nachweis/wiki/privy-cases/BRIEF.md (2026-09-09)
-  - /Users/bioharz/git/ethglobal/nachweis/wiki/privy-cases/other-buyer/research.md (all URLs and fetch dates, 2026-09-09)
-  - /Users/bioharz/git/ethglobal/nachweis/wiki/handoff-fable-2026-09-09.md, product.md, spec-privy.md
-  - /Users/bioharz/git/ethglobal/nachweis/raw/2026-09-06-product-pitch-legal.md
-  - /Users/bioharz/git/ethglobal/nachweis-app (opus inventory 2026-09-09, read-only, main 5f5ceb9)
+  - wiki/privy-cases/BRIEF.md (2026-09-09)
+  - wiki/privy-cases/other-buyer/research.md (all URLs and fetch dates, 2026-09-09)
+  - wiki/handoff-fable-2026-09-09.md, product.md, spec-privy.md
+  - raw/2026-09-06-product-pitch-legal.md
+  - nachweis-app (opus inventory 2026-09-09, read-only, main 5f5ceb9)
 ---
 
 # The contractor payout desk

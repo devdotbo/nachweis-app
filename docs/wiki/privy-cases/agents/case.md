@@ -3,11 +3,11 @@ type: plan
 title: Privy case, agents and automation: a standing order run by the issuer's automation under a decision-mirrored policy
 updated: 2026-09-09
 sources:
-  - /Users/bioharz/git/ethglobal/nachweis/wiki/privy-cases/BRIEF.md
-  - /Users/bioharz/git/ethglobal/nachweis/wiki/privy-cases/agents/research.md (every Privy URL, fetched 2026-09-09)
-  - /Users/bioharz/git/ethglobal/nachweis/wiki/handoff-fable-2026-09-09.md, product.md, spec-privy.md, narrative-zk.md
-  - /Users/bioharz/git/ethglobal/nachweis/raw/2026-09-06-product-pitch-legal.md and 2026-09-06-live-gated-products.md (as cited by product.md)
-  - /Users/bioharz/git/ethglobal/nachweis-app main 5f5ceb9 (opus inventory 2026-09-09, read-only)
+  - wiki/privy-cases/BRIEF.md
+  - wiki/privy-cases/agents/research.md (every Privy URL, fetched 2026-09-09)
+  - wiki/handoff-fable-2026-09-09.md, product.md, spec-privy.md, narrative-zk.md
+  - raw/2026-09-06-product-pitch-legal.md and 2026-09-06-live-gated-products.md (as cited by product.md)
+  - nachweis-app main 5f5ceb9 (opus inventory 2026-09-09, read-only)
 ---
 
 # Standing order: the issuer's automation subscribes for the investor, only while the decision is valid
@@ -66,9 +66,9 @@ GA and self-serve status of what the case stands on (research.md sections 1, 2, 
 
 ## 6. What changes in the code
 
-New, `/Users/bioharz/git/ethglobal/nachweis-app/automation/` (bun, like companion/), dependency `@privy-io/node` 0.34.0 plus viem: `src/policy.ts` builds the rules from a Decision and the addresses (pure, tested); `src/watch.ts` watches `Approved` and `Revoked`, creates the policy on approve, appends DENY-all on revoke, removes it on re-approve; `src/run.ts` is the tick (list delegated wallets, transfer, subscribe, log hashes); `src/server.ts` serves `POST /tick` and `GET /status`. Env: `PRIVY_APP_ID`, `PRIVY_APP_SECRET`, `PRIVY_AUTHORIZATION_KEY` (never printed), `PRIVY_SIGNER_ID`, chain addresses, and `AUTOMATION_SIGNER=privy|local`. In `local` mode the tick signs with a local key against anvil and a small evaluator applies the same rule JSON, captioned "simulated Privy policy (local)", dev loop only.
+New, `nachweis-app/automation/` (bun, like companion/), dependency `@privy-io/node` 0.34.0 plus viem: `src/policy.ts` builds the rules from a Decision and the addresses (pure, tested); `src/watch.ts` watches `Approved` and `Revoked`, creates the policy on approve, appends DENY-all on revoke, removes it on re-approve; `src/run.ts` is the tick (list delegated wallets, transfer, subscribe, log hashes); `src/server.ts` serves `POST /tick` and `GET /status`. Env: `PRIVY_APP_ID`, `PRIVY_APP_SECRET`, `PRIVY_AUTHORIZATION_KEY` (never printed), `PRIVY_SIGNER_ID`, chain addresses, and `AUTOMATION_SIGNER=privy|local`. In `local` mode the tick signs with a local key against anvil and a small evaluator applies the same rule JSON, captioned "simulated Privy policy (local)", dev loop only.
 
-App, `/Users/bioharz/git/ethglobal/nachweis-app/app/`: `package.json` adds `@privy-io/react-auth` 3.40.0 and `@privy-io/wagmi` 4.0.17 (bun). `src/lib/WalletProvider.tsx` (connectors at :34 to 39) wraps with `PrivyProvider` and `@privy-io/wagmi` when `VITE_PRIVY_APP_ID` is set, else renders the current provider unchanged. `src/config.ts` adds `VITE_PRIVY_APP_ID`, `VITE_PRIVY_SIGNER_ID`, `VITE_AUTOMATION_URL`, all optional. `src/lib/wallet.ts` (:62 to 65) gets the email sign-in option for the investor role. New `src/components/StandingOrderCard.tsx` (`useSigners`, the "Run the month" button, the policy in plain words), mounted in `InvestorScreen.tsx` after `DoorsCard`; a log panel in `IssuerScreen.tsx`.
+App, `nachweis-app/app/`: `package.json` adds `@privy-io/react-auth` 3.40.0 and `@privy-io/wagmi` 4.0.17 (bun). `src/lib/WalletProvider.tsx` (connectors at :34 to 39) wraps with `PrivyProvider` and `@privy-io/wagmi` when `VITE_PRIVY_APP_ID` is set, else renders the current provider unchanged. `src/config.ts` adds `VITE_PRIVY_APP_ID`, `VITE_PRIVY_SIGNER_ID`, `VITE_AUTOMATION_URL`, all optional. `src/lib/wallet.ts` (:62 to 65) gets the email sign-in option for the investor role. New `src/components/StandingOrderCard.tsx` (`useSigners`, the "Run the month" button, the policy in plain words), mounted in `InvestorScreen.tsx` after `DoorsCard`; a log panel in `IssuerScreen.tsx`.
 
 Scripts: `scripts/browser-real-wallet-up.sh` starts the automation in `local` mode after the bridge (:174); new `scripts/automation-sepolia.sh` starts it in `privy` mode.
 

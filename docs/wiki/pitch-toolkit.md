@@ -3,19 +3,19 @@ type: reference
 title: Pitch, toolkit framing (gallery and main page)
 updated: 2026-09-09
 sources:
-  - /Users/bioharz/git/ethglobal/nachweis/wiki/showcase-brief.md (the reframed pitch, builder decision 2026-09-09 night)
-  - /Users/bioharz/git/ethglobal/nachweis/wiki/product.md and pitch.md (product sentence, spoken line, honesty rules)
-  - /Users/bioharz/git/ethglobal/nachweis/wiki/architecture.md (Decision struct, proof interface, consumers)
-  - /Users/bioharz/git/ethglobal/nachweis/wiki/work-packages.md (evidence states per package, read 2026-09-09)
-  - /Users/bioharz/git/ethglobal/nachweis/wiki/zkpassport.md (second route, candidate sentences)
-  - /Users/bioharz/git/ethglobal/nachweis/wiki/identity-standards.md (17 systems, verdicts, the "Sentences we may use" section quoted verbatim in the evidence lane and the "beyond the EU" row)
-  - /Users/bioharz/git/ethglobal/nachweis/wiki/privy-cases/README.md and evaluation.md section 1 (the five cases, tracks)
-  - /Users/bioharz/git/ethglobal/nachweis-site/showcase/index.html and index.html (the pages themselves, written 2026-09-09)
+  - wiki/showcase-brief.md (the reframed pitch, builder decision 2026-09-09 night)
+  - wiki/product.md and pitch.md (product sentence, spoken line, honesty rules)
+  - wiki/architecture.md (Decision struct, proof interface, consumers)
+  - wiki/work-packages.md (evidence states per package, read 2026-09-09)
+  - wiki/zkpassport.md (second route, candidate sentences)
+  - wiki/identity-standards.md (17 systems, verdicts, the "Sentences we may use" section quoted verbatim in the evidence lane and the "beyond the EU" row)
+  - wiki/privy-cases/README.md and evaluation.md section 1 (the five cases, tracks)
+  - nachweis-site/showcase/index.html and index.html (the pages themselves, written 2026-09-09)
 ---
 
 # Pitch, toolkit framing
 
-The main page keeps its product pitch (the passport question, the wallet, the walkthrough, two doors, the honesty strip, where the proof lives, why now). Two things were added on 2026-09-09: the line that Attestat is the toolkit and the showcase shows what is built on it, and a gallery page at /showcase/ with a system map, the demos, the use cases and its own honesty strip. Pages: /Users/bioharz/git/ethglobal/nachweis-site/index.html and /Users/bioharz/git/ethglobal/nachweis-site/showcase/index.html (committed to nachweis-site main (a4dda6f, b5b273d) as of this page; the lead commits).
+The main page keeps its product pitch (the passport question, the wallet, the walkthrough, two doors, the honesty strip, where the proof lives, why now). Two things were added on 2026-09-09: the line that Attestat is the toolkit and the showcase shows what is built on it, and a gallery page at /showcase/ with a system map, the demos, the use cases and its own honesty strip. Pages: nachweis-site/index.html and nachweis-site/showcase/index.html (committed to nachweis-site main (a4dda6f, b5b273d) as of this page; the lead commits).
 
 ## The lines on the pages, verbatim
 
@@ -47,7 +47,7 @@ Unchanged on the main page: h1, sub-line, spoken line, the walkthrough and its d
 
 1. Hero: eyebrow, h1, lede, framing line, two buttons (See the demos, How the pieces fit).
 2. System map, five lanes drawn in CSS grid with connectors, one reveal animation outward from the decision:
-   - Evidence in: EUDI wallet (OpenID4VP, SD-JWT PID, official test wallet with a sample identity), passport chip via zkPassport (not eIDAS evidence, stated), Swiss e-ID swiyu (supported now for the Beta-ID stack with one adapter change, no vector run yet), other national systems (mDLs in Apple and Google Wallet, Taiwan, GOV.UK, and the list of systems that hand out no verifiable credential). The swiyu and other-systems texts are verbatim sentences from the section "Sentences we may use" of /Users/bioharz/git/ethglobal/nachweis/wiki/identity-standards.md (2026-09-09); the page itself is not linked from the public site because the wiki is private.
+   - Evidence in: EUDI wallet (OpenID4VP, SD-JWT PID, official test wallet with a sample identity), passport chip via zkPassport (not eIDAS evidence, stated), Swiss e-ID swiyu (supported now for the Beta-ID stack with one adapter change, no vector run yet), other national systems (mDLs in Apple and Google Wallet, Taiwan, GOV.UK, and the list of systems that hand out no verifiable credential). The swiyu and other-systems texts are verbatim sentences from the section "Sentences we may use" of wiki/identity-standards.md (2026-09-09); the page itself is not linked from the public site because the wiki is private.
    - Proof: browser tab (prove 11.0 to 11.3 s, click to attested 42.8 s with the official wallet, M3 Max, Chrome 152), laptop companion (bb prove 3.96 s warm, attested in 8.2 s, M3 Max), phone provers (Android emulator 6.7 s, Chromebook Android container 47 to 49 s, iPhone 16 Pro Max simulator 5.2 s, no physical phone), server route SP1 (Groth16 about 270 s native, about 280k gas on a Sepolia fork, boundary sentence on screen). All numbers FACT from work-packages.md rows WP5, WP5-android, WP12, WP26, WP28, WP30, WP2b, WP9b.
    - The decision: the Decision struct from IEligibility.sol, plus written by (attestWithProof or attestByOperator), counts only with the issuer's approve, read by isEligible, closed by expiry or one revoke.
    - Consumers: fund token transfer check, Uniswap v4 permissioned pool checker, GatedPayout (payout desk, in progress), Privy policies mirrored from the decision (standing order).
@@ -68,7 +68,7 @@ Files: showcase/index.html, showcase/gallery.css, showcase/gallery.js (one Inter
 
 ## The app origin, one place
 
-The demo routes (/, /issuer, /showcase/<slug>) live in the product app (nachweis-app/app), not on the static site. /Users/bioharz/git/ethglobal/nachweis-site/showcase/links.js holds `DEFAULT_ORIGIN = "http://localhost:5173"`. Every demo link on the showcase pages carries `data-app-path="/route"`; links.js writes the href from the origin, sets a title, and while the origin is the local default appends a small note "runs locally: http://localhost:5173/route" after each button link (inline text links carry `data-app-note="inline"` and get no note; `data-app-note-off` suppresses it on one link). A page can override the origin with `<html data-app-origin="https://...">`. To point every page at a hosted app: change the constant in links.js. The five case pages were edited minimally: the demo hrefs (two per page, plus one inline link in standing-order) and one `<script src="../links.js">` line before the page's own script.
+The demo routes (/, /issuer, /showcase/<slug>) live in the product app (nachweis-app/app), not on the static site. nachweis-site/showcase/links.js holds `DEFAULT_ORIGIN = "http://localhost:5173"`. Every demo link on the showcase pages carries `data-app-path="/route"`; links.js writes the href from the origin, sets a title, and while the origin is the local default appends a small note "runs locally: http://localhost:5173/route" after each button link (inline text links carry `data-app-note="inline"` and get no note; `data-app-note-off` suppresses it on one link). A page can override the origin with `<html data-app-origin="https://...">`. To point every page at a hosted app: change the constant in links.js. The five case pages were edited minimally: the demo hrefs (two per page, plus one inline link in standing-order) and one `<script src="../links.js">` line before the page's own script.
 
 ## Open items
 

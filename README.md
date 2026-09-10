@@ -103,7 +103,7 @@ Everything in this repository was written during the event, except the adapted t
 
 ## Name
 
-The product is Attestat (renamed from Nachweis on 2026-09-07, record in the project wiki). Public copy says Attestat. Every machine-readable identifier keeps the nachweis name for this submission, because renaming it would change fixtures, proofs, signatures, packages and links during the event. Kept on purpose:
+The product is Attestat (renamed from Nachweis on 2026-09-07, record in [docs/wiki/decisions.md](docs/wiki/decisions.md) and [docs/wiki/name-and-domains.md](docs/wiki/name-and-domains.md)). Public copy says Attestat. Every machine-readable identifier keeps the nachweis name for this submission, because renaming it would change fixtures, proofs, signatures, packages and links during the event. Kept on purpose:
 
 | String | Where | Kept because |
 |---|---|---|

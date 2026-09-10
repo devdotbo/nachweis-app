@@ -6,16 +6,16 @@ sources:
   - https://ethglobal.com/events/ethonline2026/info/details (fetched 2026-09-08: AI tools, spec-driven artifacts, video, deadline)
   - https://ethglobal.com/rules (fetched 2026-09-08: Continuity, disclosure, version control, open source)
   - https://ethglobal.com/events/ethonline2026/prizes/uniswap-foundation (fetched 2026-09-08: public repository, FEEDBACK.md, form, README)
-  - /Users/bioharz/git/ethglobal/nachweis/wiki/handoff-fable-2026-09-08.md (schedule, check-in times)
-  - /Users/bioharz/git/ethglobal/ethonline2026/raw/ethglobal-rules-2026-09-01.md lines 60-90 (earlier fetch of the rules)
+  - wiki/handoff-fable-2026-09-08.md (schedule, check-in times)
+  - [event wiki, local, withheld] lines 60-90 (earlier fetch of the rules)
 ---
 
 # Submission checklist
 
 ## Calendar facts
 
-- Check-in 1: 2026-09-08 05:59 Vienna, past. Draft text: /Users/bioharz/git/ethglobal/nachweis/wiki/checkin-2026-09-08.md. Whether it was submitted is unverified: builder, please confirm (yes or no, and the time) so the log can record it.
-- Check-in 2: 2026-09-11 05:59 Vienna (FACT, official schedule as read by the review on 2026-09-08). Draft: /Users/bioharz/git/ethglobal/nachweis/wiki/checkin-2026-09-11.md.
+- Check-in 1: 2026-09-08 05:59 Vienna, past. Draft text: wiki/checkin-2026-09-08.md. Whether it was submitted is unverified: builder, please confirm (yes or no, and the time) so the log can record it.
+- Check-in 2: 2026-09-11 05:59 Vienna (FACT, official schedule as read by the review on 2026-09-08). Draft: wiki/checkin-2026-09-11.md.
 - Submission: 2026-09-13 16:00 UTC, 18:00 Vienna (FACT, https://ethglobal.com/events/ethonline2026/info/details, "All projects must be submitted by Sunday, September 13th 2026 at 12:00 pm EDT", fetched 2026-09-08).
 
 ## Rules that bind us (FACT, https://ethglobal.com/rules, fetched 2026-09-08)
@@ -38,7 +38,7 @@ sources:
 
 - Public GitHub repository with open-source code. nachweis-app is private as of 2026-09-08 (FACT, gh repo view: PRIVATE). Builder flips it before the deadline.
 - A FEEDBACK.md file: exists, relabelled 2026-09-08 (local Sepolia fork, no broadcast).
-- The Uniswap Developer Feedback Form at https://developers.uniswap.org/hackathon-feedback, linking FEEDBACK.md: not submitted (builder). Paste-ready answers: /Users/bioharz/git/ethglobal/nachweis/wiki/uniswap-feedback-form.md.
+- The Uniswap Developer Feedback Form at https://developers.uniswap.org/hackathon-feedback, linking FEEDBACK.md: not submitted (builder). Paste-ready answers: wiki/uniswap-feedback-form.md.
 - README "clearly points to the relevant contracts and lines of code": the README's Uniswap section does this (FACT, README.md at 0fd7312); the line numbers must be rechecked after WP16 changes the registry.
 - Submissions are reviewed and audited before winners are finalized; no external audit purchase is required by the wording.
 
@@ -47,7 +47,7 @@ sources:
 - [ ] nachweis-app public at submission. Licence: Apache-2.0 LICENSE file present (FACT). Builder flips visibility.
 - [ ] Wiki repository devdotbo/nachweis public or copied into the app repository (spec-driven artifact requirement). Builder decides; review for confidential data first (nothing in the wiki holds keys; the transcript file of 2026-09-08 in the wiki root is a session record and should be checked before publication).
 - [ ] DISCLOSURE.md: rewritten 2026-09-08 on branch wp19-evidence in four classes (pre-event base, relay branch, adapted third-party code, new code); the relay branch is exported as vendor/verifier-relay-patches. Merge to main.
-- [ ] Written pre-existing-work notice to ETHGlobal: not sent as of 2026-09-09 (builder). Paste-ready 196-word text at the bottom of /Users/bioharz/git/ethglobal/nachweis/wiki/track-decision.md; it also asks the track question and the Privy and Uniswap open-track question. Send before the check-in of 2026-09-11; record date and channel in log.md.
+- [ ] Written pre-existing-work notice to ETHGlobal: not sent as of 2026-09-09 (builder). Paste-ready 196-word text at the bottom of wiki/track-decision.md; it also asks the track question and the Privy and Uniswap open-track question. Send before the check-in of 2026-09-11; record date and channel in log.md.
 - [ ] docs/ai-attribution.md and docs/process.md: added 2026-09-08 on wp19-evidence. Merge to main; link from the README.
 - [ ] README: product name Attestat (WP20), the flow, the honesty box updated to the enforced issuer approval (WP16) and the trust-boundary contract (WP17), Sepolia addresses after deployment, Uniswap line references rechecked, "where the proof is made", what is simulated, links to DISCLOSURE.md, docs/ai-attribution.md, docs/process.md, FEEDBACK.md.
 - [ ] FEEDBACK.md TODO lines filled after the Sepolia broadcast (hashes, gas paid, step 7 outcome if requested).

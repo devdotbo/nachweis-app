@@ -3,9 +3,9 @@ type: reference
 title: Identity standards compatible with the Attestat toolkit (national and regional systems)
 updated: 2026-09-09
 sources:
-  - every fact below was fetched on 2026-09-09; the URL sits next to each fact in /Users/bioharz/git/ethglobal/nachweis/wiki/identity-standards-notes.md, which holds the verbatim quotes and the per-system detail
-  - /Users/bioharz/git/ethglobal/nachweis/wiki/architecture.md, zkpassport.md, narrative-zk.md (what the toolkit consumes today)
-  - /Users/bioharz/git/eudi-wallet-hackathon/verifier/verifier-zk/src and /Users/bioharz/git/ethglobal/nachweis-app/circuits/README.md (read 2026-09-09)
+  - every fact below was fetched on 2026-09-09; the URL sits next to each fact in wiki/identity-standards-notes.md, which holds the verbatim quotes and the per-system detail
+  - wiki/architecture.md, zkpassport.md, narrative-zk.md (what the toolkit consumes today)
+  - klartext-verifier/verifier-zk/src and nachweis-app/circuits/README.md (read 2026-09-09)
 ---
 
 # Identity standards compatible with the Attestat toolkit

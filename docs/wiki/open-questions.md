@@ -14,7 +14,7 @@ Unanswered as of 2026-09-09. Each: who can answer, by when it matters, and the w
 
 (b) The address binding is signed by the investor's EVM key, not by the EUDI wallet. Owner: lead; wording. Until then: caption "signed by the crypto wallet, not by the ID wallet"; the nonce ties the presentation to the address through sha256(address || challenge) inside the KB-JWT.
 
-(c) Privy eligibility for the open tracks. Not yet asked as of 2026-09-09 (correction 2026-09-09: this page said "asked 2026-09-01"; the builder states the question was never sent). Owner: builder, by sending the notice in /Users/bioharz/git/ethglobal/nachweis/wiki/track-decision.md (it asks the track question and the Privy and Uniswap open-track question in one message); also in the check-in 2 text. Until then: Privy not built (spec in wiki/spec-privy.md); any EVM wallet for the binding.
+(c) Privy eligibility for the open tracks. Not yet asked as of 2026-09-09 (correction 2026-09-09: this page said "asked 2026-09-01"; the builder states the question was never sent). Owner: builder, by sending the notice in wiki/track-decision.md (it asks the track question and the Privy and Uniswap open-track question in one message); also in the check-in 2 text. Until then: Privy not built (spec in wiki/spec-privy.md); any EVM wallet for the binding.
 
 (g) Track, new 2026-09-09: Classic with the verifier disclosed as the builder's own public open-source library, or Continuity "Extend Open Source"? Owner: builder, after ETHGlobal answers the same notice. Matters before the submission form. Until then: the submission text keeps both wordings ready; nothing public says "Continuity" as decided.
 
@@ -27,7 +27,7 @@ Unanswered as of 2026-09-09. Each: who can answer, by when it matters, and the w
 ## Submission questions (new 2026-09-08)
 
 - Was the check-in of 2026-09-08 05:59 Vienna submitted? Unverified. Owner: builder. Matters now: the log needs the date and the 2026-09-11 draft builds on it.
-- Was the written pre-existing-work notice sent to ETHGlobal? Not as of 2026-09-09 (builder). Owner: builder. Matters before the deadline; the rules require it in writing. Text: the 196-word notice at the bottom of /Users/bioharz/git/ethglobal/nachweis/wiki/track-decision.md (supersedes "DISCLOSURE.md sections 1 and 2" as the text to send; DISCLOSURE.md stays the full record).
+- Was the written pre-existing-work notice sent to ETHGlobal? Not as of 2026-09-09 (builder). Owner: builder. Matters before the deadline; the rules require it in writing. Text: the 196-word notice at the bottom of wiki/track-decision.md (supersedes "DISCLOSURE.md sections 1 and 2" as the text to send; DISCLOSURE.md stays the full record).
 - How are the spec-driven artifacts published: the wiki repository devdotbo/nachweis made public, or a copy under nachweis-app/docs? Owner: builder. Matters before the deadline. Until decided, docs/ai-attribution.md names the wiki repository and its read order.
 - Are the agent session transcripts published? They are on the builder's Mac, not in a repository. Owner: builder. OPINION: not required by the wording ("spec files, prompts, and planning artifacts"); the handoff pages are the prompts.
 - Relay branch publication: the patch series in nachweis-app/vendor/verifier-relay-patches (2026-09-08) gives a public source once nachweis-app is public. Whether to also push branch nachweis-relay to Klartext-ID/klartext-verifier is the builder's call; not required for the submission.
@@ -55,6 +55,6 @@ Unanswered as of 2026-09-09. Each: who can answer, by when it matters, and the w
 - Verifier endpoints for bridge mode: closed 2026-09-07 by WP3c (the review found the result handler returns names by default; that is WP17, not a missing endpoint).
 - Mobile not built: closed 2026-09-07 by WP5-android (emulator) and WP12 (simulator); physical devices remain optional.
 - SP1 adapter and gas: closed 2026-09-07 by WP2b; the live transaction belongs to the Sepolia deployment.
-- Path of klartext-verifier: closed 2026-09-08. It is the GitHub repository of the verifier workspace (Klartext-ID/klartext-verifier, FACT git remote -v in /Users/bioharz/git/eudi-wallet-hackathon/verifier); no separate front-end checkout exists on the Mac.
+- Path of klartext-verifier: closed 2026-09-08. It is the GitHub repository of the verifier workspace (Klartext-ID/klartext-verifier, FACT git remote -v in klartext-verifier (local checkout)); no separate front-end checkout exists on the Mac.
 - Site corrections: Chainlink chip and "first" claim removed 2026-09-07. Privy stays in the footer pending (c). Name rename in copy runs under WP20.
 - Android proving time: emulator measured 2026-09-07 (6.7 to 6.9 s); device measurement dropped from the main path (decision 2026-09-08).

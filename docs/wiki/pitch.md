@@ -3,9 +3,9 @@ type: reference
 title: Pitch
 updated: 2026-09-08
 sources:
-  - /Users/bioharz/git/ethglobal/nachweis/raw/build-plan.md (beats)
-  - /Users/bioharz/git/ethglobal/nachweis/raw/front-door-brief-2026-09-02.md (front-door rules)
-  - /Users/bioharz/git/ethglobal/nachweis-site/index.html (landing copy, read 2026-09-07, renamed to Attestat 2026-09-08)
+  - raw/build-plan.md (beats)
+  - raw/front-door-brief-2026-09-02.md (front-door rules)
+  - nachweis-site/index.html (landing copy, read 2026-09-07, renamed to Attestat 2026-09-08)
 ---
 
 # Pitch
@@ -13,7 +13,7 @@ sources:
 ## The lines
 
 - Spoken opening, first line of the video: "Your ID wallet should work where you invest."
-- Hero question on the landing page (h1, /Users/bioharz/git/ethglobal/nachweis-site/index.html): "How many strangers keep a copy of your passport?"
+- Hero question on the landing page (h1, nachweis-site/index.html): "How many strangers keep a copy of your passport?"
 - Sub-line on the site: "Every exchange, launchpad and fund asks for your ID and keeps it. Attestat lets the state ID wallet on your phone do that job once, and puts only the issuer's decision on chain."
 - Closing card: "Attestat helps token issuers accept EUDI identity evidence and apply their approval to customers' linked crypto wallets, without putting identity documents on chain." Below it: "no document on chain".
 - Sentence a judge should repeat with the tab closed: a state test wallet showed three fields to a fund issuer, the issuer approved, the approval became a few bits on chain that a fund token and a Uniswap pool both read, and one revoke closed both.
