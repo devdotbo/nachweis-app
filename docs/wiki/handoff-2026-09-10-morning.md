@@ -42,7 +42,7 @@ Bring-up 162 s (130 s of it a cold cargo build), tunnel answered, pool attached 
 
 Unverified until you hold the phone: QR scan by the official wallet over the tunnel, relay pickup, bb.js proof in the tab, attestWithProof on the fork with the sandbox-pinned NoirPidVerifier. The runbook has a no-phone rehearsal via attestByOperator.
 
-One thing to decide for the camera: the Subscribe button is disabled while the door is closed (DoorsCard.tsx:41, two specs assert it), so the decoded refusal sentence never shows on screen; the greyed button with "Approval withdrawn by the issuer" is what the camera sees, and the swap door shows the decoded refusal with a hash. Making Subscribe clickable while closed is a small change plus three spec assertions; the pool-glue teammate left it as is.
+Decided for the camera (review-morning-2026-09-10.md, "The remaining demo gate"; shot list beat 8): the Subscribe button stays disabled while the door is closed (DoorsCard.tsx:41, two specs assert it). The camera films the greyed Subscribe control with status `closed` and the doors-closed caption "Approval withdrawn by the issuer (manual revocation). Both doors are closed until the issuer re-approves." (DoorsCard.tsx:33). The refusal on camera is the pool's decoded revert naming PermissionedHooks.beforeSwap, with the reverted transaction's hash. Subscribe is not made clickable; the decoded Subscribe refusal from wp41-pool-flag stays in the code and is at most a terminal-only backup via cast.
 
 ## Decisions (yours), in the order they unblock work
 
