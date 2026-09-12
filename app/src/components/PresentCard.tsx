@@ -65,7 +65,7 @@ export function PresentCard({ wallet, session, state }: { wallet: Wallet; sessio
         <StateChip state={state} />
       </h2>
       <p className="lead">
-        Show three fields (given name, family name, over 18) from the official German EUDI test wallet, sample identity. Names go to the issuer's verifier, not to the chain. Your
+        Show three fields (given name, family name, over 18) from the official German EUDI test wallet, sample identity. Names reach the issuer's verifier only on the server route and stay in this browser tab on the browser route; never on chain. Your
         crypto wallet signs the session first, so the presentation is bound to this address; the ID wallet signs nothing on chain.
       </p>
       {locked ? <div className="empty">Connect a wallet first. The presentation request is bound to the connected address.</div> : null}

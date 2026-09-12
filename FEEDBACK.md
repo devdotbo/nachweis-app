@@ -4,10 +4,10 @@ Project: Attestat, repository `nachweis-app` (ETHOnline 2026). Integration: a Un
 
 ## Status of evidence
 
-- Every result in this file comes from a local Sepolia fork on the developer's machine: Foundry fork tests and `forge script` dry runs against the deployed Uniswap contracts at their Sepolia addresses. The deployed bytecode was exercised; no transaction was broadcast.
+- Until 2026-09-09, every result in this file came from a local Sepolia fork on the developer's machine: Foundry fork tests and `forge script` dry runs against the deployed Uniswap contracts at their Sepolia addresses. The deployed bytecode was exercised on the fork; nothing was broadcast before 2026-09-10. The fork results below are dated 2026-09-07 and 2026-09-09.
 - Since 2026-09-09 the swap also runs from the browser: the investor portal sends the same `V4_SWAP` calldata through the permissioned Universal Router from the connected wallet, on an anvil fork of Sepolia started by `scripts/pool-local.sh` (chain id 31337, the deployed Uniswap contracts at their Sepolia addresses); a Playwright run (`app/e2e/swap.spec.ts`) swaps, revokes in the issuer console and shows the refused swap with the decoded `WrappedError`. Still a fork, still not a broadcast. `docs/swap.md`.
 - Deployed on Sepolia on 2026-09-10 (`docs/deployments/sepolia-2026-09-10.md`): checker 0x967A701c99D467EB9d6192bE87D4742c90aF7046, adapter 0xc440aD626959d97a689Ba0465f2F1eD293a0b20D, pool id 0x5ea00f1b6307f536f4880101648c0428df57a3e645cbb60c25e00a0ba29cbec7, liquidity position 9, with transaction hashes and Etherscan links in that record; not verified on Etherscan. No step 7 submission.
-- The file will be updated with hashes and paid gas after the broadcast; until then, read "Sepolia" below as "local Sepolia fork" unless a line says broadcast.
+- The broadcast happened on 2026-09-10. Its transaction hashes and paid gas are in `docs/deployments/sepolia-2026-09-10.md`; the no-phone journey through the app stack on Sepolia (attest by operator, approve, subscribe, swap, revoke, both refusals, re-approve; 14 transactions) is in `docs/evidence/sepolia-journey-2026-09-10.md`. Read "Sepolia" below as "local Sepolia fork" unless a line says broadcast or names one of those two records; the bracketed builder slots in the last section are not copied into this file.
 
 ## What was integrated
 
@@ -78,7 +78,7 @@ Fork results on 2026-09-09 (`scripts/pool-local.sh`, anvil forked at block 11664
 
 ## Sepolia broadcast
 
-Not done as of 2026-09-09. What exists and what is missing, per line:
+Done on 2026-09-10: `docs/deployments/sepolia-2026-09-10.md` (checker, adapter, pool, liquidity; 33 transactions) and `docs/evidence/sepolia-journey-2026-09-10.md` (the journey; 14 transactions). The notes below were written on 2026-09-09 and are kept as the fork state at that date; the bracketed builder slots are filled by those two records, not here:
 
 - Steps 1 to 6 (checker deployment, adapter, venue decision and 1 wei deposit, verification, wrapper and hook approvals, `PoolManager.initialize`, swapping enabled): one call sequence in `contracts/script/lib/PermissionedPoolOnboarding.sol` lines 32 to 93, run by `contracts/script/CreatePermissionedPool.s.sol` (lines 52 to 74; the script accepts chain id 11155111 and 31337). Broadcast so far only to the anvil fork of `scripts/pool-local.sh` (fork block 11664502, 2026-09-09), where the fork's hashes have no meaning outside that run and are not recorded. [Builder: Sepolia transaction hashes of steps 1 to 6 after `CreatePermissionedPool.s.sol --broadcast`; the script prints the pool id and policy id at lines 91 to 92.]
 - Mint and swap: `contracts/script/AddLiquidityPermissioned.s.sol` (lines 24 to 54) and `contracts/script/SwapPermissioned.s.sol` (lines 33 to 92). On the fork: liquidity 999000000000000, position 9, 100 mUSD for 90.652862473832711386 NDF; dry-run gas 8,195,312 (mint) and 8,921,394 (mint plus swap) from the 2026-09-07 runs above; the browser swap shows its gas on screen and the evidence template in `docs/swap.md` has a slot for it, not yet filled. [Builder: Sepolia hashes and gas paid for the mint, the swap and the refused swap.]
