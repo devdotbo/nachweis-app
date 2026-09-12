@@ -1,7 +1,7 @@
 ---
 type: reference
 title: Product
-updated: 2026-09-08
+updated: 2026-09-12
 ---
 
 # Product
@@ -22,7 +22,7 @@ Why now (CLAIM, income-paths memo cited in raw/money-question-2026-09-07.md): me
 
 ## What it does, in one flow
 
-1. The investor's official test wallet answers the issuer's registered request (given name, family name, over 18) to the issuer's verifier. Names go to the issuer, not to the chain.
+1. The investor's official test wallet answers the issuer's registered request (given name, family name, over 18) to the issuer's verifier. Names reach the issuer only on the server route; on the browser route the relay holds the encrypted answer unopened and the names stay in the browser tab. Never on chain.
 2. The issuer matches the presentation to its onboarding record and approves in a separate step. Remaining checks (sanctions and similar) are stubs in this build and are labelled simulated.
 3. The investor binds a crypto wallet address by signing a nonce with the EVM key.
 4. An EligibilityDecision (policy id, predicate bits, tier, expiry, status reference) is written on Sepolia against the address. No name, no document.

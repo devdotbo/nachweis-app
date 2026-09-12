@@ -1,7 +1,7 @@
 ---
 type: reference
 title: Pitch
-updated: 2026-09-08
+updated: 2026-09-12
 sources:
   - raw/build-plan.md (beats)
   - raw/front-door-brief-2026-09-02.md (front-door rules)
@@ -23,7 +23,7 @@ sources:
 Under three minutes of content inside a 2 to 4 minute video. Voice is the builder. Screen is the live app, the phone, the explorer. No terminal first. One screen per beat.
 
 1. The investor. A labelled investor whose onboarding with a demo fund issuer is complete opens the fund app from her own wallet. The address is not yet permitted. Caption: "identity evidence required".
-2. The wallet. QR. The official test wallet presents the registered request: given name, family name, over 18. She taps once. Captions: "official test wallet, sample identity" and "names go to the issuer, not to the chain".
+2. The wallet. QR. The official test wallet presents the registered request: given name, family name, over 18. She taps once. Captions: "official test wallet, sample identity" and "names stay in the browser tab, not with the issuer, not on chain".
 3. The issuer. The issuer's screen shows the verified presentation summary for this session (sample identity from the official test wallet, the claim paths, the bound address that signed the session); it does not claim a hidden name match, because the bridge returns no names (review 2026-09-08). Remaining checks are labelled "simulated". The proof lands first as evidence on chain ("evidence on chain, awaiting issuer approval", doors closed); then the separate Approve click, the `approve` transaction, doors open (WP16, enforced in the registry since 2026-09-08). Depending on the route, "PID verified, generating proof" with the measured time on screen (R1: proof by our verifier; client-side: proof on the Mac companion, phone optional). Etherscan shows predicate bits, tier, expiry, policy id, no name. Caption states where the proof was made.
 3a. The binding. Her wallet signs a challenge with the Ethereum key; the presentation is bound to the address. Caption: "signed by the crypto wallet, not by the ID wallet".
 4. Two doors. She subscribes to the demo fund token with test assets, then swaps in the Uniswap permissioned pool without a second presentation. Spoken: "One permission, two doors."
