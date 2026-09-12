@@ -13,7 +13,7 @@
  * while the swap stays inside the one full-range position of the demo pool (the script's swap matched
  * it to the wei).
  */
-import { decodeErrorResult, encodeAbiParameters, encodeFunctionData, encodePacked, toFunctionSelector, type Address, type Hex } from 'viem'
+import { ContractFunctionRevertedError, decodeErrorResult, encodeAbiParameters, encodeFunctionData, encodePacked, ExecutionRevertedError, toFunctionSelector, UserRejectedRequestError, type Address, type Hex } from 'viem'
 import { revertAbi, routerAbi } from './abi'
 import type { PoolConfig } from './config'
 
@@ -185,14 +185,32 @@ export function explainRevert(data: Hex | undefined, cfg: PoolConfig): Refusal {
   }
 }
 
+/** The error and every `cause` / `error` below it, each object once. */
+function errorChain(e: unknown): Record<string, unknown>[] {
+  const seen = new Set<object>()
+  const chain: Record<string, unknown>[] = []
+  const stack: unknown[] = [e]
+  while (stack.length) {
+    const x = stack.pop()
+    if (!x || typeof x !== 'object' || seen.has(x)) continue
+    seen.add(x)
+    const o = x as Record<string, unknown>
+    chain.push(o)
+    if (o.cause) stack.push(o.cause)
+    if (o.error) stack.push(o.error)
+    if (o.originalError) stack.push(o.originalError)
+  }
+  return chain
+}
+
 /**
- * The revert data inside a viem error: `data` or `raw` on the error or any cause (RPC errors carry it as
- * a hex string, contract errors as an object with `data`), else the first long hex in a message.
+ * The revert data inside a viem error: `data` or `raw` on the error or any cause (RPC errors carry it
+ * as a hex string, contract errors as an object with `data`). Never taken from a message: a transport
+ * error's text quotes the request body, calldata and addresses included, and none of that is a revert.
  */
 export function revertDataOf(e: unknown): Hex | undefined {
   const seen = new Set<object>()
-  const stack: unknown[] = [e]
-  let fromMessage: Hex | undefined
+  const stack: unknown[] = errorChain(e)
   while (stack.length) {
     const x = stack.pop()
     if (!x || typeof x !== 'object' || seen.has(x)) continue
@@ -203,15 +221,60 @@ export function revertDataOf(e: unknown): Hex | undefined {
       if (typeof v === 'string' && /^0x[0-9a-fA-F]{8,}$/.test(v)) return v as Hex
       if (v && typeof v === 'object') stack.push(v)
     }
-    for (const k of ['details', 'message', 'shortMessage']) {
-      const v = o[k]
-      if (typeof v === 'string' && !fromMessage) {
-        const m = v.match(/0x[0-9a-fA-F]{8,}/)
-        if (m) fromMessage = m[0] as Hex
-      }
-    }
-    if (o.cause) stack.push(o.cause)
-    if (o.error) stack.push(o.error)
   }
-  return fromMessage
+  return undefined
+}
+
+/** viem's word for "the node executed the call and it reverted", at any layer of the error. */
+function isRevertError(o: Record<string, unknown>): boolean {
+  if (o instanceof ExecutionRevertedError || o instanceof ContractFunctionRevertedError) return true
+  return o.name === 'ExecutionRevertedError' || o.name === 'ContractFunctionRevertedError' || o.code === ExecutionRevertedError.code
+}
+
+function isUserRejection(o: Record<string, unknown>): boolean {
+  return o instanceof UserRejectedRequestError || o.name === 'UserRejectedRequestError' || o.code === UserRejectedRequestError.code
+}
+
+/** One line for an error that is not a revert: viem's shortMessage, else the first line of the message. */
+export function errorReason(e: unknown): string {
+  if (e && typeof e === 'object') {
+    const o = e as { shortMessage?: unknown; message?: unknown; name?: unknown }
+    if (typeof o.shortMessage === 'string' && o.shortMessage) return o.shortMessage
+    if (typeof o.message === 'string' && o.message) return o.message.split('\n')[0]
+    if (typeof o.name === 'string') return o.name
+  }
+  return String(e)
+}
+
+/**
+ * What a failed eth_call simulation means. `reverted` only when the node answered with a revert:
+ * hex revert data on the error, or a viem ExecutionRevertedError / ContractFunctionRevertedError in
+ * the chain (then `data` may be undefined, an empty revert). Everything else (timeout, HTTP failure,
+ * an RPC error without revert data) is `unavailable`: the simulation said nothing about the contract.
+ */
+export type PreflightVerdict = { kind: 'reverted'; data: Hex | undefined } | { kind: 'unavailable'; reason: string }
+
+export function classifyPreflightError(e: unknown): PreflightVerdict {
+  const data = revertDataOf(e)
+  if (data) return { kind: 'reverted', data }
+  if (errorChain(e).some(isRevertError)) return { kind: 'reverted', data: undefined }
+  return { kind: 'unavailable', reason: errorReason(e) }
+}
+
+/**
+ * What a failed sendTransaction means: the wallet's holder declined, the wallet's own gas estimate
+ * reverted (a refusal, nothing sent), or the send failed for another reason (nothing sent, no verdict
+ * on the contract).
+ */
+export type SendVerdict = { kind: 'declined' } | { kind: 'reverted'; data: Hex | undefined } | { kind: 'failed'; reason: string }
+
+export function classifySendError(e: unknown): SendVerdict {
+  if (errorChain(e).some(isUserRejection)) return { kind: 'declined' }
+  const preflight = classifyPreflightError(e)
+  return preflight.kind === 'reverted' ? preflight : { kind: 'failed', reason: preflight.reason }
+}
+
+/** The refusal shown for a transaction that was mined and reverted when the reason could not be recovered. */
+export function unexplainedRevert(detail: string): Refusal {
+  return { title: 'Reverted when mined', plain: `The transaction reverted on chain. ${detail}`, decoded: ['(no revert data recovered)'] }
 }
