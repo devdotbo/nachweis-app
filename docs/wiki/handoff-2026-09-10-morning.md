@@ -60,7 +60,7 @@ Decided for the camera (review-morning-2026-09-10.md, "The remaining demo gate";
 
 ## Builder-only tasks that are open regardless
 
-- Move the three transcripts out of the repositories: 2026-09-08-192458-we-did-a-lot-and-we-pivoted-many-times-check-sp.txt (tracked, in history), 2026-09-09-201235-from-lastet-agent.txt, nachweis-app/2026-09-08-205144-i-told-gpt-6-astra.txt.
+- Move the three transcripts out of the repositories: [session transcript, not published] (tracked, in history), [session transcript, not published], [session transcript, not published].
 - Check-in 2, OPTIONAL per the builder (2026-09-10 morning): due Friday 2026-09-11 05:59 Vienna (FACT, review-morning-2026-09-10.md: schedule item project-check-in-2-due at 2026-09-11T03:59:00Z; any "Thursday" shorthand for this deadline is wrong for Vienna). Draft if used: wiki/checkin-2026-09-11.md. Confirm check-in 1.
 - Video: 2 to 4 minutes, 720p or better, own voice, no phone recording, no speedup.
 - Repositories public before the deadline; Uniswap form after that; ETHGlobal form with Uniswap and, if green, the Privy tracks.

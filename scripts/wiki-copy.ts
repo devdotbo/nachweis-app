@@ -1,15 +1,18 @@
 #!/usr/bin/env bun
-// Copies the spec, plan and handoff pages of the private project wiki into
-// docs/wiki, redacts secret locations and identifiers, and rewrites links so
-// that every relative link resolves inside this repository.
+// Copies the spec, plan, review and handoff pages of the private project wiki
+// and its raw/ planning artifacts and research memos into docs/wiki, redacts
+// secret locations and identifiers, and rewrites links so that every relative
+// link resolves inside this repository.
 //
 // Usage: bun scripts/wiki-copy.ts <wiki checkout> <commit> [<out dir>]
 //
 // Pages are read with `git show <commit>:<path>` so the copy is committed
-// content, never a working tree. The wiki root pages (AGENTS.md, index.md,
-// log.md) and wiki/** sit side by side in the output; raw/, the transcripts,
-// CLAUDE.md and llm-wiki.md are not copied. Redaction counts are printed per
-// page so the manifest can list them.
+// content, never a working tree. The wiki root pages (AGENTS.md, CLAUDE.md,
+// index.md, log.md) and wiki/** sit side by side in the output, raw/** keeps
+// its raw/ prefix. Not copied: the session transcripts (*.txt, never
+// published) and llm-wiki.md (third-party pattern text). Every exclusion is
+// listed in docs/wiki/README.md and checked by scripts/wiki-coverage.ts.
+// Redaction counts are printed per page so the manifest can list them.
 
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
@@ -26,11 +29,9 @@ const outDir = resolve(outArg ?? join(repoRoot, "docs", "wiki"));
 const git = (...args: string[]) =>
   execFileSync("git", ["-C", wikiDir, ...args], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
 
-const NOT_COPIED = new Set(["CLAUDE.md", "llm-wiki.md"]);
+const NOT_COPIED = new Set(["llm-wiki.md"]);
 const allFiles = git("ls-tree", "-r", "--name-only", commit).split("\n").filter(Boolean);
-const pages = allFiles.filter(
-  (p) => p.endsWith(".md") && !p.startsWith("raw/") && !NOT_COPIED.has(p),
-);
+const pages = allFiles.filter((p) => p.endsWith(".md") && !NOT_COPIED.has(p));
 // Source path -> path inside the output directory (wiki/ prefix dropped).
 const outPath = (src: string) => (src.startsWith("wiki/") ? src.slice("wiki/".length) : src);
 const copied = new Set(pages.map(outPath));
@@ -82,6 +83,12 @@ const securityNotes: Rule[] = [
   },
 ];
 
+// Exported session transcripts: the file name alone identifies a chat export
+// that is not published, with or without a directory in front of it.
+const transcripts: Rule[] = [
+  { name: "transcript name", re: /[^\s)`,;"]*\d{4}-\d{2}-\d{2}-\d{6}-[A-Za-z0-9.-]*\.txt/g, to: "[session transcript, not published]" },
+];
+
 const secretPaths: Rule[] = [
   { name: "secrets path", re: /\/Users\/bioharz\/\.config\/attestat\/[^\s)`,;"]*/g, to: "[local secrets path, withheld]" },
   { name: "secrets path", re: /\/Users\/bioharz\/\.config\/attestat/g, to: "[local secrets path, withheld]" },
@@ -110,9 +117,10 @@ const paths: Rule[] = [
   { name: "path", re: /\/Users\/bioharz\/git\/ethglobal\/ethonline2026(?![a-z0-9/-])/g, to: "[event wiki, local, withheld]" },
   { name: "path", re: /\/Users\/bioharz[^\s)`,;"]*/g, to: "[local path, withheld]" },
   { name: "path", re: /\/var\/folders\/[^\s)`,;"]*/g, to: "[temporary directory, withheld]" },
+  { name: "path", re: /(?:\/private)?\/tmp\/claude-501\/[^\s)`,;"]*/g, to: "[temporary directory, withheld]" },
 ];
 
-const rules = [...securityNotes, ...secretPaths, ...ids, ...paths];
+const rules = [...transcripts, ...securityNotes, ...secretPaths, ...ids, ...paths];
 
 function redact(text: string, counts: Record<string, number>) {
   for (const r of rules) {
@@ -126,7 +134,7 @@ function redact(text: string, counts: Record<string, number>) {
 
 // -------------------------------------------------------------------- links
 // After path redaction a link target is one of: a wiki-relative path
-// (wiki/x.md, x.md, raw/..., a transcript .txt), a repository-relative path of
+// (wiki/x.md, x.md, raw/x.md, a transcript .txt), a repository-relative path of
 // a public repository (nachweis-app/..., nachweis-site/..., klartext-verifier/...),
 // a withheld marker, an http(s) url or an anchor.
 const LINK = /\[([^\]\n]*)\]\((\[[^\]\n]*\]|[^)\s]+)(\s+"[^"]*")?\)/g;
@@ -147,13 +155,13 @@ function rewriteLinks(text: string, srcPage: string, counts: Record<string, numb
     const lineNote = line ? ` (line ${line})` : "";
     const plain = (note: string) => `${label}${note}`;
 
+    if (file.endsWith(".txt") || file.startsWith("[session transcript")) {
+      bump("link transcript");
+      return plain(" (session transcript, not published)");
+    }
     if (file.startsWith("[")) {
       bump("link withheld");
       return label === file ? file : `${label} ${file}`;
-    }
-    if (file.endsWith(".txt")) {
-      bump("link transcript");
-      return plain(" (session transcript, not published)");
     }
     if (file.startsWith("nachweis-app/")) {
       const rel = file.slice("nachweis-app/".length);
@@ -179,7 +187,7 @@ function rewriteLinks(text: string, srcPage: string, counts: Record<string, numb
     const known = new Set(allFiles);
     const pageRel = posix.normalize(posix.join(srcDir, file));
     const wikiPath = known.has(pageRel.split("#")[0]) || !known.has(file.split("#")[0]) ? pageRel : file;
-    if (wikiPath.startsWith("raw/") || wikiPath.endsWith(".txt") || NOT_COPIED.has(wikiPath)) {
+    if (wikiPath.endsWith(".txt") || NOT_COPIED.has(wikiPath)) {
       bump(wikiPath.endsWith(".txt") ? "link transcript" : "link not copied");
       return plain(wikiPath.endsWith(".txt") ? " (session transcript, not published)" : " (not copied)");
     }

@@ -6,7 +6,7 @@ status: Verdict and proposed direction for the builder; nothing implemented
 sources:
   - wiki/review-product-focus-2026-09-09.md (GPT review, 9cdea71)
   - wiki/handoff-fable-2026-09-10.md
-  - 2026-09-09-201235-from-lastet-agent.txt (read in full by one teammate)
+  - [session transcript, not published] (read in full by one teammate)
   - raw/reviews-2026-09-09/review-focus-fable-2026-09-09.md (product filter teammate)
   - raw/reviews-2026-09-09/integration-map-2026-09-09.md (journey teammate)
   - raw/reviews-2026-09-09/audit-submission-2026-09-09.md (submission teammate)
@@ -70,7 +70,7 @@ FACT: The critical path to a valid submission is builder-bound (video, public re
 ## Submission blockers (FACT, audit)
 
 - All four repositories PRIVATE (gh repo view 2026-09-09).
-- Transcripts: nachweis/2026-09-08-192458-...txt (379,742 B) is TRACKED and in the wiki history; nachweis/2026-09-09-201235-...txt untracked; nachweis-app/2026-09-08-205144-...txt untracked. Flipping the wiki public publishes the first one unless history is rewritten. Recommendation: wiki stays private, spec pages copied into nachweis-app/docs (the spec-driven rule requires them in the submission repository).
+- Transcripts: [session transcript, not published] (379,742 B) is TRACKED and in the wiki history; [session transcript, not published] untracked; [session transcript, not published] untracked. Flipping the wiki public publishes the first one unless history is rewritten. Recommendation: wiki stays private, spec pages copied into nachweis-app/docs (the spec-driven rule requires them in the submission repository).
 - Written pre-existing-work notice never sent (open-questions.md:30). Draft at track-decision.md:126-147.
 - Video: none; 2 to 4 minutes, 720p, own voice, no phone recording, auto-reject outside the bounds. No fallback, builder only.
 - Track contradiction: README.md:11 Classic; DISCLOSURE.md:1, docs/ai-attribution.md:14, submission-text.md:85 Continuity. Commit counts 145 in docs versus 289 real. Forge counts 119 in four docs versus 152.
