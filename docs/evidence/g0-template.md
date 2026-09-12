@@ -4,7 +4,7 @@ Copy this file to `g0-YYYY-MM-DD-<n>.md` in this directory and fill every
 field. Write `unverified` where you did not observe a value; never guess.
 Every hash or size below carries a label `live` or `fixture`; the verdict
 counts only `live` values. Raw captures go to
-/Users/bioharz/git/ethglobal/nachweis-app/docs/evidence/private/
+docs/evidence/private/
 and are not committed.
 
 ## Run identity
@@ -14,8 +14,8 @@ and are not committed.
 | Date and time (local) | |
 | Attempt number | |
 | Builder | (role only, no name) |
-| Verifier commit (`git -C /Users/bioharz/git/ethglobal/nachweis-verifier-relay rev-parse HEAD`) | |
-| Companion commit (`git -C /Users/bioharz/git/ethglobal/nachweis-app rev-parse HEAD`) | |
+| Verifier commit (`git -C "$VERIFIER_REPO" rev-parse HEAD`) | |
+| Companion commit (`git rev-parse HEAD in the repository root`) | |
 | Run directory (from g0-up.sh) | |
 | Verdict | pass / fail: branch <name> |
 
@@ -65,7 +65,7 @@ and are not committed.
 ## Sizes against the circuit bounds
 
 Bounds from
-/Users/bioharz/git/ethglobal/nachweis-app/circuits/pid-sdjwt
+circuits/pid-sdjwt
 (WP13). Fill the observed length in bytes of each part.
 
 | Part | Bound | Observed (live) | Within bound |

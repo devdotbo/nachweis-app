@@ -1,8 +1,8 @@
 # G0 runbook: official test wallet against the blind relay
 
 One reproducible path from a clean Mac shell to a recorded pass or fail.
-Spec: /Users/bioharz/git/ethglobal/nachweis-app/docs/spec-g0.md.
-Evidence: /Users/bioharz/git/ethglobal/nachweis-app/docs/evidence/README.md.
+Spec: docs/spec-g0.md.
+Evidence: docs/evidence/README.md.
 
 Conventions. FACT means read from code or a file, with the citation. Spec
 means taken from the OpenID4VP specification, not verified against the
@@ -12,11 +12,11 @@ Fixture values are labelled fixture and are never live evidence.
 Repositories:
 
 - companion and circuits (this worktree):
-  /Users/bioharz/git/ethglobal/nachweis-app
+  this repository (nachweis-app)
 - verifier, branch nachweis-relay:
-  /Users/bioharz/git/ethglobal/nachweis-verifier-relay
+  the verifier relay checkout (VERIFIER_REPO)
 - RP private key (outside every repo):
-  /Users/bioharz/git/eudi-wallet-hackathon/secrets/rp.key
+  `RP_KEY_PATH` (the builder's local secrets location)
 
 ## 1. Prerequisites
 
@@ -26,8 +26,8 @@ Checked on this Mac on 2026-09-08 (FACT, `--version` output):
 |---|---|---|
 | rustc / cargo | stable | 1.92.0 (rustup `stable-aarch64-apple-darwin`) |
 | bun | any 1.x | 1.3.5 |
-| nargo | 1.0.0-beta.21 (pinned: /Users/bioharz/git/ethglobal/nachweis-app/circuits/README.md:15) | 1.0.0-beta.21 at /Users/bioharz/.nargo/bin/nargo |
-| bb | 5.0.0-nightly.20260324 (pinned: circuits/README.md:16, companion/README.md:14) | 5.0.0-nightly.20260324 at /Users/bioharz/.bb/bb |
+| nargo | 1.0.0-beta.21 (pinned: circuits/README.md:15) | 1.0.0-beta.21 at ~/.nargo/bin/nargo |
+| bb | 5.0.0-nightly.20260324 (pinned: circuits/README.md:16, companion/README.md:14) | 5.0.0-nightly.20260324 at ~/.bb/bb |
 | cloudflared (tunnel, default) | any | 2026.8.2 at /opt/homebrew/bin/cloudflared |
 | ngrok (alternative) | any | 3.39.11 at /opt/homebrew/bin/ngrok |
 | tailscale (alternative, Funnel) | any | 1.102.3, Funnel has no serve config |
@@ -45,29 +45,29 @@ export PATH="$HOME/.nargo/bin:$HOME/.bb:$HOME/.cargo/bin:$HOME/.bun/bin:$PATH"
 Companion dependencies (once):
 
 ```
-cd /Users/bioharz/git/ethglobal/nachweis-app/companion && bun install
+cd <repo root>/companion && bun install
 ```
 
 Circuit artifacts: the companion `prove` step needs the compiled circuit and
 verification key; see
-/Users/bioharz/git/ethglobal/nachweis-app/companion/README.md
+companion/README.md
 (NACHWEIS_CIRCUIT_DIR, NACHWEIS_VK). Not needed for criteria 1 to 6.
 
 Wallet side: the official test wallet with a sandbox PID already issued
 (source: https://eudi-wallet.gov.de/en/news/testing-digital-credentials-in-the-eudi-wallet-sandbox
-per /Users/bioharz/git/ethglobal/nachweis/wiki/decisions.md:28). PIDs in the
+per docs/wiki/decisions.md:28). PIDs in the
 sandbox are single-use with a small batch (wiki/open-questions.md:27), so do
 not waste presentations on dry runs.
 
 ## 2. Build the relay-branch verifier
 
 ```
-git -C /Users/bioharz/git/ethglobal/nachweis-verifier-relay status --short
-cargo build --release --manifest-path /Users/bioharz/git/ethglobal/nachweis-verifier-relay/verifier-service/Cargo.toml
-ZK_ARTIFACTS_OPTIONAL=1 cargo test --manifest-path /Users/bioharz/git/ethglobal/nachweis-verifier-relay/verifier-service/Cargo.toml
+git -C "$VERIFIER_REPO" status --short
+cargo build --release --manifest-path "$VERIFIER_REPO/verifier-service/Cargo.toml"
+ZK_ARTIFACTS_OPTIONAL=1 cargo test --manifest-path "$VERIFIER_REPO/verifier-service/Cargo.toml"
 ```
 
-Binary: /Users/bioharz/git/ethglobal/nachweis-verifier-relay/target/release/verifier-service
+Binary: $VERIFIER_REPO/target/release/verifier-service
 
 State on 2026-09-08 at commit 8517398 (FACT): release build exit 0; 24 tests
 pass and 5 fail without `ZK_ARTIFACTS_OPTIONAL=1` because they want a vector
@@ -77,7 +77,7 @@ the ZK mdoc path, not the relay path.
 ## 3. Environment for the relay run
 
 All configuration is clap arguments with env fallbacks
-(/Users/bioharz/git/ethglobal/nachweis-verifier-relay/verifier-service/src/main.rs:20-77).
+(verifier-service/src/main.rs:20-77 in the verifier relay checkout).
 There is no relay mode switch: a session is a relay session when it was
 created through `POST /relay/request`, and the response handler branches on
 that before any parsing (handlers.rs:150-154). The same process serves
@@ -87,8 +87,8 @@ bridge sessions if someone calls `POST /request`; for G0 nobody does.
 |---|---|---|
 | PUBLIC_URL | `https://<tunnel-host>/` (trailing slash required, main.rs:28) | request_uri and response_uri in the request object |
 | PORT / HOST | 8090 / 127.0.0.1 | 8080 is often taken; the tunnel targets this |
-| RP_KEY_PATH | /Users/bioharz/git/eudi-wallet-hackathon/secrets/rp.key | registrar leaf private key (never in a repo) |
-| RP_LEAF_PATH | /Users/bioharz/git/ethglobal/nachweis-verifier-relay/fixtures/live/access-leaf.pem | registrar-issued leaf, signs the request object |
+| RP_KEY_PATH | the builder's local secrets location, outside every repository | registrar leaf private key (never in a repo) |
+| RP_LEAF_PATH | $VERIFIER_REPO/fixtures/live/access-leaf.pem | registrar-issued leaf, signs the request object |
 | RELAY_PICKUP_ONCE | true (default, main.rs:69) | one pickup, then 410 and the ciphertext is dropped |
 | RESULT_INCLUDES_PRESENTATION | false | keeps `/result/:id` minimal; the relay path does not use it |
 | RESULT_TOKEN | placeholder, set only if the verifier build you run defines it | result endpoint auth being added by the verifier teammate; g0-up.sh passes it through unchanged and never prints it |
@@ -121,13 +121,13 @@ entry is after G0.
 ## 4. Expose the verifier over HTTPS
 
 The wallet requires an HTTPS response_uri and cannot dial 127.0.0.1
-(/Users/bioharz/git/ethglobal/nachweis-verifier-relay/scripts/tunnel.sh:4-6).
+(scripts/tunnel.sh:4-6 in the verifier relay checkout).
 Tunnel tool on this Mac: cloudflared 2026.8.2 exists (FACT, section 1), so
 nothing needs installing. Quick tunnels need no account and print a random
 `https://<words>.trycloudflare.com` hostname per start.
 
 ```
-cd /Users/bioharz/git/ethglobal/nachweis-app
+cd <repo root>
 scripts/g0-up.sh
 ```
 
@@ -137,7 +137,7 @@ cloudflared, waits for the hostname, starts the verifier with the table
 above and `PUBLIC_URL=https://<host>/`, waits for `/health`, writes
 `verifier.pid`, `tunnel.pid`, `verifier.log`, `tunnel.log`, `run.txt` and a
 secret-free `env.sh` under
-/Users/bioharz/git/ethglobal/nachweis-app/docs/evidence/private/runs/<timestamp>/
+docs/evidence/private/runs/<timestamp>/
 (gitignored) and prints the public URL. Alternatives: `TUNNEL=ngrok`
 (ngrok 3.39.11 exists, needs an ngrok account token configured), or
 `TUNNEL=none PUBLIC_URL=https://boozk-2.tail129b4a.ts.net/` after
@@ -219,8 +219,8 @@ mismatch" and the fix is `--aud`.
 
 ```
 export PATH="$HOME/.nargo/bin:$HOME/.bb:$HOME/.cargo/bin:$HOME/.bun/bin:$PATH"
-source /Users/bioharz/git/ethglobal/nachweis-app/docs/evidence/private/runs/<timestamp>/env.sh
-cd /Users/bioharz/git/ethglobal/nachweis-app/companion
+source <repo root>/docs/evidence/private/runs/<timestamp>/env.sh
+cd <repo root>/companion
 export NACHWEIS_ADDRESS=0x<the bound Ethereum address, 20 bytes>
 ```
 
@@ -303,7 +303,7 @@ for the generator log or run the generator directly (its usage is in
 circuits/tools/gen-prover.ts; unverified whether the companion relays it).
 
 Bounds, FACT from
-/Users/bioharz/git/ethglobal/nachweis-app/circuits/pid-sdjwt/src/constants.nr:
+circuits/pid-sdjwt/src/constants.nr:
 `HEADER_B64_MAX = 2304` (line 4), `PAYLOAD_MAX_LEN = 2304` (line 9),
 `TAIL_MAX = 768` (line 15), `KB_HEADER_MAX = 128` (line 18),
 `KB_PAYLOAD_MAX = 384` (line 21); used in circuits/pid-sdjwt/src/main.nr:299-313.
@@ -334,7 +334,7 @@ The only relay log line is handlers.rs:986 with the session id.
 ### 6.8 Tear down
 
 ```
-cd /Users/bioharz/git/ethglobal/nachweis-app && scripts/g0-down.sh
+cd <repo root> && scripts/g0-down.sh
 ```
 
 ## 7. Pass and fail record
@@ -350,7 +350,7 @@ G0 passes when all six hold (spec-g0.md):
 5. verifier log clean (6.7),
 6. companion printed the parsed claim shape (prove.ts:107 line).
 
-Fill /Users/bioharz/git/ethglobal/nachweis-app/docs/evidence/g0-template.md
+Fill docs/evidence/g0-template.md
 as `docs/evidence/g0-YYYY-MM-DD-<n>.md`. Record at least: wallet app
 version and iOS version; the actual `aud`; the vct literal; the age object
 shape and its exact JSON path; the address claim keys present; the five

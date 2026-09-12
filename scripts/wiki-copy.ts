@@ -4,7 +4,13 @@
 // secret locations and identifiers, and rewrites links so that every relative
 // link resolves inside this repository.
 //
-// Usage: bun scripts/wiki-copy.ts <wiki checkout> <commit> [<out dir>]
+// Usage: bun scripts/wiki-copy.ts [<wiki checkout>] <commit> [<out dir>]
+//
+// The wiki checkout defaults to $WIKI_DIR, else ../nachweis next to this
+// repository. The absolute-path redactions below are built from that checkout's
+// parent directory (where the sibling repositories live) and from the home
+// directory of the user running the script, so the builder's machine layout is
+// not spelled out in this file.
 //
 // Pages are read with `git show <commit>:<path>` so the copy is committed
 // content, never a working tree. The wiki root pages (AGENTS.md, CLAUDE.md,
@@ -15,16 +21,39 @@
 // Redaction counts are printed per page so the manifest can list them.
 
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { dirname, join, posix, resolve } from "node:path";
 
-const [wikiDir, commit, outArg] = process.argv.slice(2);
-if (!wikiDir || !commit) {
-  console.error("usage: bun scripts/wiki-copy.ts <wiki checkout> <commit> [<out dir>]");
+const repoRoot = resolve(dirname(new URL(import.meta.url).pathname), "..");
+const args = process.argv.slice(2);
+const isDir = (p: string | undefined) => {
+  try {
+    return !!p && statSync(p).isDirectory();
+  } catch {
+    return false;
+  }
+};
+// The first argument is the wiki checkout when it names a directory; otherwise
+// the checkout comes from WIKI_DIR or the default location next to this repository.
+const wikiDir = resolve(isDir(args[0]) ? args.shift()! : process.env.WIKI_DIR ?? join(repoRoot, "..", "nachweis"));
+const [commit, outArg] = args;
+if (!commit || !isDir(wikiDir)) {
+  console.error("usage: [WIKI_DIR=<wiki checkout>] bun scripts/wiki-copy.ts [<wiki checkout>] <commit> [<out dir>]");
+  if (!isDir(wikiDir)) console.error(`wiki checkout not found: ${wikiDir}`);
   process.exit(2);
 }
-const repoRoot = resolve(dirname(new URL(import.meta.url).pathname), "..");
 const outDir = resolve(outArg ?? join(repoRoot, "docs", "wiki"));
+
+// Locations the wiki text refers to by absolute path, derived from the machine
+// that runs the copy (the wiki and the public repositories sit side by side).
+const HOME = homedir();
+const REPOS = dirname(wikiDir); // directory holding nachweis, nachweis-app, nachweis-site, ...
+const GIT = dirname(REPOS); // directory holding ethglobal/ and eudi-wallet-hackathon/
+const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const rx = (prefix: string, rest = "") => new RegExp(esc(prefix) + rest, "g");
+const TAIL = /[^\s)`,;"]*/.source; // rest of a path token
+const END = /(?![a-z0-9/-])/.source; // the path ends here (not a longer sibling name)
 
 const git = (...args: string[]) =>
   execFileSync("git", ["-C", wikiDir, ...args], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
@@ -90,32 +119,36 @@ const transcripts: Rule[] = [
 ];
 
 const secretPaths: Rule[] = [
-  { name: "secrets path", re: /\/Users\/bioharz\/\.config\/attestat\/[^\s)`,;"]*/g, to: "[local secrets path, withheld]" },
-  { name: "secrets path", re: /\/Users\/bioharz\/\.config\/attestat/g, to: "[local secrets path, withheld]" },
-  { name: "secrets path", re: /\/Users\/bioharz\/git\/eudi-wallet-hackathon\/secrets\/rp\.key/g, to: "[local secrets path, withheld]" },
+  { name: "secrets path", re: rx(`${HOME}/.config/attestat/`, TAIL), to: "[local secrets path, withheld]" },
+  { name: "secrets path", re: rx(`${HOME}/.config/attestat`), to: "[local secrets path, withheld]" },
+  { name: "secrets path", re: rx(`${GIT}/eudi-wallet-hackathon/secrets/rp.key`), to: "[local secrets path, withheld]" },
   { name: "secrets path", re: /ethonline2026\/\.env/g, to: "[local secrets path, withheld]" },
 ];
 
 const ids: Rule[] = privyIds.map((id) => ({ name: "id", re: new RegExp(id, "g"), to: "[id withheld]" }));
 
 // Absolute paths. Public repositories keep a repository-relative form; every
-// other path under the home directory is withheld.
+// other path under the home directory is withheld. Worktrees of a public
+// repository (<name>-wt-<suffix>) count as the repository.
+const WT = /(?:-wt-[a-z0-9-]+)?/.source;
 const paths: Rule[] = [
-  { name: "path", re: /\/Users\/bioharz\/git\/ethglobal\/nachweis-app(?:-wt-[a-z0-9-]+)?\//g, to: "nachweis-app/" },
-  { name: "path", re: /\/Users\/bioharz\/git\/ethglobal\/nachweis-app(?:-wt-[a-z0-9-]+)?(?![a-z0-9/-])/g, to: "nachweis-app" },
-  { name: "path", re: /\/Users\/bioharz\/git\/ethglobal\/nachweis-site(?:-wt-[a-z0-9-]+)?\//g, to: "nachweis-site/" },
-  { name: "path", re: /\/Users\/bioharz\/git\/ethglobal\/nachweis-site(?:-wt-[a-z0-9-]+)?(?![a-z0-9/-])/g, to: "nachweis-site" },
-  { name: "path", re: /\/Users\/bioharz\/git\/ethglobal\/nachweis-verifier-relay\//g, to: "klartext-verifier (branch nachweis-relay)/" },
-  { name: "path", re: /\/Users\/bioharz\/git\/ethglobal\/nachweis-verifier-relay(?![a-z0-9/-])/g, to: "klartext-verifier (branch nachweis-relay, local checkout)" },
-  { name: "path", re: /\/Users\/bioharz\/git\/eudi-wallet-hackathon\/verifier\//g, to: "klartext-verifier/" },
-  { name: "path", re: /\/Users\/bioharz\/git\/eudi-wallet-hackathon\/verifier(?![a-z0-9/-])/g, to: "klartext-verifier (local checkout)" },
-  { name: "path", re: /\/Users\/bioharz\/git\/ethglobal\/nachweis\//g, to: "" },
-  { name: "path", re: /\/Users\/bioharz\/git\/ethglobal\/nachweis(?![a-z0-9/-])/g, to: "the wiki repository" },
-  { name: "path", re: /\/Users\/bioharz\/\.nargo\/bin\/nargo/g, to: "nargo (local install)" },
-  { name: "path", re: /\/Users\/bioharz\/\.bb\/bb/g, to: "bb (local install)" },
-  { name: "path", re: /\/Users\/bioharz\/git\/ethglobal\/ethonline2026\/[^\s)`,;"]*/g, to: "[event wiki, local, withheld]" },
-  { name: "path", re: /\/Users\/bioharz\/git\/ethglobal\/ethonline2026(?![a-z0-9/-])/g, to: "[event wiki, local, withheld]" },
-  { name: "path", re: /\/Users\/bioharz[^\s)`,;"]*/g, to: "[local path, withheld]" },
+  { name: "path", re: rx(`${REPOS}/nachweis-app`, `${WT}/`), to: "nachweis-app/" },
+  { name: "path", re: rx(`${REPOS}/nachweis-app`, WT + END), to: "nachweis-app" },
+  { name: "path", re: rx(`${REPOS}/nachweis-site`, `${WT}/`), to: "nachweis-site/" },
+  { name: "path", re: rx(`${REPOS}/nachweis-site`, WT + END), to: "nachweis-site" },
+  { name: "path", re: rx(`${REPOS}/nachweis-verifier-relay/`), to: "klartext-verifier (branch nachweis-relay)/" },
+  { name: "path", re: rx(`${REPOS}/nachweis-verifier-relay`, END), to: "klartext-verifier (branch nachweis-relay, local checkout)" },
+  { name: "path", re: rx(`${GIT}/eudi-wallet-hackathon/verifier/`), to: "klartext-verifier/" },
+  { name: "path", re: rx(`${GIT}/eudi-wallet-hackathon/verifier`, END), to: "klartext-verifier (local checkout)" },
+  { name: "path", re: rx(`${wikiDir}/`), to: "" },
+  { name: "path", re: rx(wikiDir, END), to: "the wiki repository" },
+  { name: "path", re: rx(`${HOME}/.nargo/bin/nargo`), to: "nargo (local install)" },
+  { name: "path", re: rx(`${HOME}/.bb/bb`), to: "bb (local install)" },
+  { name: "path", re: rx(`${REPOS}/ethonline2026/`, TAIL), to: "[event wiki, local, withheld]" },
+  { name: "path", re: rx(`${REPOS}/ethonline2026`, END), to: "[event wiki, local, withheld]" },
+  { name: "path", re: rx(HOME, TAIL), to: "[local path, withheld]" },
+  // Any other macOS home directory, should a page quote one (a placeholder like `/Users/...` is left alone).
+  { name: "path", re: new RegExp(`/Users/[A-Za-z][A-Za-z0-9_-]*(?:/${TAIL})?`, "g"), to: "[local path, withheld]" },
   { name: "path", re: /\/var\/folders\/[^\s)`,;"]*/g, to: "[temporary directory, withheld]" },
   { name: "path", re: /(?:\/private)?\/tmp\/claude-501\/[^\s)`,;"]*/g, to: "[temporary directory, withheld]" },
 ];

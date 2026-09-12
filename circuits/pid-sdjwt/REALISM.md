@@ -1,7 +1,7 @@
 # Realism pass: what a real sandbox PID presentation looks like, and what the circuit assumes
 
 Written before the circuit change (measurements first), updated with the results after it.
-Sources: the verifier repo `/Users/bioharz/git/eudi-wallet-hackathon/verifier` (registrar leaf,
+Sources: the verifier repo `klartext-verifier` (the builder's local checkout; registrar leaf,
 ERICA captures), the research wiki of the hackathon repo, and this repo's minted vector.
 
 ## 1. The registered `client_id` (KB-JWT `aud`)

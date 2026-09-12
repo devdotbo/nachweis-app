@@ -10,15 +10,15 @@
 # upstream repository and the licence.
 #
 # Usage: scripts/export-relay-patches.sh [relay-worktree] [base-commit]
-# Defaults: /Users/bioharz/git/ethglobal/nachweis-verifier-relay and a08d72c.
+# Defaults: $VERIFIER_REPO (else ../nachweis-verifier-relay next to this repository) and a08d72c.
 # Review the output for secrets before committing (the script greps for the
 # obvious patterns and exits non-zero if any match).
 set -euo pipefail
 
-RELAY_DIR="${1:-/Users/bioharz/git/ethglobal/nachweis-verifier-relay}"
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+RELAY_DIR="${1:-${VERIFIER_REPO:-$(cd "$REPO_ROOT/.." && pwd)/nachweis-verifier-relay}}"
 BASE="${2:-a08d72c}"
 UPSTREAM_URL="https://github.com/Klartext-ID/klartext-verifier"
-REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 OUT_DIR="$REPO_ROOT/vendor/verifier-relay-patches"
 
 if [ ! -d "$RELAY_DIR" ]; then

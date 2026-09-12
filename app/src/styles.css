@@ -106,8 +106,8 @@ input{font:inherit;color:inherit}
 .rail li.current a{color:var(--bar-text);font-weight:500;border-left-color:var(--yellow)}
 .rail li.current .pip{border-color:var(--yellow);background:var(--yellow)}
 .rail li.current .pip::after{background:var(--bar)}
-.rail li.failed .pip{border-color:var(--red);background:var(--red)}
-.rail li.failed a{color:#FF8A9E}
+.rail li.failed .pip,.rail li.revoked .pip{border-color:var(--red);background:var(--red)}
+.rail li.failed a,.rail li.revoked a{color:#FF8A9E}
 .rail li.off a{color:rgba(244,241,232,.38)}
 .rail li.off .pip{border-style:dashed}
 .rail .small{display:block;color:var(--bar-mute);font-size:.76rem;font-weight:400;margin-top:1px}
@@ -134,7 +134,7 @@ input{font:inherit;color:inherit}
 .card h2 .state{font-family:var(--text);font-weight:500;font-size:.8rem;color:var(--ink-mute);border:1px solid var(--line);border-radius:999px;padding:2px 9px}
 .card h2 .state.done{color:var(--green);border-color:rgba(21,122,79,.4)}
 .card h2 .state.current{color:var(--yellow-ink);background:var(--yellow-wash);border-color:transparent}
-.card h2 .state.failed{color:var(--red);border-color:rgba(194,42,70,.4)}
+.card h2 .state.failed,.card h2 .state.revoked{color:var(--red);border-color:rgba(194,42,70,.4)}
 .card .lead{color:var(--ink-soft);font-size:.93rem;max-width:72ch;overflow-wrap:anywhere}
 .card.locked{opacity:.5}
 .card.locked .lead{max-width:64ch}

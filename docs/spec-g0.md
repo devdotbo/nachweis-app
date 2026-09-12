@@ -1,7 +1,7 @@
 # Spec G0: official test wallet against the blind relay
 
 Status: draft for the gate run. Written before the runbook; the runbook
-(/Users/bioharz/git/ethglobal/nachweis-app/docs/g0-runbook.md)
+(docs/g0-runbook.md)
 holds the exact commands.
 
 ## Goal
@@ -9,7 +9,7 @@ holds the exact commands.
 Show that the official German EUDI test wallet (sandbox build, iOS, iPhone
 16 Pro Max) can complete one presentation against this project's verifier
 running in blind-relay mode, with the laptop companion
-(/Users/bioharz/git/ethglobal/nachweis-app/companion) holding the
+(companion/) holding the
 decryption key, with the address proof enabled, and that the run leaves a
 recorded pass or fail with evidence.
 
@@ -43,15 +43,15 @@ Out of scope:
   issued from the sandbox issuer; one Mac on the same or any network (the
   wallet reaches the verifier only through the public hostname).
 - Verifier worktree
-  /Users/bioharz/git/ethglobal/nachweis-verifier-relay on branch
+  the verifier relay checkout (VERIFIER_REPO) on branch
   nachweis-relay builds and its tests pass.
 - Registrar leaf certificate and key from
-  /Users/bioharz/git/ethglobal/nachweis-verifier-relay/fixtures/live/
+  `fixtures/live/` in the verifier relay checkout
   are readable; the trust anchor for the sandbox issuer is configured.
 - A tunnel tool that gives a public HTTPS hostname exists on the Mac.
 - bun, nargo and bb are installed at the versions pinned in
-  /Users/bioharz/git/ethglobal/nachweis-app/circuits and
-  /Users/bioharz/git/ethglobal/nachweis-app/companion.
+  circuits/ and
+  companion/.
 - The result endpoint contract of the verifier (result token header, result
   shape) is taken from the verifier's own configuration at run time; the
   runbook does not assume a fixed result shape.
@@ -77,7 +77,7 @@ G0 passes when all of the following hold for one run:
    bounds.
 
 Evidence for each point is listed in
-/Users/bioharz/git/ethglobal/nachweis-app/docs/evidence/g0-template.md.
+docs/evidence/g0-template.md.
 
 ## Fail branches
 
@@ -109,7 +109,7 @@ follow-up.
 ## Deliverables of the gate run
 
 - Filled evidence file under
-  /Users/bioharz/git/ethglobal/nachweis-app/docs/evidence/
+  docs/evidence/
   (sanitized, see the README there).
 - Raw captures only under docs/evidence/private/, which is ignored by git.
 - A one-line verdict (pass or fail with branch) reported to the lead.

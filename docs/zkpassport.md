@@ -1,6 +1,6 @@
 # zkPassport route (WP33): passport chip as a second evidence route
 
-Status 2026-09-09: built on branch wp33-zkpassport, green locally (forge, typecheck, build, mock end-to-end on anvil), not run with a phone, not deployed. The builder decides on 2026-09-10 whether it stays. Research, trust model and the removal cost: /Users/bioharz/git/ethglobal/nachweis/wiki/zkpassport.md.
+Status 2026-09-09: built on branch wp33-zkpassport, green locally (forge, typecheck, build, mock end-to-end on anvil), not run with a phone, not deployed. The builder decides on 2026-09-10 whether it stays. Research, trust model and the removal cost: docs/wiki/zkpassport.md.
 
 ## What it is
 
@@ -25,7 +25,7 @@ Shared files touched, each marked "WP33": contracts/src/interfaces/IProofVerifie
 
 ## Tests
 
-    cd contracts && forge test                       # 152 passed, 0 failed, 20 skipped without RPC on main 46d8349 (2026-09-09; 119 passed at the time of the WP33 branch run, 22 of them new)
+    cd contracts && forge test                       # 155 passed, 0 failed, 20 skipped without RPC on main 0f200f9 (2026-09-12; 152 on 46d8349, 2026-09-09; 119 passed at the time of the WP33 branch run, 22 of them new)
     SEPOLIA_RPC_URL=... MAINNET_RPC_URL=... forge test --match-path 'test/zkpassport/*'   # 10 fork tests, read-only
     cd app && bun run typecheck && bun run build     # with and without VITE_ZKPASSPORT=1
     scripts/zkpassport-local.sh                      # anvil, MockZkPassportRoot, ZKPASSPORT-LOCAL PASS

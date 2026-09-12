@@ -6,11 +6,11 @@ stays out of git.
 
 ## Layout
 
-- /Users/bioharz/git/ethglobal/nachweis-app/docs/evidence/g0-template.md:
+- docs/evidence/g0-template.md:
   the form the builder copies and fills.
-- /Users/bioharz/git/ethglobal/nachweis-app/docs/evidence/g0-YYYY-MM-DD-<n>.md:
+- docs/evidence/g0-YYYY-MM-DD-<n>.md:
   one filled copy per run attempt, committed.
-- /Users/bioharz/git/ethglobal/nachweis-app/docs/evidence/private/:
+- docs/evidence/private/:
   raw captures (verifier log, companion output, tunnel log, screenshots,
   the stored ciphertext, the decrypted presentation, witness files). Ignored
   by git through docs/evidence/.gitignore. Never commit anything from here,
@@ -71,7 +71,7 @@ stays out of git.
 ## Fixture versus live
 
 Fixture material lives under
-/Users/bioharz/git/ethglobal/nachweis-verifier-relay/fixtures/ and under
+`fixtures/` in the verifier relay checkout (VERIFIER_REPO) and under
 the companion and circuit test directories. Hashes, sizes and claim shapes
 taken from fixtures are useful for comparison and must be labelled
 "fixture" in every evidence field. A G0 verdict rests only on values

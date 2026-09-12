@@ -323,6 +323,12 @@ if [ $POOL -eq 1 ]; then
   { echo "export POOL_JSON=\"$RUN_DIR/pool/pool.json\""; sed 's/^VITE_/export VITE_/' "$RUN_DIR/pool/pool.env"; } >> "$RUN_DIR/env.sh"
 fi
 
+if [ -n "$DEPLOYMENT" ]; then
+  if [ "$DEPLOYMENT_CHAIN" = 11155111 ]; then POOL_NET="Sepolia"; else POOL_NET="chain $DEPLOYMENT_CHAIN"; fi
+  POOL_LABEL="permissioned pool ($POOL_NET, deployment $DEPLOYMENT):"; POOL_WHERE="on $POOL_NET"; STEP8_NOTE=" Every hash on the page links to Etherscan."
+else
+  POOL_LABEL="permissioned pool (fork):"; POOL_WHERE="on the fork"; STEP8_NOTE=""
+fi
 cat <<SUMMARY
 
 BROWSER-REAL-WALLET UP ($(( $(date +%s) - T0 )) s)
@@ -332,7 +338,7 @@ BROWSER-REAL-WALLET UP ($(( $(date +%s) - T0 )) s)
   bridge / chain rpc:                 $BRIDGE_URL / $RPC (chain $DEPLOYMENT_CHAIN${DEPLOYMENT:+, deployment $DEPLOYMENT})
   NoirPidVerifier pinned to:          $ISSUER_HASH ($ISSUER_LABEL)
   run directory (gitignored):         $RUN_DIR
-$([ $POOL -eq 1 ] && printf '  permissioned pool (fork):           adapter %s, mUSD %s, pool.json %s\n' "$(jq -r .adapter <<< "$POOL_JSON")" "$(jq -r .stable <<< "$POOL_JSON")" "$RUN_DIR/pool/pool.json")
+$([ $POOL -eq 1 ] && printf '  %-35s adapter %s, mUSD %s, pool.json %s\n' "$POOL_LABEL" "$(jq -r .adapter <<< "$POOL_JSON")" "$(jq -r .stable <<< "$POOL_JSON")" "$RUN_DIR/pool/pool.json")
 Click sequence (docs/browser-real-wallet.md):
   1. Investor: "Connect dev signer" (investor $INVESTOR); Eligibility shows "not permitted".
   2. "Present your ID": "Create presentation request"; the dev signer signs nachweis:session:<id>; "signed, sent to bridge".
@@ -341,11 +347,11 @@ Click sequence (docs/browser-real-wallet.md):
      then pickup, checking, witness, init, proving, verifying, submitting, submitted (about 30 s); "attested from this browser".
   5. Header: "Issuer"; Presentations: "Approve" on the session (operator dev key); status "approved".
   6. Header: "Investor"; Eligibility "permitted"; "Two doors, one decision": "Subscribe"; "tx confirmed", FundToken balance rises.
-$([ $POOL -eq 1 ] && cat <<'POOLSEQ'
+$([ $POOL -eq 1 ] && cat <<POOLSEQ
   7. Same card, door two: "Swap" (mint mUSD from the faucet if the balance is 0; Permit2 signature, then the swap);
-     "Swapped in the permissioned pool", NDF received through the real Uniswap v4 hook on the fork.
+     "Swapped in the permissioned pool", NDF received through the real Uniswap v4 hook $POOL_WHERE.
   8. Header: "Issuer"; Revoke the investor. Header: "Investor": Subscribe reverts NotEligible, Swap is
-     "Refused by PermissionedHooks.beforeSwap". One revoke, two doors closed.
+     "Refused by PermissionedHooks.beforeSwap". One revoke, two doors closed.$STEP8_NOTE
 POOLSEQ
 )
 Record (sanitized) from the card's log line and dl: timings, proof bytes, tx hash; statusOf:
