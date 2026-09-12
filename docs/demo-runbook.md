@@ -404,7 +404,7 @@ Expected: `stopped app`, `stopped bridge`, `stopped anvil`, then g0-down's verif
 
 ### Sepolia run (2026-09-10, deployed)
 
-Deployment exists: `scripts/sepolia-deploy.sh` ran on Sepolia (chain id 11155111) on 2026-09-10, 33 transactions in blocks 11676804 to 11676836, every receipt status 1; the record is `docs/deployments/sepolia-2026-09-10.md` (addresses, transaction hashes with Etherscan links, gas, the env lines below, the on-chain checks). Not verified on Etherscan (no API key). The journey on this deployment (no phone, attest by operator) is recorded in [`docs/evidence/sepolia-journey-2026-09-10.md`](evidence/sepolia-journey-2026-09-10.md). The concrete command for the stack against that deployment:
+Deployment exists: `scripts/sepolia-deploy.sh` ran on Sepolia (chain id 11155111) on 2026-09-10, 33 transactions in blocks 11676804 to 11676836, every receipt status 1; the record is `docs/deployments/sepolia-2026-09-10.md` (addresses, transaction hashes with Etherscan links, gas, the env lines below, the on-chain checks). Not verified on Etherscan (no API key). The journey on this deployment (no phone, attest by operator) is recorded in [`docs/evidence/sepolia-journey-2026-09-10.md`](evidence/sepolia-journey-2026-09-10.md). Phone leg recorded 2026-09-12: [`docs/evidence/sepolia-phone-2026-09-12.md`](evidence/sepolia-phone-2026-09-12.md) (official wallet, proof in the browser, `attestWithProof` on Sepolia, then approve, subscribe, swap, revoke and the refused swap on a fresh investor). The concrete command for the stack against that deployment:
 
 ```
 scripts/browser-real-wallet-up.sh --deployment docs/deployments/sepolia-2026-09-10.md
