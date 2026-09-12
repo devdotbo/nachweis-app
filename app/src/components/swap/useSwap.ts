@@ -12,7 +12,7 @@ import { FUND_TOKEN } from '../../config'
 import { registryAbi } from '../../lib/contracts'
 import { addReceipt } from '../../lib/receipts'
 import { adapterAbi, checkerAbi, mockStableAbi, permit2Abi, stateViewAbi } from './abi'
-import { explainRevert, quoteExactIn, revertDataOf, SWAP_ALLOWED, swapCalldata, type Quote, type Refusal } from './calldata'
+import { classifyPreflightError, classifySendError, explainRevert, quoteExactIn, SWAP_ALLOWED, swapCalldata, unexplainedRevert, type Quote, type Refusal } from './calldata'
 import { POOL_CONFIG, SWAP_AMOUNT_IN, SWAP_DEADLINE_SECONDS, type PoolConfig } from './config'
 
 const POLL_MS = 8000
@@ -143,12 +143,19 @@ export interface SwapStep {
   skipped?: boolean
 }
 
+/**
+ * How far a refused swap got: `reverted` is the only outcome the chain confirmed (mined, status 0);
+ * `declined` and `notSent` mean no transaction exists and the refusal is the simulation's word alone;
+ * `unconfirmed` means a hash exists but no receipt arrived within the wait.
+ */
+export type RefusedOutcome = 'reverted' | 'declined' | 'notSent' | 'unconfirmed'
+
 export type SwapTxState =
   | { status: 'idle' }
   | { status: 'running'; current: SwapStepId; steps: SwapStep[] }
-  | { status: 'done'; hash: Hex; stableIn: bigint; fundOut: bigint; gasUsed: bigint; steps: SwapStep[] }
-  | { status: 'refused'; refusal: Refusal; hash?: Hex; steps: SwapStep[] }
-  | { status: 'error'; message: string; steps: SwapStep[] }
+  | { status: 'done'; hash: Hex; stableIn: bigint; fundOut: bigint; gasUsed: bigint; steps: SwapStep[]; note?: string }
+  | { status: 'refused'; refusal: Refusal; hash?: Hex; outcome: RefusedOutcome; steps: SwapStep[]; note?: string }
+  | { status: 'error'; message: string; hash?: Hex; steps: SwapStep[] }
 
 function shortError(e: unknown): string {
   if (e && typeof e === 'object') {
@@ -163,6 +170,9 @@ function shortError(e: unknown): string {
  * balance is short, ERC-20 approval to Permit2, Permit2 allowance to the router, then
  * UniversalRouter.execute. The execute call is simulated first; a refusal is decoded into words and then
  * sent anyway with a fixed gas limit, so the refused swap is on chain with a hash like the accepted one.
+ * The mined receipt is authoritative either way: status 1 is a swap whatever the simulation said, status 0
+ * is a refusal with the simulation's reason (or a replay's). A simulation that failed without a revert
+ * (timeout, HTTP error) is no verdict on the contract: the swap is sent as usual with a note.
  */
 export function useSwapTx(address: Address | undefined, cfg: PoolConfig | undefined = POOL_CONFIG, amountIn = SWAP_AMOUNT_IN) {
   const [state, setState] = useState<SwapTxState>({ status: 'idle' })
@@ -175,6 +185,16 @@ export function useSwapTx(address: Address | undefined, cfg: PoolConfig | undefi
     const steps: SwapStep[] = []
     const running = (current: SwapStepId) => setState({ status: 'running', current, steps: [...steps] })
     const wait = (hash: Hex) => client.waitForTransactionReceipt({ hash })
+    /** Simulated clean, reverted when mined (state changed in between): replay the call at that block for the reason. */
+    const lateReason = async (data: Hex, blockNumber: bigint): Promise<Refusal> => {
+      try {
+        await client.call({ account: address, to: cfg.universalRouter, data, blockNumber })
+        return unexplainedRevert('A replay of the call at that block does not revert, so the reason is not recoverable from here.')
+      } catch (e) {
+        const verdict = classifyPreflightError(e)
+        return verdict.kind === 'reverted' ? explainRevert(verdict.data, cfg) : unexplainedRevert(`The replay for the reason failed: ${verdict.reason}.`)
+      }
+    }
     try {
       running('faucet')
       const stableBefore = await client.readContract({ address: cfg.stable, abi: erc20Abi, functionName: 'balanceOf', args: [address] })
@@ -209,49 +229,61 @@ export function useSwapTx(address: Address | undefined, cfg: PoolConfig | undefi
       const fundStart = await client.readContract({ address: FUND_TOKEN, abi: erc20Abi, functionName: 'balanceOf', args: [address] })
 
       let refusal: Refusal | undefined
+      let note: string | undefined
       try {
         await client.call({ account: address, to: cfg.universalRouter, data })
       } catch (e) {
-        refusal = explainRevert(revertDataOf(e), cfg)
+        const verdict = classifyPreflightError(e)
+        if (verdict.kind === 'reverted') refusal = explainRevert(verdict.data, cfg)
+        else note = `simulation unavailable (${verdict.reason}), sending without it`
       }
-      if (refusal) {
-        let hash: Hex | undefined
-        try {
-          hash = await wallet.sendTransaction({ to: cfg.universalRouter, data, gas: REFUSED_SWAP_GAS, chain: wallet.chain, account: wallet.account })
-          await wait(hash)
-          addReceipt({ kind: 'swapRefused', hash, subject: address, from: address, at: Date.now() })
-        } catch {
-          /* the wallet declined to send a transaction that reverts; the decoded refusal stands on its own */
-        }
-        steps.push({ id: 'swap', label: 'UniversalRouter.execute refused', hash })
-        setState({ status: 'refused', refusal, hash, steps })
+      const finish = (next: SwapTxState) => {
+        setState(next)
         void queryClient.invalidateQueries()
+      }
+
+      // Send. A refusal the simulation predicted goes out with a fixed gas limit (the wallet's estimate would fail), so it lands on chain like an accepted swap.
+      let hash: Hex
+      try {
+        hash = await wallet.sendTransaction({ to: cfg.universalRouter, data, ...(refusal ? { gas: REFUSED_SWAP_GAS } : {}), chain: wallet.chain, account: wallet.account })
+      } catch (e) {
+        const verdict = classifySendError(e)
+        // The wallet's own gas estimate reverted: a refusal, nothing sent.
+        if (verdict.kind === 'reverted' && !refusal) refusal = explainRevert(verdict.data, cfg)
+        if (!refusal) throw e
+        const declined = verdict.kind === 'declined'
+        steps.push({ id: 'swap', label: declined ? 'UniversalRouter.execute refused (declined in wallet; the refusal is the simulation\'s)' : 'UniversalRouter.execute refused (not sent; the refusal is the simulation\'s)' })
+        finish({ status: 'refused', refusal, outcome: declined ? 'declined' : 'notSent', steps, note })
         return
       }
 
-      const hash = await wallet.sendTransaction({ to: cfg.universalRouter, data, chain: wallet.chain, account: wallet.account })
-      const receipt = await wait(hash)
-      if (receipt.status !== 'success') {
-        // Simulated clean, reverted when mined (state changed in between): replay the call at that block for the reason.
-        let late: Refusal
-        try {
-          await client.call({ account: address, to: cfg.universalRouter, data, blockNumber: receipt.blockNumber })
-          late = explainRevert(undefined, cfg)
-        } catch (e) {
-          late = explainRevert(revertDataOf(e), cfg)
-        }
-        addReceipt({ kind: 'swapRefused', hash, subject: address, from: address, at: Date.now() })
-        steps.push({ id: 'swap', label: 'UniversalRouter.execute reverted when mined', hash })
-        setState({ status: 'refused', refusal: late, hash, steps })
-        void queryClient.invalidateQueries()
+      let receipt: Awaited<ReturnType<typeof wait>>
+      try {
+        receipt = await wait(hash)
+      } catch (e) {
+        // Sent, no receipt within the wait: neither confirmed nor refused by the chain.
+        steps.push({ id: 'swap', label: 'UniversalRouter.execute sent, not confirmed within the wait', hash })
+        if (refusal) finish({ status: 'refused', refusal, hash, outcome: 'unconfirmed', steps, note })
+        else finish({ status: 'error', message: `sent, not confirmed: ${shortError(e)}`, hash, steps })
         return
       }
+
+      if (receipt.status !== 'success') {
+        // Mined and reverted. The reason: the simulation's, else a replay of the call at that block.
+        const reason = refusal ?? (await lateReason(data, receipt.blockNumber))
+        addReceipt({ kind: 'swapRefused', hash, subject: address, from: address, at: Date.now() })
+        steps.push({ id: 'swap', label: refusal ? 'UniversalRouter.execute refused' : 'UniversalRouter.execute reverted when mined', hash })
+        finish({ status: 'refused', refusal: reason, hash, outcome: 'reverted', steps, note })
+        return
+      }
+
+      // Mined with status 1: a swap, whatever the simulation predicted.
+      if (refusal) note = `${note ? `${note}; ` : ''}the simulation predicted "${refusal.title}", the mined transaction succeeded`
       const stableEnd = await client.readContract({ address: cfg.stable, abi: erc20Abi, functionName: 'balanceOf', args: [address] })
       const fundEnd = await client.readContract({ address: FUND_TOKEN, abi: erc20Abi, functionName: 'balanceOf', args: [address] })
       addReceipt({ kind: 'swap', hash, subject: address, from: address, at: Date.now() })
       steps.push({ id: 'swap', label: 'UniversalRouter.execute (V4_SWAP: SWAP_EXACT_IN_SINGLE, SETTLE_ALL, TAKE_ALL)', hash })
-      setState({ status: 'done', hash, stableIn: stableStart - stableEnd, fundOut: fundEnd - fundStart, gasUsed: receipt.gasUsed, steps })
-      void queryClient.invalidateQueries()
+      finish({ status: 'done', hash, stableIn: stableStart - stableEnd, fundOut: fundEnd - fundStart, gasUsed: receipt.gasUsed, steps, note })
     } catch (e) {
       setState({ status: 'error', message: shortError(e), steps })
     }

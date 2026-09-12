@@ -1,0 +1,3 @@
+# `bun test` runs the unit tests under src/ only; app/e2e holds Playwright specs (bunx playwright test).
+[test]
+root = "src"

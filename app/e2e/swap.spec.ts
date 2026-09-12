@@ -10,11 +10,20 @@
  */
 import { expect, test } from '@playwright/test'
 import { spawnSync } from 'node:child_process'
+import { createPublicClient, http, type Hex } from 'viem'
 import { card, clearShots, expectConnected, loadStack, shot } from './stack'
 
 const env = loadStack()
 // anvil's default account 0: the stack's deployer and registry operator (scripts/app-e2e-local.sh, K0).
 const OPERATOR_KEY = '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80'
+
+/** The chain's own verdict on a transaction the page shows: the receipt status behind the hash in the txline. */
+async function receiptStatusOf(result: import('@playwright/test').Locator): Promise<'success' | 'reverted'> {
+  const hash = await result.locator('.txline code, .txline a').getAttribute('title')
+  expect(hash, 'txline carries the full hash in its title').toMatch(/^0x[0-9a-f]{64}$/)
+  const rpc = createPublicClient({ transport: http(env.rpcUrl) })
+  return (await rpc.getTransactionReceipt({ hash: hash as Hex })).status
+}
 
 function cast(args: string[]): string {
   const home = process.env.HOME ?? ''
@@ -65,6 +74,7 @@ test.describe('swap in the permissioned pool from the investor portal', () => {
     await expect(result).toHaveAttribute('data-outcome', 'done', { timeout: 90_000 })
     await expect(result.getByText('swap confirmed')).toBeVisible()
     await expect(door.getByTestId('swap-received')).toContainText(/Sent 100 mUSD, received \d+(\.\d+)? NDF/)
+    expect(await receiptStatusOf(result), 'the confirmed swap is mined with status 1').toBe('success')
     const fundAfter = BigInt(cast(['call', env.fundToken, 'balanceOf(address)(uint256)', env.investor, '--rpc-url', env.rpcUrl]).split(' ')[0])
     expect(fundAfter > fundBefore, `FundToken balance did not grow: ${fundBefore} -> ${fundAfter}`).toBe(true)
     await expect(doors.getByTestId('fund-balance')).not.toContainText('…')
@@ -98,6 +108,9 @@ test.describe('swap in the permissioned pool from the investor portal', () => {
     // The refusal was sent with a fixed gas limit and mined as a reverted transaction: a hash, not "not sent".
     await expect(result.locator('.txline').getByText('not sent')).toHaveCount(0)
     await expect(result.locator('.txline code, .txline a')).toHaveText(/^0x[0-9a-f]{8}/)
+    // The chain's verdict, not the simulation's: a status-1 transaction labelled refused is the defect this guards against.
+    await expect(result.getByTestId('swap-outcome')).toHaveText('mined and reverted')
+    expect(await receiptStatusOf(result), 'the refused swap is mined with status 0').toBe('reverted')
     await expect(card(page, 'History').getByText('Swap refused by the pool')).toBeVisible()
     await shot(page, env.mode, '09-swap-refused')
     expect(errors, `browser errors:\n${errors.join('\n')}`).toEqual([])

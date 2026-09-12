@@ -8,7 +8,7 @@ import { addressUrl } from '../../lib/explorer'
 import { shortHex } from '../../lib/format'
 import { TxHash } from '../TxLine'
 import { POOL_CONFIG, SWAP_AMOUNT_IN } from './config'
-import { usePoolState, useQuote, useSwapCheck, useSwapTx, type SwapStep, type SwapTxState } from './useSwap'
+import { usePoolState, useQuote, useSwapCheck, useSwapTx, type RefusedOutcome, type SwapStep, type SwapTxState } from './useSwap'
 import './swap.css'
 
 function fmt(value: bigint, decimals: number, places: number): string {
@@ -38,6 +38,14 @@ const RUNNING_LABEL: Record<string, string> = {
   swap: 'UniversalRouter.execute, waiting for the receipt',
 }
 
+/** The txline word for how far a refused swap got; only `reverted` is the chain's own verdict. */
+const REFUSED_OUTCOME: Record<RefusedOutcome, string> = {
+  reverted: 'mined and reverted',
+  declined: 'declined in wallet, not sent',
+  notSent: 'not sent',
+  unconfirmed: 'sent, not confirmed',
+}
+
 function Result({ state, fundSymbol, stableSymbol, fundDecimals, stableDecimals }: { state: SwapTxState; fundSymbol: string; stableSymbol: string; fundDecimals: number; stableDecimals: number }) {
   switch (state.status) {
     case 'idle':
@@ -63,6 +71,7 @@ function Result({ state, fundSymbol, stableSymbol, fundDecimals, stableDecimals 
           <p className="hint" data-testid="swap-received">
             Sent {fmt(state.stableIn, stableDecimals, 2)} {stableSymbol}, received {fmt(state.fundOut, fundDecimals, 4)} {fundSymbol}. The adapter unwrapped the pool's virtual token into the fund token on the way out, and the token's own transfer check read the registry once more.
           </p>
+          {state.note ? <p className="hint" data-testid="swap-note">{state.note}</p> : null}
           <StepList steps={state.steps} />
         </div>
       )
@@ -71,11 +80,13 @@ function Result({ state, fundSymbol, stableSymbol, fundDecimals, stableDecimals 
         <div className="swap-result" data-testid="swap-result" data-outcome="refused">
           <p className="txline">
             <span className="status closed">swap refused</span>
-            {state.hash ? <TxHash hash={state.hash} /> : <span className="muted">not sent</span>}
+            {state.hash ? <TxHash hash={state.hash} /> : null}
+            <span className="muted" data-testid="swap-outcome">{REFUSED_OUTCOME[state.outcome]}</span>
           </p>
           <p className="note coral" data-testid="swap-refusal">
             <b>{state.refusal.title}.</b> {state.refusal.plain}
           </p>
+          {state.note ? <p className="hint" data-testid="swap-note">{state.note}</p> : null}
           <StepList steps={state.steps} />
           <details>
             <summary>revert data, decoded</summary>
@@ -87,6 +98,7 @@ function Result({ state, fundSymbol, stableSymbol, fundDecimals, stableDecimals 
       return (
         <div className="swap-result" data-testid="swap-result" data-outcome="error">
           <p className="err">{state.message}</p>
+          {state.hash ? <p className="txline"><TxHash hash={state.hash} /></p> : null}
           <StepList steps={state.steps} />
         </div>
       )
