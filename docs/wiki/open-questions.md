@@ -1,7 +1,7 @@
 ---
 type: question
 title: Open questions
-updated: 2026-09-09
+updated: 2026-09-13
 ---
 
 # Open questions
@@ -35,6 +35,8 @@ Unanswered as of 2026-09-09. Each: who can answer, by when it matters, and the w
 - Submission title and form text say Attestat; the repository stays nachweis-app (decision 2026-09-08). GitHub organisation "attestat": no visible profile on 2026-09-08 (handoff); claiming it is optional.
 
 ## Narrative questions (new 2026-09-08)
+
+- Incident evidence (new 2026-09-12, CLOSED 2026-09-13): do the Revolut (2026-09-11) and IDScan.net (2026-09-01) incidents go on the site's status-quo breach cards and into the description's problem paragraph before the deadline? Candidate sentences in pitch.md, "Incident evidence"; facts and honesty limits in incidents-idscan-revolut-2026-09.md. Closed 2026-09-13 night by the lead on the builder's overnight mandate ("do all the steps that is needed to prepare everything"), flagged for the builder's confirmation in the morning: site yes and description yes, video no. The description's problem paragraph carries one sentence with the verbs "surfaced" (the vendor's scans, on a dark-web service) and "handed" (the bank, to a fraudulent request); the site carries three breach cards in the order Revolut, IDScan.net, Coinbase, the Revolut card with the date "11 Sep" as its big line and the IDScan.net card with "153 million" as the seller's advertised count; Ledger and Bit24 cards removed. Not in the video: no caption, no spoken line (the video carries no citations and outlives the news cycle). Withdrawn wording: "leaked", "the only way to hold less". Record: decisions.md, "2026-09-13 night (lead, on the builder's overnight mandate)"; exact texts in the lead's canonical copy items C8 and C9 as applied to submission-text.md and the site.
 
 - Whether the official German test wallet can produce a ZK proof today: unverified, no source either way (narrative-zk.md). Until then: "the wallet presents an ordinary selective-disclosure SD-JWT".
 - The ARF ZKP refinement window (2026-09-23 to 2026-11-18 in the product-pitch-legal memo): unverified. Until then: "no scheme selected as of ARF v3.0.0; wallet-side support expected after launch".

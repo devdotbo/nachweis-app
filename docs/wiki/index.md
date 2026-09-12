@@ -1,6 +1,12 @@
 # Nachweis wiki: index
 
-Start here, 2026-09-12: read the [handoff for 2026-09-12](handoff-2026-09-12.md) first. FACT: the official-wallet journey ran on Sepolia on 2026-09-12 with a fresh investor (browser proof, attestWithProof, evidence-only state before approval, approve, subscribe, swap, revoke, refused swap; record in nachweis-app docs/evidence/sepolia-phone-2026-09-12.md); the swap classification fix, the wording fixes, the complete spec bundle and the alignment pass are merged into local main of all three repositories and pushed private. Builder-only: video, public flip, hosting of attestat.dev, forms. The page carries the brief for the next independent review.
+Update, 2026-09-13 night (lead, on the builder's overnight mandate; builder confirms in the morning): copy pass on branch wp45-copy, record in [decisions.md](decisions.md), section "2026-09-13 night". FACT: the tagline in submission-text.md is "EUDI evidence, proven in zero knowledge, one on-chain decision any contract can read." (85 characters); the description carries the two September incidents in one sentence (525 words); the shot list states Sepolia, the take commit as a placeholder and the 2026-09-12 hashes in its gate, beat 4 speaks the C6 adapter line (50 words), beat 5 prints the route-neutral issuer caption, the closing card reads "The pool never learned about EUDI. It read one record."; product.md's second why-now paragraph is replaced and the tagline ruling added to the honesty rules; the "Incident evidence" question is closed (site and description yes, video no); pitch.md marks its candidate sentences superseded and the beat 1 line rejected; the incidents page withdraws "leaked" and "the only way to hold less". Written the same night by the video teammate, not by the lead's copy pass: [video-script.md](video-script.md) and the video/ directory (cards and teleprompter), see the Pages table. Not decided: public flip, hosting, form submission, the take.
+
+Update, 2026-09-12 afternoon: [Two identity-document incidents, September 2026](incidents-idscan-revolut-2026-09.md). FACT: IDScan.net confirmed unauthorized access to customer accounts on its cloud after a dark-web service advertised scans of more than 153 million driver's licences (notice 2026-09-04, nine class actions, FBI); Revolut told a limited number of customers on 2026-09-11 that it handed their passport copies, selfies, addresses and bitcoin transaction histories to a fraudulent request from a real government email domain. OPINION: lead with Revolut under the hero question, IDScan.net second; candidate sentences in pitch.md; builder decides (open-questions.md). Nothing applied to site, description or shot list.
+
+Start here, 2026-09-13: read the [handoff for 2026-09-13](handoff-2026-09-13.md) first. FACT: overnight the copy pass of the 2026-09-12 review round was merged into all three repositories (issuer caption per proof route, README integration sections, site cards and Article 5f wording, tagline and description), and the video is prepared (script, cards, teleprompter). Not decided, the builder's: the take, the public flip, hosting, the forms.
+
+Earlier start, 2026-09-12: read the [handoff for 2026-09-12](handoff-2026-09-12.md) first. FACT: the official-wallet journey ran on Sepolia on 2026-09-12 with a fresh investor (browser proof, attestWithProof, evidence-only state before approval, approve, subscribe, swap, revoke, refused swap; record in nachweis-app docs/evidence/sepolia-phone-2026-09-12.md); the swap classification fix, the wording fixes, the complete spec bundle and the alignment pass are merged into local main of all three repositories and pushed private. Builder-only: video, public flip, hosting of attestat.dev, forms. The page carries the brief for the next independent review.
 
 Review update, 2026-09-11: [Independent readiness review](review-readiness-2026-09-11.md). FACT: four parallel reviews reproduced 155 local contract tests and 19 automation tests, independently checked the Sepolia purchase and hook refusal, and found a swap UI path that can report a successful transaction as refused. The complete official-wallet journey on Sepolia was recorded on 2026-09-12 (decisions.md "2026-09-12"); public source, disclosure/form receipts and complete sanitized planning artifacts remain submission gates. OPINION: retain the accepted direction, fix the result-classification defect, finish one fresh phone acceptance run, reconcile publication claims, and validate the buyer's replaced task before expanding. No new builder decision is recorded.
 
@@ -74,20 +80,20 @@ Only the builder can do: G0 with the official test wallet on the iPhone (unblock
 
 | Page | What it holds | Updated |
 |---|---|---|
-| wiki/product.md | the product sentence (Attestat), buyer, what it is not, honesty rules | 2026-09-08 |
-| wiki/decisions.md | dated FACT list of decisions and rejected alternatives; 2026-09-09: track open, Privy proposed | 2026-09-09 |
+| wiki/product.md | the product sentence (Attestat), buyer, why now (Art 5f; the two September incidents, C12 wording), what it is not, honesty rules with the 2026-09-13 tagline ruling | 2026-09-13 |
+| wiki/decisions.md | dated FACT list of decisions and rejected alternatives; 2026-09-13 night: the copy pass, the overturned rulings, what is not decided | 2026-09-13 |
 | wiki/architecture.md | input, decision object, outputs, proof interface, deployment steps | 2026-09-07 |
 | wiki/zk-plan.md | ZK routes, measured facts, kill tests | 2026-09-07 |
 | wiki/work-packages.md | WP0 to WP20 with owner, dependencies, acceptance test, status and evidence classes L, W, D, S | 2026-09-08 |
-| wiki/pitch.md | spoken line, hero question, seven video beats, front-door rules | 2026-09-08 |
+| wiki/pitch.md | spoken line, hero question, seven video beats, front-door rules, incident evidence (candidates superseded 2026-09-13, beat 1 line rejected) | 2026-09-13 |
 | wiki/sponsors.md | Uniswap, Privy, Chainlink: requirements as fetched, amounts, what we do; Privy question corrected to "not yet asked" | 2026-09-09 |
 | wiki/submission-checklist.md | rules as fetched 2026-09-08 and 2026-09-09, video constraints, AI attribution and spec artifacts, disclosure notice location, track field open, check-ins, deadline | 2026-09-09 |
 | wiki/repos.md | the repositories, paths, remotes, pre-existing code | 2026-09-07 |
 | wiki/handoff-astra.md | self-contained brief for GPT 6 Astra (WP4, WP5) | 2026-09-07 |
-| wiki/open-questions.md | unanswered questions with owner and deadline; closed items kept one revision; (c) Privy corrected, (g) track added | 2026-09-09 |
+| wiki/open-questions.md | unanswered questions with owner and deadline; closed items kept one revision; "Incident evidence" closed 2026-09-13 (site and description yes, video no) | 2026-09-13 |
 | wiki/checkin-2026-09-08.md | check-in 1 text (2026-09-08 05:59 Vienna; whether it was submitted is unverified) | 2026-09-07 |
 | wiki/name-and-domains.md | product name Attestat, domain availability and purchases, priority per TLD, rejected names, rename scope | 2026-09-08 |
-| wiki/submission-text.md | paste-ready ETHGlobal submission fields (Attestat title, tagline, description, how it is made, Uniswap track text, links, Continuity disclosure, AI attribution) with cited numbers | 2026-09-08 |
+| wiki/submission-text.md | paste-ready ETHGlobal submission fields (Attestat title, the 2026-09-13 tagline, description with the incident sentence and the zkPassport sentence, how it is made, Uniswap track text, links, Classic disclosure, AI attribution) with cited numbers; fork fallbacks deleted | 2026-09-13 |
 | wiki/checkin-2026-09-11.md | paste-ready draft for check-in 2 (2026-09-11 05:59 Vienna) with the state of 2026-09-08 night and the two questions to ETHGlobal | 2026-09-09 |
 | wiki/uniswap-feedback-form.md | paste-ready answers for the Uniswap Developer Feedback Form; builder fields marked | 2026-09-08 |
 | wiki/narrative-zk.md | the EUDI ZK story checked against eIDAS 2, the ARF v3.0.0, German sandbox and SPRIND sources; claims table, risks, three jury-facing wordings | 2026-09-08 |
@@ -100,10 +106,15 @@ Only the builder can do: G0 with the official test wallet on the iPhone (unblock
 | wiki/zkpassport.md | zkPassport as a second evidence route: on-chain verifier, what the proof binds, testing without a passport, pitch sentences, cost to keep or remove | 2026-09-09 |
 | wiki/identity-standards.md | 17 national identity systems compared with EUDI: format, protocol, trust model, state, verdict; notes file beside it | 2026-09-09 |
 | wiki/pitch-toolkit.md | the reframed pitch as used on the site, gallery structure, app-origin mechanism, open items | 2026-09-09 |
+| wiki/incidents-idscan-revolut-2026-09.md | IDScan.net (2026-09-01) and Revolut (2026-09-11) identity-document incidents: timelines, exposed data, retention as product default versus legal duty, regulators, X reaction, what it means for the pitch, candidate sentences; tiefgang plus Grok, every claim labelled | 2026-09-13 (correction: "leaked" and "the only way to hold less" withdrawn) |
+| wiki/video-shotlist-spine.md | the one-journey shot list for the take: rules, chain gate (Sepolia, take commit placeholder, the 2026-09-12 hashes), ten beats with captions, spoken text and printed lines, notes for the take | 2026-09-13 |
+| wiki/handoff-2026-09-13.md | morning handoff: what was merged overnight, the decisions for confirmation, the video files, the order of the day | 2026-09-13 |
+| wiki/video-script.md | the video script for the take (written 2026-09-13 night by the video teammate, reviewed by the lead: 357 spoken words, beats 0 to 8 and 10, recording checklist and cut list) | 2026-09-13 |
+| video/ | cards and teleprompter for the take (cards.html with title, limits, closing and route-diagram cards; teleprompter.html; README.md; written 2026-09-13 night by the video teammate, screenshots checked by the lead) | 2026-09-13 |
 
 ## Raw sources
 
-raw/README.md lists every copied source with its origin path (11 files: build plan, verdict, synthesis, six teammate memos from the eudi-zk research phase, the jury money question, the front-door brief). llm-wiki.md is the wiki pattern.
+raw/README.md lists every copied source with its origin path (13 files: the Grok and Parallel Task research outputs of 2026-09-12 on the IDScan.net and Revolut incidents, build plan, verdict, synthesis, six teammate memos from the eudi-zk research phase, the jury money question, the front-door brief). llm-wiki.md is the wiki pattern.
 
 ## Verified on disk 2026-09-07
 

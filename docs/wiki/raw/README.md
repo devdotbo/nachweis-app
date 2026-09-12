@@ -15,3 +15,5 @@ Read-only copies. Never edit these files; the wiki pages under wiki cite them. C
 | 2026-09-06-product-pitch-legal.md | [local path, withheld] | EUDI zero-data attestation service for crypto, product, legal boundary, objection matrix, jury reading, sponsor map, after the hackathon |
 | money-question-2026-09-07.md | [local path, withheld] | The money question, 2026-09-07 |
 | front-door-brief-2026-09-02.md | [event wiki, local, withheld] | Front-door brief for Crossfoot (pitch, sentences, page hierarchy, video, event feature), 2026-09-02 |
+| 2026-09-12-grok-x-idscan-revolut.txt | [temporary directory, withheld] (Grok web run, grok-second-opinion skill, 2026-09-12) | Grok's web and X findings on the IDScan.net and Revolut incidents, with X post URLs; attributed, not verified except where wiki/incidents-idscan-revolut-2026-09.md says opened |
+| 2026-09-12-parallel-task-idscan-revolut.md | Parallel Task API pro run (tiefgang skill, 2026-09-12), answer text plus citation list | Second-opinion research memo on both incidents; used only for the diff step, every kept claim re-read at its source |

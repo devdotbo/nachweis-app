@@ -1,7 +1,7 @@
 ---
 type: reference
 title: Product
-updated: 2026-09-12
+updated: 2026-09-13
 ---
 
 # Product
@@ -19,6 +19,8 @@ The issuer of a gated instrument: a fund issuer, transfer agent or launchpad tha
 Why this buyer (OPINION, from raw/verdict-2026-09-06.md and raw/2026-09-06-live-gated-products.md): the only gates that exist in crypto today are thrown by issuers of permissioned instruments and by launchpads. Secondary markets for tokenized stocks are ungated. No live product accepts an external attestation without a contract (COUNT 0, live-gated-products memo), so the buyer must be the party that already owns the gate.
 
 Why now (CLAIM, income-paths memo cited in raw/money-question-2026-09-07.md): member-state wallets by 2026-12-24, private relying parties in regulated sectors must accept the wallet from 2027-12-24 (eIDAS 2, Art 5f). No named operator has yet said which step Nachweis would replace; that is the business gate after 2026-09-13.
+
+Why now, second reason (FACT for the incidents, OPINION for the reading; wiki/incidents-idscan-revolut-2026-09.md): in the twelve days before the deadline an ID-scanning vendor's licence scans surfaced on a dark-web service (IDScan.net, company notice 2026-09-04) and a bank handed customers' passport copies to a fraudulent request (Revolut, notices 2026-09-11). The vendor kept its copies under a "do not delete" default; the bank's own notice says the law requires it to keep the document copy. On the browser route the issuer never receives a document image, so there is no image to retain by default or to hand over; a decision and predicate bits remain, and those are personal data too. A predicate is not customer due diligence; an obliged entity still keeps its compliance file, and Attestat does not shrink it.
 
 ## What it does, in one flow
 
@@ -46,5 +48,6 @@ Details: wiki/architecture.md, wiki/pitch.md.
 - Where the proof is made must be stated on screen: the browser tab today (the investor's own computer; FACT, Sepolia record 2026-09-12, nachweis-app/docs/evidence/sepolia-phone-2026-09-12.md), the laptop companion (FACT, G0 record 2026-09-08) and the phone prover as alternatives on the same core, wallet when the EUDI framework selects a ZK scheme (FACT, ARF v3.0.0 chapter 7: no scheme selected, wallet-side support expected after launch; see wiki/narrative-zk.md). Never say "on the device" when the recorded proof is on the Mac. The regulation's published text spells the unlinkability duty "unlikeability" in Art 5a(16)(b); quote it only verbatim. If the proof is made by our server, say "the chain does not trust our server, but the server did see the presentation".
 - Simulated checks are captioned simulated. Manual withdrawal is captioned manual.
 - No "first", no "only", no "the thing SPRIND is lacking", no yield figures, no "second KYC removed", no "everyone has this wallet by 2027" (rules carried over from raw/build-plan.md and raw/front-door-brief-2026-09-02.md). The word KYC appears only in the Uniswap form field kycUrl.
+- OPINION (lead, 2026-09-13): the tagline of 2026-09-13, "EUDI evidence, proven in zero knowledge, one on-chain decision any contract can read", names the mechanism (one decision any contract can read) and stays inside "no toolkit framing", because it claims an interface that consumer contracts read, not a product for developers.
 - Spiko and similar issuers appear only as "an instrument like", never as partners.
 - Open jury questions that touch the product sentence stay listed in wiki/open-questions.md until answered; the pitch does not paper over them.
