@@ -68,13 +68,13 @@ Not used, and why: intents (the asynchronous propose-and-authorize flow in the c
 
 ## Privy ids (no secrets)
 
-Created live on 2026-09-09 by `bun run scripts/bootstrap-privy.ts` on the builder's app "Attestat" (app id cmttciu77003c0bjv4xvdmupe, Free plan, TEE enabled), no sales contact, every call accepted at the first attempt:
+Created live on 2026-09-09 by `bun run scripts/bootstrap-privy.ts` on the builder's app "Attestat" (app id withheld, a public identifier; Free plan, TEE enabled), no sales contact, every call accepted at the first attempt:
 
 | Object | Id |
 |---|---|
-| Key quorum "attestat-backoffice-desk", 2 of 2 (compliance key, operations key) | xmyxk0g9u7zuii9qe16gfoz3 |
-| Policy "attestat-backoffice-registry-operator", owner: that quorum | qa7rgjwdbvy03ewug8oaq9k1 |
-| Server wallet "attestat-backoffice-operator", owner: that quorum, policy: that policy | jabcvi80nv2dx5tkes25lo62 at 0xa7d474A830F9FCe684a68a51f356f1cA0e9bf625 |
+| Key quorum "attestat-backoffice-desk", 2 of 2 (compliance key, operations key) | `<key quorum id>` (withheld) |
+| Policy "attestat-backoffice-registry-operator", owner: that quorum | `<policy id>` (withheld) |
+| Server wallet "attestat-backoffice-operator", owner: that quorum, policy: that policy | `<wallet id>` (withheld) at 0xa7d474A830F9FCe684a68a51f356f1cA0e9bf625 |
 
 The policy's `to` is the first anvil deployment address (0x5FbDB2315678afecb367f032d93F642f64180aa3) until `--set-registry` points it at the Sepolia registry. The two officer private keys exist only in showcase/backoffice/.env (gitignored, mode 600) on the builder's machine.
 

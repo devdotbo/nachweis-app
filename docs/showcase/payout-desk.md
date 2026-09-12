@@ -72,9 +72,9 @@ Created with `bun run src/setup.ts create --officer-b-out <the builder's local c
 
 | What | Id |
 |---|---|
-| Key quorum "attestat-payout-officers", threshold 2 of 2 | wu05awh7962linl4pcvzpw47 |
-| Policy "attestat-payout-treasury", owner the quorum, 2 ALLOW rules, default DENY | la2flr5op0mzcbimjzcmgq1y |
-| Server wallet "attestat-payout-treasury", owner the quorum, policy attached | mnwmkbxiog3yxusc99mnlpb8, address 0x1f6B95db18DEe1F6025f28912b6026c6Ab366AbE |
+| Key quorum "attestat-payout-officers", threshold 2 of 2 | `<key quorum id>` (withheld) |
+| Policy "attestat-payout-treasury", owner the quorum, 2 ALLOW rules, default DENY | `<policy id>` (withheld) |
+| Server wallet "attestat-payout-treasury", owner the quorum, policy attached | `<wallet id>` (withheld), address 0x1f6B95db18DEe1F6025f28912b6026c6Ab366AbE |
 
 The 2-of-2 quorum was created by the API on the Free plan without a sales contact (the docs' "reach out" sentence for key quorums, evaluation.md 3.5, did not gate the call). The rules currently name the zero address as gate and token (no Sepolia deployment yet); `bun run src/setup.ts update-rules` rewrites them once GATED_PAYOUT and PAYOUT_TOKEN are known (the update is signed by both officer keys because the quorum owns the policy).
 
