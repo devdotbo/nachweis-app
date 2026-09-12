@@ -16,6 +16,10 @@ stays out of git.
   by git through docs/evidence/.gitignore. Never commit anything from here,
   never move files out of it without sanitizing.
 
+## Run records
+
+- `sepolia-phone-2026-09-12.md`: official wallet journey on Sepolia (commit 5f17c3a, fresh investor 0xC616…bA44): proof from the official test wallet in the browser, `attestWithProof` mined, approve, subscribe, swap (75.569 NDF for 100 mUSD), revoke, refused swap decoded to Unauthorized(); measured against the readiness review's acceptance steps.
+
 ## What may be committed
 
 - Wallet app name and version string, iOS version, phone model.
