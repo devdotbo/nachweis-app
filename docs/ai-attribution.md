@@ -8,6 +8,8 @@ This file is that documentation. It states what was done by AI agents, what was 
 
 The team is one human builder. The code in this repository and on the verifier's relay branch was written by Claude Code agents (Anthropic models Fable 5.1 and Opus, run as a lead session with teammate and subagent sessions) working from written work packages. Independent reviews of the design, the code and the wiki were run with OpenAI Codex (GPT) and, for single questions, other models; the reviews changed documentation and produced work orders, not code.
 
+Independent reviews at decision points came from OpenAI GPT models (Codex, run as "Astra"), xAI Grok and Z.ai GLM models. Their outputs, where kept, are in the wiki's `raw/` directory (copied here under `wiki/raw/`, `reviews-2026-09-09/` among them) and in the handoff and review pages named below. They changed wording and the order of work, not code, with one caveat: work package WP4 was for a time assigned to the GPT agent, and whether that agent contributed code is unverified (note under the component table).
+
 The human builder:
 
 - Set the product: an issuer-side EUDI integration for token issuers, the privacy boundary, and the honesty rules for what may be claimed (wiki `product.md`, `pitch.md`).
@@ -23,7 +25,7 @@ The agents:
 - Ran the local tests, fork tests, emulator and simulator runs and recorded the numbers in the READMEs and the wiki. Every number carries the machine it was measured on.
 - Wrote the wiki pages on the builder's instruction. The builder does not edit the wiki directly.
 
-State on 2026-09-12, `main` at `0f200f9` (the earlier figures above stay as history): 335 commits on `main` (`git rev-list --count HEAD`, same author identity); `forge test` 155 passed, 20 skipped; app unit tests 8 (`cd app && bun test`); automation tests 19 (`cd automation && bun test`); 5 Playwright specs in `app/e2e/` (`*.spec.ts`). The official wallet journey on Sepolia with the phone leg (proof from the official wallet in the browser tab, separate approval, subscribe, swap, revoke, refused swap) is recorded in `evidence/sepolia-phone-2026-09-12.md`; the builder held the phone and clicked the page after the QR.
+State on 2026-09-13, `main` at `e523a11` (the earlier figures above stay as history): 341 commits on `main` (`git rev-list --count HEAD`, same author identity); `forge test` 155 passed, 20 skipped; app unit tests 8 (`cd app && bun test`); automation tests 19 (`cd automation && bun test`); 5 Playwright specs in `app/e2e/` (`*.spec.ts`). The official wallet journey on Sepolia with the phone leg (proof from the official wallet in the browser tab, separate approval, subscribe, swap, revoke, refused swap) is recorded in `evidence/sepolia-phone-2026-09-12.md`; the builder held the phone and clicked the page after the QR.
 
 Agent roles on 2026-09-12 (Claude Code lead session with teammates, one work package per branch, no names or session ids recorded here):
 
@@ -33,6 +35,8 @@ Agent roles on 2026-09-12 (Claude Code lead session with teammates, one work pac
 - Spec bundle: the wiki copy script (raw pages and `CLAUDE.md` included) and its coverage check.
 - Evidence record: the sanitized Sepolia phone journey of 2026-09-12 with every hash re-read with `cast`, plus the evidence index.
 - Merges: the lead merged each branch after its acceptance check.
+
+Agent roles on 2026-09-13: a copy pass on one branch (issuer caption per proof route, README privacy wording and the two integration sections, this paragraph), merged by the lead after review.
 
 ## Per component
 

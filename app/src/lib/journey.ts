@@ -106,15 +106,34 @@ function proofOriginShort(session?: Session): string {
  * bridge proved itself on the issuer's server (SP1 route), which saw the presentation.
  */
 export function proofOrigin(session?: Session): { short: string; caption: string } | undefined {
+  switch (proofRoute(session)) {
+    case 'browser':
+      return { short: 'made in this browser tab', caption: "Proof made in this browser tab. The relay passed the wallet's encrypted answer through unopened; the tab decrypted it, proved and dropped it." }
+    case 'companion':
+      return { short: 'made by the desktop companion', caption: "Proof made by the desktop companion on the investor's computer. The relay passed the wallet's encrypted answer through unopened." }
+    case 'phone':
+      return { short: 'made on the phone', caption: "Proof made by the phone app. The relay passed the wallet's encrypted answer through unopened." }
+    case 'noir':
+      return { short: 'made on the phone or the companion', caption: "Proof made by the phone app or the desktop companion, not by a server. The relay passed the wallet's encrypted answer through unopened." }
+    case 'sp1':
+      return { short: "made by the issuer's server", caption: "Proof made by the issuer's bridge server (SP1 route). The chain does not trust the server, but the server did see the presentation." }
+    default:
+      return undefined
+  }
+}
+
+/** Which route made the proof, or undefined while nothing is proved yet (or the decision came without a proof). */
+export type ProofRoute = 'browser' | 'phone' | 'companion' | 'noir' | 'sp1'
+
+export function proofRoute(session?: Session): ProofRoute | undefined {
   if (!session) return undefined
+  if (session.browser?.phase === 'submitted') return 'browser'
   const b = session.bridge
-  const browserDone = session.browser?.phase === 'submitted'
-  if (browserDone) return { short: 'made in this browser tab', caption: "Proof made in this browser tab. The relay passed the wallet's encrypted answer through unopened; the tab decrypted it, proved and dropped it." }
   if (!b || !PROVED_STATES.has(b.state)) return undefined
   if (b.proofSystem?.startsWith('noir')) {
-    if (session.provePath === 'companion') return { short: 'made by the desktop companion', caption: "Proof made by the desktop companion on the investor's computer. The relay passed the wallet's encrypted answer through unopened." }
-    if (session.provePath === 'phone') return { short: 'made on the phone', caption: "Proof made by the phone app. The relay passed the wallet's encrypted answer through unopened." }
-    return { short: 'made on the phone or the companion', caption: "Proof made by the phone app or the desktop companion, not by a server. The relay passed the wallet's encrypted answer through unopened." }
+    if (session.provePath === 'companion') return 'companion'
+    if (session.provePath === 'phone') return 'phone'
+    return 'noir'
   }
-  return { short: "made by the issuer's server", caption: "Proof made by the issuer's bridge server (SP1 route). The chain does not trust the server, but the server did see the presentation." }
+  return 'sp1'
 }
