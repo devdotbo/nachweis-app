@@ -112,8 +112,8 @@ function SessionRow({ s, registry, locked, busy, setBusy }: { s: Session; regist
 }
 
 /**
- * What the issuer confirms with Approve, per proof route (proofRoute). On the browser route, and while
- * the route is not known yet, the sentence names the tab as the prover: the relay only passed ciphertext,
+ * What the issuer confirms with Approve, per proof route (proofRoute). Without a proof on record the
+ * sentence describes the operator fallback instead. On the browser route it names the tab as the prover: the relay only passed ciphertext,
  * so the issuer's verifier never saw the presentation. On the SP1 route the bridge server proved and did
  * see it; the phone and companion routes proved on the investor's devices.
  */
@@ -125,7 +125,11 @@ function approveNote(s: Session): string {
     noir: "the phone app or the desktop companion made the proof from the official test wallet's answer, sample identity",
     sp1: "on the SP1 route the issuer's bridge server made the proof from the presentation it received, official test wallet, sample identity",
   }
-  return `What Approve confirms: the registry holds evidence for this session that its proof verifier accepted (${proved[proofRoute(s) ?? 'browser']}); the bound address signed the session; the issuer approves eligibility for that address. Sanctions and other checks: simulated in this build.`
+  const route = proofRoute(s)
+  if (!route) {
+    return "What Approve confirms: the bound address signed the session, and the issuer approves eligibility for that address. No proof is on record for this session yet; Attest directly stores the decision and approves it in one transaction from the operator key, without a proof. Sanctions and other checks: simulated in this build."
+  }
+  return `What Approve confirms: the registry holds evidence for this session that its proof verifier accepted (${proved[route]}); the bound address signed the session; the issuer approves eligibility for that address. Sanctions and other checks: simulated in this build.`
 }
 
 function ClaimRow({ label, value, strength }: { label: string; value: string; strength: string }) {

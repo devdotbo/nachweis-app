@@ -1,5 +1,7 @@
 # Video shot list
 
+Superseded on 2026-09-13: the take follows the ten-beat spine in docs/wiki/video-shotlist-spine.md (source: the wiki). This seven-beat list of 2026-09-07 is kept as history.
+
 Seven beats from the pitch, mapped to the screens and terminal windows in this repository. Rules (submission checklist, decided 2026-09-07): 2 to 4 minutes total, at least 720p, screen recording only, the builder speaks, no AI voice, no speedups, intro at most about 20 seconds. Every simulated or manual step is captioned. Where the proof is made is captioned. Only green work packages enter the video; nothing red is shown as if it worked.
 
 Budget: 168 seconds of content, 12 seconds of slack for the closing card. Total under 3 minutes.
