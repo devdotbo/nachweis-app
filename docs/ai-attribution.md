@@ -23,6 +23,17 @@ The agents:
 - Ran the local tests, fork tests, emulator and simulator runs and recorded the numbers in the READMEs and the wiki. Every number carries the machine it was measured on.
 - Wrote the wiki pages on the builder's instruction. The builder does not edit the wiki directly.
 
+State on 2026-09-12, `main` at `0f200f9` (the earlier figures above stay as history): 335 commits on `main` (`git rev-list --count HEAD`, same author identity); `forge test` 155 passed, 20 skipped; app unit tests 8 (`cd app && bun test`); automation tests 19 (`cd automation && bun test`); 5 Playwright specs in `app/e2e/` (`*.spec.ts`). The official wallet journey on Sepolia with the phone leg (proof from the official wallet in the browser tab, separate approval, subscribe, swap, revoke, refused swap) is recorded in `evidence/sepolia-phone-2026-09-12.md`; the builder held the phone and clicked the page after the QR.
+
+Agent roles on 2026-09-12 (Claude Code lead session with teammates, one work package per branch, no names or session ids recorded here):
+
+- Review verification: the readiness review's findings checked against the tree and the run logs, each marked confirmed or not.
+- Swap door classification fix, and an independent review of that fix by a second agent before the merge.
+- Wording: `FEEDBACK.md` brought in line with the Sepolia broadcast, the PresentCard sentence per proof route.
+- Spec bundle: the wiki copy script (raw pages and `CLAUDE.md` included) and its coverage check.
+- Evidence record: the sanitized Sepolia phone journey of 2026-09-12 with every hash re-read with `cast`, plus the evidence index.
+- Merges: the lead merged each branch after its acceptance check.
+
 ## Per component
 
 | Component | AI assistance | Human contribution | Notes |

@@ -26,6 +26,6 @@ export function Rail({ steps, note }: { steps: Step[]; note?: string }) {
 /** The chip next to a section title. Generic words on purpose: the section body says what exactly happened. */
 export function StateChip({ state }: { state?: Step['state'] }) {
   if (!state || state === 'off') return null
-  const text = state === 'done' ? 'complete' : state === 'failed' ? 'failed' : state === 'ready' ? 'ready' : 'in progress'
+  const text = state === 'done' ? 'complete' : state === 'failed' ? 'failed' : state === 'revoked' ? 'revoked' : state === 'ready' ? 'ready' : 'in progress'
   return <span className={`state ${state === 'ready' ? 'done' : state}`}>{text}</span>
 }

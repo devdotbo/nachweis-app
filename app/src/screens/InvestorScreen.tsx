@@ -41,7 +41,7 @@ export function InvestorScreen({ wallet }: { wallet: Wallet }) {
   const eligibilityState = (): StepState | undefined => {
     const a = state('attested')
     const b = state('approved')
-    if (b === 'failed') return 'failed'
+    if (b === 'failed' || b === 'revoked') return b
     if (b === 'done') return 'done'
     if (a === 'current' || b === 'current') return 'current'
     return a === 'done' ? 'current' : undefined

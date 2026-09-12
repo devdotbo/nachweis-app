@@ -8,7 +8,8 @@ import { POOL } from '../config'
 import type { Session } from './sessions'
 import type { RegistryStatus } from './types'
 
-export type StepState = 'off' | 'current' | 'ready' | 'done' | 'failed'
+/** 'revoked': the issuer withdrew the approval; shown in red like 'failed' but named for what happened. */
+export type StepState = 'off' | 'current' | 'ready' | 'done' | 'failed' | 'revoked'
 export type StepId = 'connect' | 'present' | 'prove' | 'attested' | 'approved' | 'subscribe' | 'swap' | 'holdings' | 'history'
 
 export interface Step {
@@ -68,7 +69,7 @@ export function journeySteps(i: JourneyInput): Step[] {
     id: 'approved',
     label: 'Issuer approval',
     anchor: '#eligibility',
-    state: chain.revoked ? 'failed' : chain.approved ? 'done' : chain.hasDecision ? 'current' : 'off',
+    state: chain.revoked ? 'revoked' : chain.approved ? 'done' : chain.hasDecision ? 'current' : 'off',
     detail: chain.revoked ? 'withdrawn by the issuer (manual)' : chain.approved ? 'approved, doors open' : chain.hasDecision ? 'awaiting the issuer' : 'a separate step by the issuer',
   })
   const held = balance !== undefined && balance > 0n
