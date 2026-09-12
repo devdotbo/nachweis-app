@@ -54,7 +54,7 @@ All scripts are in nachweis-app/scripts/ and build their own binaries. Tool pins
 - nachweis-app/.e2e/ is gitignored: test issuer keys (issuer.pk8.pem, issuer.sec1) and certificates.
 - Outside the repositories: [local secrets path, withheld] (RP key for the registrar leaf). Never read it into a chat.
 - No .env files exist; three .env.example files list the variables (root: SEPOLIA_RPC_URL, DEPLOYER_PRIVATE_KEY placeholder, ETHERSCAN_API_KEY, addresses; app: VITE_* including VITE_DEV_PRIVATE_KEY and VITE_DEV_OPERATOR_KEY which are absent from the example).
-- Untracked file at the app repository root: nachweis-app/2026-09-08-205144-i-told-gpt-6-astra.txt (92 KB transcript, matches no ignore rule, would be committed by `git add -A`). Builder moves it out (item below). The wiki root holds a tracked 380 KB transcript, 2026-09-08-192458-we-did-a-lot-and-we-pivoted-many-times-check-sp.txt, to be reviewed before the wiki goes public.
+- Untracked file at the app repository root: [session transcript, not published] (92 KB transcript, matches no ignore rule, would be committed by `git add -A`). Builder moves it out (item below). The wiki root holds a tracked 380 KB transcript, [session transcript, not published], to be reviewed before the wiki goes public.
 
 ## Tool pins (FACT, docs/g0-runbook.md:29 to :37, docs/demo-runbook.md:30 to :36, app/package.json)
 
@@ -79,7 +79,7 @@ nachweis-app main 5f5ceb9; nachweis-app-wt-app wp30-browser-real-wallet; nachwei
 - DNS: attestat.dev at Porkbun, steps in nachweis-site/docs/hosting.md (GitHub Pages recommended); .app, .xyz, .tech as 301 forwards.
 - Video constraints (FACT, event details page): 2 to 4 minutes, at least 720p, no speedup, no AI voice; our rules: intro at most about 20 s, only green packages, simulated steps captioned, "official test wallet, sample identity". Shot list: nachweis-app/docs/video-shotlist.md.
 - Wallet version string: read it from the iPhone's wallet app (settings or about screen) and give it to the lead for both evidence records (docs/evidence/g0-2026-09-08.md and docs/evidence/browser-real-wallet-2026-09-08.md, both say "not recorded (builder to add)").
-- Move the exported transcript nachweis-app/2026-09-08-205144-i-told-gpt-6-astra.txt out of the app repository (agents do not run rm or mv on it).
+- Move the exported transcript [session transcript, not published] out of the app repository (agents do not run rm or mv on it).
 - Uniswap Developer Feedback Form after the repository is public: wiki/uniswap-feedback-form.md.
 
 ## Next agent actions, in order

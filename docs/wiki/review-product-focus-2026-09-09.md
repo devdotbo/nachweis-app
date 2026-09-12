@@ -5,7 +5,7 @@ updated: 2026-09-09
 status: Review findings and proposed direction for builder review
 sources:
   - wiki/handoff-fable-2026-09-10.md
-  - 2026-09-09-201235-from-lastet-agent.txt
+  - [session transcript, not published]
   - wiki/product.md
   - wiki/decisions.md
   - wiki/privy-cases/evaluation.md

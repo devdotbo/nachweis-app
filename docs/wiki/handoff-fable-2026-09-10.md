@@ -24,9 +24,9 @@ New since 2026-09-09 night (FACT, decisions.md section "2026-09-09 night"): Atte
 
 ## State of every repository (FACT, git, 2026-09-09 night)
 
-- nachweis-app: nachweis-app, main 56424b4 "Merge wp38-investor-money: fund desk demo for an email investor". `git branch --no-merged main` lists wp12-ios alone (125 ahead, 284 behind; iOS prover, superseded, keep). Every worktree branch is 0 commits ahead of main. 41 local branches. `git status --porcelain` shows exactly one line: the untracked transcript 2026-09-08-205144-i-told-gpt-6-astra.txt (92,837 bytes, no ignore rule matches it). Repository visibility PRIVATE (FACT, gh repo view 2026-09-08; not re-checked tonight). Nothing is deployed to any network; README.md:35 still says so.
+- nachweis-app: nachweis-app, main 56424b4 "Merge wp38-investor-money: fund desk demo for an email investor". `git branch --no-merged main` lists wp12-ios alone (125 ahead, 284 behind; iOS prover, superseded, keep). Every worktree branch is 0 commits ahead of main. 41 local branches. `git status --porcelain` shows exactly one line: the untracked transcript [session transcript, not published] (92,837 bytes, no ignore rule matches it). Repository visibility PRIVATE (FACT, gh repo view 2026-09-08; not re-checked tonight). Nothing is deployed to any network; README.md:35 still says so.
 - nachweis-site: nachweis-site, main b5b273d "Gallery: Swiss e-ID and other national systems from the identity-standards research", working tree clean. Holds the reframed main page, showcase/index.html (gallery), showcase/links.js, and the five case pages under showcase/.
-- wiki: the wiki repository, main 17ec382 "log: all demos merged", clean at the start of this turn. The tracked 380 KB transcript at the wiki root (2026-09-08-192458-we-did-a-lot-and-we-pivoted-many-times-check-sp.txt) is still there; review before publication.
+- wiki: the wiki repository, main 17ec382 "log: all demos merged", clean at the start of this turn. The tracked 380 KB transcript at the wiki root [session transcript, not published]) is still there; review before publication.
 - verifier: klartext-verifier (branch nachweis-relay, local checkout) on branch nachweis-relay, head 7262a32, unchanged tonight; public copy as the patch series in nachweis-app/vendor/verifier-relay-patches; the upstream repository Klartext-ID/klartext-verifier is public, Apache-2.0 (track-decision.md).
 
 Worktrees (FACT, `git worktree list` 2026-09-09 night):
@@ -141,7 +141,7 @@ Unchanged from the 2026-09-09 handoff: nachweis-app/docs/evidence/private/runs/ 
 - Check-in 2: 2026-09-11 05:59 Vienna. Draft: wiki/checkin-2026-09-11.md (updated tonight with the night's state, under 200 words, the two questions kept). Confirm afterwards whether check-in 1 of 2026-09-08 was submitted.
 - Confirm who gave the "new project" ok and on which channel (decisions.md records the builder's words "we got the ok"; log.md needs the source and the date). If the ok came in writing, the two questions in the check-in draft can be deleted.
 - The wallet version string: read it from the iPhone's EUDI wallet app (settings or about screen) and give it to the lead for both evidence records.
-- Move the exported transcript nachweis-app/2026-09-08-205144-i-told-gpt-6-astra.txt out of the app repository (agents do not run rm or mv on it). It is the only untracked file and `git add -A` would commit it.
+- Move the exported transcript [session transcript, not published] out of the app repository (agents do not run rm or mv on it). It is the only untracked file and `git add -A` would commit it.
 - The private evidence directories: nachweis-app/docs/evidence/private/runs/ and nachweis-app/.e2e/ stay gitignored; delete or archive them after the submission.
 - Dashboard key cleanup: [security note withheld].
 - Still open from the 2026-09-09 handoff: DNS for attestat.dev at Porkbun (nachweis-site/docs/hosting.md), the Uniswap Developer Feedback Form after the repository is public (wiki/uniswap-feedback-form.md), the video constraints (2 to 4 minutes, at least 720p, no speedup, no AI voice).
