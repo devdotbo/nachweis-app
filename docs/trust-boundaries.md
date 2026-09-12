@@ -3,8 +3,8 @@
 Status: written 2026-09-08 against app worktree `wp17-service-boundaries` (from
 `0fd7312`) and verifier worktree `nachweis-relay` at `7262a32`. Every row is
 FACT with a `file:line` citation read for this document, or says "unverified".
-Paths are relative to `/Users/bioharz/git/ethglobal/nachweis-app-wt-sp1`
-(app) or `/Users/bioharz/git/ethglobal/nachweis-verifier-relay` (verifier,
+Paths are relative to the root of this repository (the `nachweis-app-wt-sp1`
+worktree at the time) or to the verifier relay checkout, VERIFIER_REPO (verifier,
 prefixed `verifier/`).
 
 The two routes are not identical and are not described as such here. The SP1

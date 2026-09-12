@@ -1,6 +1,6 @@
 # zkPassport route (WP33): passport chip as a second evidence route
 
-Status 2026-09-09: built on branch wp33-zkpassport, green locally (forge, typecheck, build, mock end-to-end on anvil), not run with a phone, not deployed. The builder decides on 2026-09-10 whether it stays. Research, trust model and the removal cost: /Users/bioharz/git/ethglobal/nachweis/wiki/zkpassport.md.
+Status 2026-09-09: built on branch wp33-zkpassport, green locally (forge, typecheck, build, mock end-to-end on anvil), not run with a phone, not deployed. The builder decides on 2026-09-10 whether it stays. Research, trust model and the removal cost: docs/wiki/zkpassport.md.
 
 ## What it is
 

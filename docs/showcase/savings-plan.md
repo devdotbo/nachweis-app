@@ -1,6 +1,6 @@
 # Showcase: the attested savings plan (one decision, four doors, one revoke)
 
-Branch `wp38-savings-plan`, case /Users/bioharz/git/ethglobal/nachweis/wiki/privy-cases/lifecycle/case.md. Status on 2026-09-09: class L green (local chain, no Privy app: `scripts/showcase-savings-plan-local.sh` prints `SHOWCASE-SAVINGS-PLAN-LOCAL PASS`); class S (Sepolia with the builder's Privy app) not run. Nothing below with only local evidence is described as a Privy run or a wallet run.
+Branch `wp38-savings-plan`, case docs/wiki/privy-cases/lifecycle/case.md. Status on 2026-09-09: class L green (local chain, no Privy app: `scripts/showcase-savings-plan-local.sh` prints `SHOWCASE-SAVINGS-PLAN-LOCAL PASS`); class S (Sepolia with the builder's Privy app) not run. Nothing below with only local evidence is described as a Privy run or a wallet run.
 
 ## 1. What it shows
 

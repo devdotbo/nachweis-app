@@ -12,9 +12,9 @@
 #   TUNNEL=none PUBLIC_URL=https://my.host/ scripts/g0-up.sh
 #
 # Environment (all optional, defaults in brackets):
-#   VERIFIER_DIR       verifier worktree [/Users/bioharz/git/ethglobal/nachweis-verifier-relay]
+#   VERIFIER_DIR       verifier worktree [$VERIFIER_REPO, else ../nachweis-verifier-relay next to this repo]
 #   VERIFIER_BIN       built binary [$VERIFIER_DIR/target/release/verifier-service]; built if missing
-#   RP_KEY_PATH        registrar leaf private key [/Users/bioharz/git/eudi-wallet-hackathon/secrets/rp.key]
+#   RP_KEY_PATH        registrar leaf private key [$HOME/git/eudi-wallet-hackathon/secrets/rp.key]
 #   RP_LEAF_PATH       registrar leaf certificate [$VERIFIER_DIR/fixtures/live/access-leaf.pem]
 #   TRUST_ANCHOR_PATH  PID issuer anchor PEM; unset by default. Has no effect on the
 #                      relay path (the verifier never opens a relay response) and is
@@ -32,9 +32,9 @@
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-VERIFIER_DIR="${VERIFIER_DIR:-/Users/bioharz/git/ethglobal/nachweis-verifier-relay}"
+VERIFIER_DIR="${VERIFIER_DIR:-${VERIFIER_REPO:-$(cd "$REPO_DIR/.." && pwd)/nachweis-verifier-relay}}"
 VERIFIER_BIN="${VERIFIER_BIN:-$VERIFIER_DIR/target/release/verifier-service}"
-RP_KEY_PATH="${RP_KEY_PATH:-/Users/bioharz/git/eudi-wallet-hackathon/secrets/rp.key}"
+RP_KEY_PATH="${RP_KEY_PATH:-$HOME/git/eudi-wallet-hackathon/secrets/rp.key}"
 RP_LEAF_PATH="${RP_LEAF_PATH:-$VERIFIER_DIR/fixtures/live/access-leaf.pem}"
 RELAY_PICKUP_ONCE="${RELAY_PICKUP_ONCE:-true}"
 RESULT_INCLUDES_PRESENTATION="${RESULT_INCLUDES_PRESENTATION:-false}"

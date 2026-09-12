@@ -1,6 +1,6 @@
 # Showcase: compliance desk (WP38, "backoffice")
 
-Status 2026-09-09: built on branch wp38-backoffice, green locally (desk unit tests, app typecheck and build, local end-to-end on anvil), Privy side bootstrapped live on the builder's app "Attestat" (ids below), not deployed to Sepolia. Case page: /Users/bioharz/git/ethglobal/nachweis/wiki/privy-cases/backoffice/case.md.
+Status 2026-09-09: built on branch wp38-backoffice, green locally (desk unit tests, app typecheck and build, local end-to-end on anvil), Privy side bootstrapped live on the builder's app "Attestat" (ids below), not deployed to Sepolia. Case page: docs/wiki/privy-cases/backoffice/case.md.
 
 ## What it shows
 
@@ -46,7 +46,7 @@ Tests:
 
 Privy mode (the builder, by hand; Sepolia):
 
-1. `source /Users/bioharz/.config/attestat/privy.env` in a shell (PRIVY_APP_ID and PRIVY_APP_SECRET; nothing from that file is written anywhere by the scripts).
+1. `source <the builder's local config directory>/privy.env` in a shell (PRIVY_APP_ID and PRIVY_APP_SECRET; nothing from that file is written anywhere by the scripts).
 2. Once: `cd showcase/backoffice && bun run scripts/bootstrap-privy.ts` creates two P-256 keys, the 2 of 2 quorum, the policy (owner: the quorum) and the wallet, and writes showcase/backoffice/.env (gitignored, mode 600) with the officer keys and the ids. Already done on 2026-09-09, see "Privy ids".
 3. Deploy with the wallet as operator: `OPERATOR_ADDRESS=<wallet address> forge script script/Deploy.s.sol:Deploy --rpc-url sepolia --broadcast`, then point the policy at the registry: `bun run scripts/bootstrap-privy.ts --set-registry <registry>` (both officer keys sign the policy update; the quorum owns the policy).
 4. Fund the wallet with Sepolia ETH for gas.

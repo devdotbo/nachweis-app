@@ -68,7 +68,7 @@ Why the allowance rule exists: the treasury keeps custody of the stablecoin and 
 
 ## 5. Privy identifiers and the live check (builder's app "Attestat", 2026-09-10, FACT)
 
-Created with `bun run src/setup.ts create --officer-b-out /Users/bioharz/.config/attestat/privy-payout-officer-b.env` (the officer B private key lives only in that file, mode 600; nothing secret is in this repository):
+Created with `bun run src/setup.ts create --officer-b-out <the builder's local config directory>/privy-payout-officer-b.env` (the officer B private key lives only in that file, mode 600; nothing secret is in this repository):
 
 | What | Id |
 |---|---|
@@ -96,7 +96,7 @@ So on the real app: the calldata conditions (`function_name`, `payout.total`, `a
 ## 6. Privy mode on Sepolia (builder, by hand; open)
 
 1. Deploy: `REGISTRY_ADDRESS=<registry> TREASURY=0x1f6B95db18DEe1F6025f28912b6026c6Ab366AbE forge script script/DeployPayout.s.sol:DeployPayout --rpc-url sepolia --broadcast` (mints 10,000 mUSD to the treasury). Send Sepolia ETH to the treasury address for gas (the app has no gas credits, evaluation.md 11a).
-2. `showcase/payout-desk/.env` from .env.example: PAYOUT_SIGNER=privy, the four PRIVY_* values from /Users/bioharz/.config/attestat/privy.env (never into a tracked file), PRIVY_AUTHORIZATION_KEY_B from the officer B file, PRIVY_WALLET_ID, PRIVY_POLICY_ID, PRIVY_KEY_QUORUM_ID from section 5, RPC_URL, CHAIN_ID=11155111, REGISTRY, GATED_PAYOUT, PAYOUT_TOKEN, CONTRACTORS.
+2. `showcase/payout-desk/.env` from .env.example: PAYOUT_SIGNER=privy, the four PRIVY_* values from <the builder's local config directory>/privy.env (never into a tracked file), PRIVY_AUTHORIZATION_KEY_B from the officer B file, PRIVY_WALLET_ID, PRIVY_POLICY_ID, PRIVY_KEY_QUORUM_ID from section 5, RPC_URL, CHAIN_ID=11155111, REGISTRY, GATED_PAYOUT, PAYOUT_TOKEN, CONTRACTORS.
 3. `bun run src/setup.ts update-rules` (writes the real gate and token into the policy), then `bun run src/setup.ts check` (expect the table of section 5 with the real addresses).
 4. `bun run start`; at startup the desk issues approve(gate) through the policy (rule 2) and logs the hash.
 5. App with VITE_PAYOUT_DESK_URL, VITE_REGISTRY and the Sepolia values; attest and approve a contractor through the issuer console (or the browser route with the official test wallet), then on /showcase/payout-desk: propose as officer A, approve as officer B, hash on screen; revoke on /issuer; propose again: refused by the gate; "Pay directly": refused by the policy.

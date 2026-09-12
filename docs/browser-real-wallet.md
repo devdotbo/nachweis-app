@@ -18,11 +18,11 @@ scripts/browser-real-wallet-down.sh        # stops what up started, leaves the l
 
 Same as `docs/g0-runbook.md`, section 1, plus the app's toolchain:
 
-- The relay-branch verifier worktree at
-  /Users/bioharz/git/ethglobal/nachweis-verifier-relay with a release build (`g0-up.sh` builds it
+- The relay-branch verifier worktree (the verifier relay checkout, `VERIFIER_REPO`)
+  with a release build (`g0-up.sh` builds it
   when the binary is missing; it does not rebuild an existing one).
-- The registrar leaf and its key: /Users/bioharz/git/ethglobal/nachweis-verifier-relay/fixtures/live/access-leaf.pem
-  and /Users/bioharz/git/eudi-wallet-hackathon/secrets/rp.key (`RP_LEAF_PATH`, `RP_KEY_PATH`).
+- The registrar leaf and its key: `fixtures/live/access-leaf.pem` in the verifier relay checkout
+  and the key file outside every repository (`RP_LEAF_PATH`, `RP_KEY_PATH`).
   The wallet accepted this leaf over a trycloudflare host in G0.
 - `cloudflared` on PATH (`brew install cloudflared`), or `TUNNEL=ngrok`, or `TUNNEL=none
   PUBLIC_URL=https://host/` for a named tunnel.

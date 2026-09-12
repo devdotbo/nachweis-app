@@ -42,7 +42,7 @@ Put the tools on the path for every terminal below:
 
 ```
 export PATH="$HOME/.sp1/bin:$HOME/.cargo/bin:$HOME/.foundry/bin:$HOME/.nargo/bin:$HOME/.bb:$HOME/.bun/bin:$PATH:/opt/homebrew/bin"
-export W=/Users/bioharz/git/ethglobal/nachweis-app          # repo root
+export W="$(git rev-parse --show-toplevel)"   # repo root (run inside the nachweis-app checkout)
 ```
 
 ## 2. Build everything
@@ -477,7 +477,7 @@ What to record for the video (screen recording only, no speedups): the Etherscan
 TODO-6 (bridge groth16 mode re-downloads the SP1 artifacts): with `PROOF_MODE=groth16 SP1_PROVER=cpu` the bridge ran the core proof for about five minutes and then logged
 
 ```
-INFO sp1_prover::build: [sp1] groth16 circuit artifacts for version v6.1.0 are missing or incomplete at /Users/bioharz/.sp1/circuits/groth16/v6.1.0. downloading...
+INFO sp1_prover::build: [sp1] groth16 circuit artifacts for version v6.1.0 are missing or incomplete at ~/.sp1/circuits/groth16/v6.1.0. downloading...
 ```
 
 although that directory holds the 7.8 GB the SP1 spike downloaded (`constraints.json`, `groth16_circuit.bin`, `groth16_pk.bin`, `groth16_vk.bin`, `groth16_witness.json`, `Groth16Verifier.sol`, `SP1VerifierGroth16.sol`; the spike's own host in `prover-sp1/NOTES.md` proved Groth16 with them). The bridge started writing `v6.1.0.incomplete.<random>` next to it. The run was stopped there (network download, 6.2 GB, about 44 minutes on the first spike run). What the sdk's completeness check expects is unverified; the service owner should compare the artifact check in the sp1-sdk 6.1.0 used by `service/Cargo.lock` with the one used by `prover-sp1/script`, or let the download finish once on the demo machine before recording. Note for the fix: the bridge must be built with the `native-gnark` feature (the default feature in `service/Cargo.toml`, `sp1-sdk/native-gnark`; do not build with `--no-default-features`), which uses the in-process gnark prover and the local artifacts; whether that resolves the re-download is being verified by the e2e run (`docs/e2e-local.md`). Until then the Groth16 route is demonstrated by the fixture proof through the real gateway on a Sepolia fork (section 6, shortcut) and by `prover-sp1/script` (`--prove --system groth16`, `prover-sp1/NOTES.md`).

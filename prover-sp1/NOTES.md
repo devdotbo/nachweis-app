@@ -104,8 +104,8 @@ Contract call shape: ISP1Verifier(0x397A5f7f3dBd538f23DE225B51f532c34448dA9B)
     (cd program && cargo prove build)
     cargo build --release -p nachweis-pid-script
     B=target/release/nachweis-pid
-    $B --check-fixture /Users/bioharz/git/eudi-wallet-hackathon/verifier/fixtures/oracle/erica-vp-VALID.sdjwt
-    $B --synth --out fixtures --header-from /Users/bioharz/git/eudi-wallet-hackathon/verifier/fixtures/oracle/erica-vp-VALID.sdjwt   # [--issuer-exp <unix>]
+    $B --check-fixture <klartext-verifier checkout>/fixtures/oracle/erica-vp-VALID.sdjwt
+    $B --synth --out fixtures --header-from <klartext-verifier checkout>/fixtures/oracle/erica-vp-VALID.sdjwt   # [--issuer-exp <unix>]
     SP1_PROVER=cpu RUST_LOG=info $B --execute --input fixtures/input.json --allow-stale-kb
     time SP1_PROVER=cpu RUST_LOG=info $B --prove --system compressed --input fixtures/input.json --allow-stale-kb
     /usr/bin/time -l env SP1_PROVER=cpu RUST_LOG=info $B --prove --system groth16 --input fixtures/input.json --allow-stale-kb
