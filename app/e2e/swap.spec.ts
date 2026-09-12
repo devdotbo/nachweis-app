@@ -22,7 +22,7 @@ async function receiptStatusOf(result: import('@playwright/test').Locator): Prom
   const hash = await result.locator('.txline code, .txline a').getAttribute('title')
   expect(hash, 'txline carries the full hash in its title').toMatch(/^0x[0-9a-f]{64}$/)
   const rpc = createPublicClient({ transport: http(env.rpcUrl) })
-  return (await rpc.getTransactionReceipt({ hash: hash as Hex })).status
+  return (await rpc.waitForTransactionReceipt({ hash: hash as Hex, timeout: 30_000 })).status
 }
 
 function cast(args: string[]): string {

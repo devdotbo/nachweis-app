@@ -198,6 +198,7 @@ function errorChain(e: unknown): Record<string, unknown>[] {
     chain.push(o)
     if (o.cause) stack.push(o.cause)
     if (o.error) stack.push(o.error)
+    if (o.originalError) stack.push(o.originalError)
   }
   return chain
 }

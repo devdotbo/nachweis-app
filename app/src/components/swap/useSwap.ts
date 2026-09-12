@@ -185,6 +185,16 @@ export function useSwapTx(address: Address | undefined, cfg: PoolConfig | undefi
     const steps: SwapStep[] = []
     const running = (current: SwapStepId) => setState({ status: 'running', current, steps: [...steps] })
     const wait = (hash: Hex) => client.waitForTransactionReceipt({ hash })
+    /** The swap transaction's hash once sent, so an error after the send still shows it. */
+    let sentHash: Hex | undefined
+    /** A balance read after the swap is best-effort: the chain confirmed the swap, a failed read must not undo that. */
+    const balanceOf = async (token: Address): Promise<bigint | undefined> => {
+      try {
+        return await client.readContract({ address: token, abi: erc20Abi, functionName: 'balanceOf', args: [address] })
+      } catch {
+        return undefined
+      }
+    }
     /** Simulated clean, reverted when mined (state changed in between): replay the call at that block for the reason. */
     const lateReason = async (data: Hex, blockNumber: bigint): Promise<Refusal> => {
       try {
@@ -250,6 +260,11 @@ export function useSwapTx(address: Address | undefined, cfg: PoolConfig | undefi
         const verdict = classifySendError(e)
         // The wallet's own gas estimate reverted: a refusal, nothing sent.
         if (verdict.kind === 'reverted' && !refusal) refusal = explainRevert(verdict.data, cfg)
+        if (verdict.kind === 'declined' && !refusal) {
+          steps.push({ id: 'swap', label: 'UniversalRouter.execute declined in wallet, not sent' })
+          finish({ status: 'error', message: 'declined in wallet, not sent', steps })
+          return
+        }
         if (!refusal) throw e
         const declined = verdict.kind === 'declined'
         steps.push({ id: 'swap', label: declined ? 'UniversalRouter.execute refused (declined in wallet; the refusal is the simulation\'s)' : 'UniversalRouter.execute refused (not sent; the refusal is the simulation\'s)' })
@@ -257,6 +272,7 @@ export function useSwapTx(address: Address | undefined, cfg: PoolConfig | undefi
         return
       }
 
+      sentHash = hash
       let receipt: Awaited<ReturnType<typeof wait>>
       try {
         receipt = await wait(hash)
@@ -279,13 +295,14 @@ export function useSwapTx(address: Address | undefined, cfg: PoolConfig | undefi
 
       // Mined with status 1: a swap, whatever the simulation predicted.
       if (refusal) note = `${note ? `${note}; ` : ''}the simulation predicted "${refusal.title}", the mined transaction succeeded`
-      const stableEnd = await client.readContract({ address: cfg.stable, abi: erc20Abi, functionName: 'balanceOf', args: [address] })
-      const fundEnd = await client.readContract({ address: FUND_TOKEN, abi: erc20Abi, functionName: 'balanceOf', args: [address] })
       addReceipt({ kind: 'swap', hash, subject: address, from: address, at: Date.now() })
       steps.push({ id: 'swap', label: 'UniversalRouter.execute (V4_SWAP: SWAP_EXACT_IN_SINGLE, SETTLE_ALL, TAKE_ALL)', hash })
-      finish({ status: 'done', hash, stableIn: stableStart - stableEnd, fundOut: fundEnd - fundStart, gasUsed: receipt.gasUsed, steps, note })
+      const stableEnd = await balanceOf(cfg.stable)
+      const fundEnd = await balanceOf(FUND_TOKEN)
+      if (stableEnd === undefined || fundEnd === undefined) note = `${note ? `${note}; ` : ''}the balances after the swap could not be read, the amounts below are not known (0 shown)`
+      finish({ status: 'done', hash, stableIn: stableEnd === undefined ? 0n : stableStart - stableEnd, fundOut: fundEnd === undefined ? 0n : fundEnd - fundStart, gasUsed: receipt.gasUsed, steps, note })
     } catch (e) {
-      setState({ status: 'error', message: shortError(e), steps })
+      setState({ status: 'error', message: shortError(e), hash: sentHash, steps })
     }
   }, [cfg, address, client, wallet, amountIn, queryClient])
 
