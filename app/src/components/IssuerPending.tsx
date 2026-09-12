@@ -4,6 +4,7 @@ import { POLICY_ID, REQUIRED_BITS } from '../config'
 import { useRegistryStatus, useRegistryTx, type RegistryTx } from '../lib/chain'
 import { shortAddress } from '../lib/format'
 import { demoDecision, statusRefFor } from '../lib/decision'
+import { proofRoute, type ProofRoute } from '../lib/journey'
 import { updateSession, type Session } from '../lib/sessions'
 import type { RegistryStatus } from '../lib/types'
 import { TxLine } from './TxLine'
@@ -85,10 +86,7 @@ function SessionRow({ s, registry, locked, busy, setBusy }: { s: Session; regist
           <ClaimRow key={i} label={c.label} value={c.value} strength={c.strength} />
         ))}
       </div>
-      <p className="note">
-        What Approve confirms: the presentation was verified by the issuer's verifier for this session (sample identity from the official test wallet), the bound address
-        signed the session, and the issuer approves eligibility for that address. Sanctions and other checks: simulated in this build.
-      </p>
+      <p className="note">{approveNote(s)}</p>
       {s.note ? <p className="note">{s.note}</p> : null}
       {s.reason ? <p className="note coral">rejected: {s.reason}</p> : null}
       <div className="row">
@@ -111,6 +109,27 @@ function SessionRow({ s, registry, locked, busy, setBusy }: { s: Session; regist
       </div>
     </div>
   )
+}
+
+/**
+ * What the issuer confirms with Approve, per proof route (proofRoute). Without a proof on record the
+ * sentence describes the operator fallback instead. On the browser route it names the tab as the prover: the relay only passed ciphertext,
+ * so the issuer's verifier never saw the presentation. On the SP1 route the bridge server proved and did
+ * see it; the phone and companion routes proved on the investor's devices.
+ */
+function approveNote(s: Session): string {
+  const proved: Record<ProofRoute, string> = {
+    browser: "on the browser route the investor's tab made the proof from the official test wallet's answer, sample identity",
+    phone: "the phone app made the proof from the official test wallet's answer, sample identity",
+    companion: "the desktop companion on the investor's computer made the proof from the official test wallet's answer, sample identity",
+    noir: "the phone app or the desktop companion made the proof from the official test wallet's answer, sample identity",
+    sp1: "on the SP1 route the issuer's bridge server made the proof from the presentation it received, official test wallet, sample identity",
+  }
+  const route = proofRoute(s)
+  if (!route) {
+    return "What Approve confirms: the bound address signed the session, and the issuer approves eligibility for that address. No proof is on record for this session yet; Attest directly stores the decision and approves it in one transaction from the operator key, without a proof. Sanctions and other checks: simulated in this build."
+  }
+  return `What Approve confirms: the registry holds evidence for this session that its proof verifier accepted (${proved[route]}); the bound address signed the session; the issuer approves eligibility for that address. Sanctions and other checks: simulated in this build.`
 }
 
 function ClaimRow({ label, value, strength }: { label: string; value: string; strength: string }) {

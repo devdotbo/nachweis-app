@@ -4,7 +4,7 @@ Attestat, formerly Nachweis. The product was renamed on 2026-09-07; identifiers 
 
 How many strangers keep a copy of your passport? Every exchange, launchpad and fund asks for your ID and keeps it.
 
-Attestat helps token issuers accept EUDI identity evidence and apply their approval to customers' linked crypto wallets, without putting identity documents on chain.
+Attestat helps token issuers accept EUDI identity evidence and apply their approval to customers' linked crypto wallets, without putting identity documents on chain. Any contract that reads `isEligible` can enforce the decision.
 
 Spoken line: "Your ID wallet should work where you invest."
 
@@ -13,16 +13,29 @@ ETHOnline 2026 submission, Classic entry (decision of 2026-09-09: Attestat is a 
 ## What happens
 
 1. An investor opens the fund app with her own crypto wallet. Her address is not permitted yet.
-2. She scans a QR code. The official German EUDI test wallet (sample identity) presents given name, family name and "over 18" to the issuer's verifier.
+2. She scans a QR code. The official German EUDI test wallet (sample identity) answers the issuer's request with given name, family name and "over 18". On the demonstrated browser route the answer is encrypted to a key made in her tab and passes through the issuer's relay unopened.
 3. Her crypto wallet signs a session challenge; the presentation is bound to that address through the KB-JWT nonce.
-4. The names stay with the issuer. A zero-knowledge proof is made of the statement "a PID signed by the pinned issuer key, with holder binding, says over 18, bound to this address".
+4. In the demonstrated browser route, the investor's tab decrypts the presentation and generates the proof. The relay receives the encrypted response, and the on-chain verifier checks the proof. The issuer separately approves eligibility. The proof states "a PID signed by the pinned issuer key, with holder binding, says over 18, bound to this address".
 5. The proof is submitted to the `AttestationRegistry`; the on-chain verifier checks it.
 6. The registry now holds one record for (address, policy): policy id, predicate bits, tier, expiry, status reference. No name, no document, no string. The doors stay closed: evidence alone is not eligibility.
 7. The issuer approves in a separate step with its operator key (`approve`); `isEligible` requires the evidence and the approval (`docs/spec-issuer-approval.md`).
 8. Door one: the `FundToken` transfer hook reads that record; she subscribes to the demo fund.
 9. Door two: the Uniswap v4 permissioned pool's allowlist checker reads the same record; she swaps without a second presentation.
 10. The issuer revokes. Both doors refuse the same address in the same block.
-11. What the chain learned: an address holds a decision under a policy, and when it expires. Nothing that finds her.
+11. What the chain learned: an address holds a decision under a policy, and when it expires. No name or identity document is published; the public address may still be linked to a person.
+
+## How a contract consumes a decision
+
+A consumer needs three values: the registry address, a policy id and the required predicate bits. It calls `registry.isEligible(account, policyId, requiredBits)` and learns nothing about EUDI, the wallet or the proof. The Uniswap allowlist checker is the whole integration: `contracts/src/uniswap/EudiAllowlistChecker.sol`, `checkAllowlist` at lines 58 to 61 returns `SWAP_ALLOWED | LIQUIDITY_ALLOWED` (`ELIGIBLE_FLAGS`, lines 42 to 45) iff the registry says eligible.
+
+```solidity
+function checkAllowlist(address account, address tokenAddress) external view returns (PermissionFlag) {
+    tokenAddress;
+    return registry.isEligible(account, policyId, requiredBits) ? ELIGIBLE_FLAGS : PermissionFlags.NONE;
+}
+```
+
+`FundToken` is the other consumer: its transfer hook (`contracts/src/FundToken.sol`, `_update` at lines 65 to 73) asks the same question for the sender and the receiver and reverts with `NotEligible` otherwise. `isEligible` is true when the record exists, is approved by the issuer, is not revoked, has not expired and carries the required bits (`docs/spec-issuer-approval.md`).
 
 ## Honesty box
 
@@ -88,7 +101,7 @@ Uniswap v4 permissioned pool gated by the Attestat registry, built against the U
 - Notes, addresses, what each step needs, viem calldata for the app: `contracts/docs/uniswap-permissioned-pool.md`.
 - Developer feedback: `FEEDBACK.md`.
 
-Builder TODO before submission: run the three scripts with `--broadcast` (order in `docs/demo-runbook.md`), fill the TODO lines in `FEEDBACK.md`, then submit the Uniswap Developer Feedback Form at https://developers.uniswap.org/hackathon-feedback with a link to `FEEDBACK.md`.
+No further transaction is needed for evidence. The three scripts were broadcast to Sepolia on 2026-09-10 (`scripts/sepolia-deploy.sh`, record `docs/deployments/sepolia-2026-09-10.md`), and the pool was used from the investor portal with the official wallet on 2026-09-12: swap [`0xda990178ec3a1a972244ab280415eabac693944ec7a6efd81e5317eb29facd4b`](https://sepolia.etherscan.io/tx/0xda990178ec3a1a972244ab280415eabac693944ec7a6efd81e5317eb29facd4b) (block 11688117, status 1) and, after the revoke, the refused swap [`0x85e554b8ffc73f617c25275a636d216e7bd0c9adf36e4a307e8355e8d957d9f9`](https://sepolia.etherscan.io/tx/0x85e554b8ffc73f617c25275a636d216e7bd0c9adf36e4a307e8355e8d957d9f9) (block 11688138, status 0, mined and rejected in `PermissionedHooks.beforeSwap`), both in [`docs/evidence/sepolia-phone-2026-09-12.md`](docs/evidence/sepolia-phone-2026-09-12.md). Remaining builder step: submit the Uniswap Developer Feedback Form at https://developers.uniswap.org/hackathon-feedback with a link to `FEEDBACK.md`.
 
 ## Privy
 
@@ -120,6 +133,15 @@ The product journey is the investor flow above: one EUDI presentation, one decis
 | zkPassport route (WP33) | A second evidence route: a passport chip proof from the zkPassport phone app, verified behind an adapter in front of the same policy. Locally a mock root verifier stands in; not run with a phone. | `scripts/zkpassport-local.sh`, `ZKPASSPORT-LOCAL PASS` | `docs/zkpassport.md` |
 
 The demo scripts start from an address attested on the local chain by the operator path or a mock verifier (captioned as such); where the identity proof of the main route is made is stated in the Honesty box above. Sample identity from the official test wallet; testnet funds only.
+
+## Beyond the demo
+
+Directions recorded in the wiki copy, none of them part of the demonstrated journey:
+
+- [`docs/wiki/pitch-toolkit.md`](docs/wiki/pitch-toolkit.md): the 2026-09-09 framing of the showcase gallery and the site lines. Notes, not demonstrated.
+- [`docs/wiki/privy-cases/`](docs/wiki/privy-cases/README.md): five Privy business cases with a scored evaluation; one became the local standing-order showcase above, the other four are parked.
+- [`docs/wiki/zkpassport.md`](docs/wiki/zkpassport.md): zkPassport as a second evidence route for biometric passports outside the EU; an adapter exists on the same verifier interface and is not demonstrated.
+- [`docs/wiki/identity-standards.md`](docs/wiki/identity-standards.md): survey of national and regional identity systems and what each could feed into the registry interface. Reference, not demonstrated.
 
 ## Pre-existing work
 

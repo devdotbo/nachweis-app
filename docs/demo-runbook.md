@@ -346,7 +346,7 @@ The six beats as clicks, and what to watch:
 | 6 revoke | Issuer: card 3 Revoke, or card 2 "Revoke by address" | Revoke | Issuer card 4 shows `Revoked`; Investor card 3 `revoked`, both doors closed; Subscribe now fails with `NotEligible`; Swap is refused on screen ("Refused by PermissionedHooks.beforeSwap", `Unauthorized()`, the reverted transaction's hash); the issuer button reads Re-approve | bridge or cast: `revoke` tx; `cast logs … Revoked` |
 | 7 re-approve | Issuer: card 3 | Re-approve | badge `approved`; Investor card 3 `permitted`, doors open again (reapproval requires the issuer; a replayed proof cannot reopen) | `cast logs … Approved` |
 
-Simulated checks: the issuer screen states per session what Approve confirms (presentation verified by the issuer's verifier for this session, bound address signed the session, issuer approves eligibility for that address) and that sanctions and other checks are simulated in this build. The caption in the video should carry it too (see `docs/video-shotlist.md`).
+Simulated checks: the issuer screen states per session what Approve confirms (the registry holds evidence for this session that its proof verifier accepted, naming the route that made the proof: on the browser route the investor's tab made it from the official test wallet's answer; the bound address signed the session; the issuer approves eligibility for that address) and that sanctions and other checks are simulated in this build. The caption in the video should carry it too (see `docs/video-shotlist.md`).
 
 ## 8b. Browser run (headless, no wallet extension)
 
