@@ -40,7 +40,7 @@ export function ConnectCard({ wallet, title, lead, state, id = 'connect' }: { wa
             </dd>
           </dl>
           {wallet.devSigner ? <p className="caption">Dev signer, local only: this page holds the private key and signs without a prompt.</p> : null}
-          {wallet.kind === 'privy' ? <p className="caption">Embedded wallet by Privy, created at email sign-in. Your identity evidence never goes to Privy. The signer never sees the wallet's private key (Privy's statement).</p> : null}
+          {wallet.kind === 'privy' ? <p className="caption">Embedded wallet by Privy, created at sign-in (email or passkey). Your identity evidence never goes to Privy. The signer never sees the wallet's private key (Privy's statement).</p> : null}
           {wallet.wrongChain ? (
             <div className="row">
               <button type="button" className="btn btn-yellow" onClick={wallet.switchToChain}>
