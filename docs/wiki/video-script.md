@@ -18,13 +18,15 @@ Totals (FACT, counted from the lines below with a script on 2026-09-13): 357 spo
 
 Rules applied: no "first", no "only", no yield figures, no KYC, no incident, no date and no "this week" is spoken. The 40-word ZK line is spoken in beat 4 and nowhere else. Where the shot list's spoken column and the canonical copy differed, the canonical copy won (beats 4, 5 and 10).
 
+Rewrite, 2026-09-13 morning (lead, after the builder heard the first draft: "it just doesn't sound like a pitch, it's super mechanical"): the spoken lines were rewritten for a voice. The captions on screen keep the exact wording of the shot list and the app; the spoken lines carry the story in plain sentences and paraphrase the captions instead of reading them. Substance unchanged: official test wallet with a sample identity, proof in the browser tab, separate manual approval, simulated checks, manual revocation, the verifier adapter not built. Beat 0 is 14 s and beat 10 is 35 s to hold the new lines; total budget 212 s, speech 395 words.
+
 ## The beats
 
-### Beat 0, intro, 12 s
+### Beat 0, intro, 14 s
 
-Spoken (24 words, 9.9 s):
+Spoken (28 words, 11.6 s):
 
-Your ID wallet should work where you invest. With Attestat, an issuer accepts the state ID wallet once; its approval follows your crypto wallet.
+Every fund and exchange you sign up for keeps a copy of your passport. Your ID wallet should work where you invest. Here is what that looks like.
 
 On screen: cards.html card 1 (title "Attestat", then the C2 line fades in); no app yet.
 
@@ -32,9 +34,9 @@ Caption visible: Your ID wallet should work where you invest.
 
 ### Beat 1, the investor, 10 s
 
-Spoken (16 words, 6.6 s):
+Spoken (22 words, 9.1 s):
 
-She opens the fund app with her own crypto wallet. Her address is not permitted yet.
+Meet the investor. She opens a fund with her own crypto wallet, and the fund says no. It doesn't know her yet.
 
 On screen: the investor portal in the one app tab: connect card with the investor address, eligibility card reading `not permitted`, doors card with both doors closed. No click beyond connecting.
 
@@ -42,9 +44,9 @@ Caption visible: identity evidence required
 
 ### Beat 2, the binding, 8 s
 
-Spoken (15 words, 6.2 s):
+Spoken (16 words, 6.6 s):
 
-Her crypto wallet signs the session: bound to this address, not just to a person.
+Her crypto wallet signs. Whatever follows is tied to this address, not just to a person.
 
 On screen: click "create presentation request"; the crypto wallet signs `nachweis:session:<id>`; the portal shows the session id.
 
@@ -52,9 +54,9 @@ Caption visible: signed by the crypto wallet, not by the ID wallet
 
 ### Beat 3, the wallet, 25 s
 
-Spoken (36 words, 14.9 s):
+Spoken (43 words, 17.8 s):
 
-On her phone, the official German test wallet shows the issuer's registered request: given name, family name, over 18. She taps once. The names stay in her browser tab, not with the issuer, not on chain.
+She scans with the official German test wallet, a sample identity. It shows exactly what the fund asked for: given name, family name, over eighteen. One tap. Those names never reach the issuer and never reach the chain. They stay in her browser.
 
 On screen: portal with "In this browser" selected and the QR; the QuickTime window with the phone: the official test wallet shows the request, one tap; portal stage chips `requesting`, `waiting`, `pickup`.
 
@@ -62,9 +64,9 @@ Captions visible: official test wallet, sample identity (on the QR shot); names 
 
 ### Beat 4, the proof, 35 s
 
-Spoken (66 words, 27.3 s):
+Spoken (68 words, 28.1 s):
 
-Her browser tab now makes the proof. EU law asks wallets to add zero-knowledge proofs; the framework has not picked a scheme yet. Today the proof is made on the investor's computer, over the official test wallet's presentation. When wallets prove for themselves, a compatible verifier adapter would take that proof. That adapter is not built yet. The evidence lands on chain; the doors stay closed.
+Now her browser builds a zero-knowledge proof. The EU asks for proofs like this inside the wallet itself. It hasn't picked how yet. So today the proof is made here, on her computer, from the wallet's ordinary answer. When wallets can prove for themselves, an adapter would take their proof. That adapter isn't built. What lands on chain: an address, a policy, over eighteen, an expiry. No name.
 
 On screen: no click; the stage chips run `checking`, `witness`, `init`, `proving`, `verifying`, `submitting`, `submitted`; then the "what the chain sees" card (subject, issuer key hash, over 18 = 1, expiry) and `attested from this browser`. Speak the ZK sentences during `proving`; keep rolling through the wait; the one cut goes inside `proving` in the edit.
 
@@ -74,9 +76,9 @@ Note (OPINION, for the lead): the shot list's 40-word line ends "When wallets pr
 
 ### Beat 5, the issuer, 20 s
 
-Spoken (40 words, 16.6 s):
+Spoken (42 words, 17.4 s):
 
-The issuer approves separately. Approve confirms: the registry holds evidence its proof verifier accepted, the bound address signed the session, the issuer approves eligibility for that address. Other checks are simulated. The record says: eligible, until this expiry. No name.
+The issuer still decides. It never received her document; it received evidence. It approves in its own step. The other checks are stubs, and the screen says so. Now the chain says: eligible under this policy, until this date. Still no name.
 
 On screen: header navigation (Issuer link in the top bar, same tab, no reload) to the issuer console; the pending presentation with the "What Approve confirms" text; click Approve; registry events show `Approved`; header navigation back to the investor portal: eligibility turns approved, both doors open.
 
@@ -86,9 +88,9 @@ Note: the Approve transaction waits for a Sepolia block; 20 s is the spoken budg
 
 ### Beat 6, door one, 15 s
 
-Spoken (25 words, 10.3 s):
+Spoken (28 words, 11.6 s):
 
-Door one: she subscribes to the demo fund token. The token's transfer check read the same record. One hundred NDF, no payment in this demo.
+Door one. She subscribes to the fund's own token. Its transfer check reads that one record and lets her in. A hundred units, no payment in this demo.
 
 On screen: investor portal, click Subscribe; the receipt; holdings show `100 NDF`; the history line.
 
@@ -96,9 +98,9 @@ Captions visible: door one: the issuer's fund token reads the record; demo fund:
 
 ### Beat 7, door two, 25 s
 
-Spoken (35 words, 14.5 s):
+Spoken (39 words, 16.1 s):
 
-Door two: a Uniswap permissioned pool. Its hook asks our checker, the checker asks the registry. She swaps. This is Sepolia, so each step waits for a block. No second presentation. One permission, two doors.
+Door two. A Uniswap permissioned pool. Its hook asks our checker, the checker asks the registry. She buys fund tokens through the pool. No second scan, no second proof. This is Sepolia, so every step waits for a block.
 
 On screen: the Swap tile: pool line NDF/mUSD, the "You receive" quote for 100 mUSD (whatever the portal quotes in the take, do not script the figure), the three answers (registry, checker, adapter); click Swap; step chips faucet, approve, Permit2, execute; `swap confirmed` with hash and gas; open the swap hash on sepolia.etherscan.io from the app's link.
 
@@ -106,9 +108,9 @@ Captions visible: Sepolia; door two: Uniswap v4 permissioned pool, the allowlist
 
 ### Beat 8, the revoke, 25 s
 
-Spoken (35 words, 14.5 s):
+Spoken (34 words, 14.1 s):
 
-The issuer withdraws approval by hand. Back in the portal, the fund door is closed and Subscribe is disabled. She tries the swap anyway: the pool refuses and names the hook. One revoke closes both.
+Then the issuer changes its mind. One click, by hand: revoked. The fund door closes. She tries the pool anyway. The pool refuses, and tells her which contract said no. One revoke, both doors.
 
 On screen: header navigation to the issuer console; click Revoke; registry events show `Revoked`; header navigation back to the portal: eligibility `revoked`, the doors-closed note, the fund door `closed` with the greyed Subscribe control (rendered disabled, do not try to click it); click Swap: `swap refused`, "Refused by PermissionedHooks.beforeSwap", the reverted hash; open that hash on sepolia.etherscan.io from the app's link.
 
@@ -118,11 +120,11 @@ Captions visible: Sepolia; manual revocation; fund door: closed, Subscribe disab
 
 Conditional on a green Privy run on Sepolia and the builder's explicit yes; neither is on record. Omitted. Privy is not mentioned anywhere in the take.
 
-### Beat 10, limits, then stop, 30 s
+### Beat 10, limits, then stop, 35 s
 
-Spoken (65 words, 26.9 s):
+Spoken (75 words, 31.0 s):
 
-Four limits. Official German test wallet, sample identity. Sanctions and other checks: simulated. Proof made in the browser tab on the investor's computer; the verifier relayed the encrypted answer unopened. Revocation: manual. Attestat helps token issuers accept EUDI identity evidence and apply their approval to customers' linked crypto wallets, without putting identity documents on chain. The pool never learned about EUDI. It read one record.
+What this is not. Not a real identity: the official test wallet, with a sample person. Sanctions and the other checks: simulated. The proof runs in her browser; the relay never opened her answer. Revocation is manual. What it is: an issuer accepts the EU identity wallet once, and carries its approval everywhere it controls on chain, without ever holding a copy of your passport. The pool never learned about EUDI. It read one record.
 
 On screen: cards.html card 2 (the four limit lines) while the four lines are read; then card 3 (the product sentence, then C11 fades in below it) for the last two sentences. Hold card 3 for two seconds of silence, then stop.
 
@@ -132,17 +134,17 @@ Captions visible: the four limit lines verbatim from the shot list: official Ger
 
 | Beat | Seconds | Words | Speech at 145 wpm | Share of budget |
 |---|---|---|---|---|
-| 0 | 12 | 24 | 9.9 s | 83 % |
-| 1 | 10 | 16 | 6.6 s | 66 % |
-| 2 | 8 | 15 | 6.2 s | 78 % |
-| 3 | 25 | 36 | 14.9 s | 60 % |
-| 4 | 35 | 66 | 27.3 s | 78 % |
-| 5 | 20 | 40 | 16.6 s | 83 % |
-| 6 | 15 | 25 | 10.3 s | 69 % |
-| 7 | 25 | 35 | 14.5 s | 58 % |
-| 8 | 25 | 35 | 14.5 s | 58 % |
-| 10 | 30 | 65 | 26.9 s | 90 % |
-| total | 205 s (3:25) | 357 | 2:28 | |
+| 0 | 14 | 28 | 11.6 s | 83 % |
+| 1 | 10 | 22 | 9.1 s | 91 % |
+| 2 | 8 | 16 | 6.6 s | 82 % |
+| 3 | 25 | 43 | 17.8 s | 71 % |
+| 4 | 35 | 68 | 28.1 s | 80 % |
+| 5 | 20 | 42 | 17.4 s | 87 % |
+| 6 | 15 | 28 | 11.6 s | 77 % |
+| 7 | 25 | 39 | 16.1 s | 64 % |
+| 8 | 25 | 34 | 14.1 s | 56 % |
+| 10 | 35 | 75 | 31.0 s | 89 % |
+| total | 212 s (3:32) | 395 | 2:43 | |
 
 Beat 10 has no click to wait for, so its high share is fine; the two sentences of the closing card are read over card 3 without a pause between them.
 
