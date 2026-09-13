@@ -107,3 +107,26 @@ OPINION, in order of size:
 2. Viewer-side wallets only: the injected wallet is already the only option; for an email login, create a Privy app whose allowed origins include the production origin and set `VITE_PRIVY_APP_ID` (public id). No dev key in any build, env or Vercel setting; `vite.config.ts` already refuses a production build with one.
 3. The optional services (`automation/`, showcase backoffice, fund desk) each need a public origin and their `VITE_*_URL`; otherwise their cards stay hidden, which is fine.
 4. A paid or own Sepolia RPC if the public one rate-limits the block watcher (`useBlockNumber({ watch: true })` polls continuously).
+
+## Privy login on the public app: what is set, what the builder funds, what is not claimed (2026-09-13)
+
+What is set in code (branch `hosted-services`):
+
+- FACT: `app/src/lib/PrivyWalletProvider.tsx` sets `embeddedWallets: { showWalletUIs: false, ethereum: { createOnLogin: 'users-without-wallets' } }`. Per `@privy-io/react-auth` 3.40.0 (`dist/dts/index.d.mts`, `signMessage` and `sendTransaction` docs), with `showWalletUIs: false` the embedded wallet computes EIP-191 `personal_sign` signatures and sends transactions without Privy's confirmation modal; the bridge's session signature (`nachweis:session:<id>`) and the approve, subscribe, swap and revoke transactions therefore run without wallet prompts. This is a demo setting; a product build sets it `true` or leaves it to the dashboard default.
+- FACT: the login path is complete without further code: `loginMethods: ['email']`, embedded wallet created at login, `supportedChains` and `defaultChain` Sepolia, wagmi connector through `@privy-io/wagmi`'s `createConfig` (the synced `io.privy.wallet.<address>` connector, `src/lib/wallet.ts`). The wallet chooser shows "Sign in with email, wallet by Privy" for the investor and "Bring your wallet" (Privy's picker) for both roles; the dev signer is not offered while the app id is set.
+- The app id is compiled in as `VITE_PRIVY_APP_ID` (a public client id, not a secret; still not written into the repository). `VITE_PRIVY_SIGNER_ID` is only for the standing-order card and is not needed for login.
+
+Build and deploy (from the worktree's `app/`, same exports as the rebuild recorded in `docs/hosting-server.md`, "App deployment", plus the app id):
+
+```
+export VITE_PRIVY_APP_ID=$(grep '^VITE_PRIVY_APP_ID=' /Users/bioharz/git/ethglobal/nachweis-app/app/.env | cut -d= -f2-)
+bun run build && vercel build --prod --yes && vercel deploy --prebuilt --prod --yes
+```
+
+What the builder does outside the repository:
+
+1. Privy dashboard, app "Attestat": add `https://app.attestat.dev` to the allowed origins (the app was created with `http://localhost:5173` and `http://localhost:4173` only). Without it the login modal reports an origin error in the console.
+2. Put the app id into `/Users/bioharz/git/ethglobal/nachweis-app/app/.env` as one line `VITE_PRIVY_APP_ID=<id>` (that file is git-ignored) so the export above finds it.
+3. Fund the embedded wallet once: after the first email sign-in, copy the embedded address from the page and send it about 0.02 Sepolia ETH from MetaMask. There is no ETH faucet in the app or the bridge (the only faucet is the mUSD faucet of the swap door, `src/components/swap/useSwap.ts`); a server-side ETH faucet was deliberately not added.
+
+Not claimed: no build with the app id was deployed at the time of writing (the id was not present in any env file of the main checkout), so the Privy option on https://app.attestat.dev, the origin allowance and the modal-free signature are recorded as the types promise, not as observed on the public origin. The EIP-1193 path wagmi uses (`useSignMessage` through the synced connector) reaches the same embedded wallet as Privy's own `signMessage`; that it honors `showWalletUIs` on that path is documented by Privy for the hook, not separately for the connector (unverified here).

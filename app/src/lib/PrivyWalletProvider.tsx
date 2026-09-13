@@ -85,7 +85,11 @@ export function PrivyWalletProvider({ appId, children }: { appId: string; childr
       appId={appId}
       config={{
         loginMethods: ['email'],
-        embeddedWallets: { ethereum: { createOnLogin: 'users-without-wallets' } },
+        // demo setting: no confirmation modals. showWalletUIs false makes the embedded wallet sign
+        // (EIP-191 personal_sign, the bridge's session signature) and send transactions without
+        // Privy's prompt (@privy-io/react-auth 3.40.0 dist/dts/index.d.mts, signMessage and
+        // sendTransaction docs). A product build sets it true or leaves it to the dashboard.
+        embeddedWallets: { showWalletUIs: false, ethereum: { createOnLogin: 'users-without-wallets' } },
         supportedChains: [chain],
         defaultChain: chain,
       }}
