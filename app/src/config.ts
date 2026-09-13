@@ -60,7 +60,7 @@ export const CONFIG_WARNINGS: string[] = MOCK
 /**
  * Privy (WP32, docs/privy-standing-order.md). All optional. With VITE_PRIVY_APP_ID set the wallet
  * layer is wrapped in PrivyProvider and @privy-io/wagmi (src/lib/PrivyWalletProvider.tsx) and the
- * investor gets "Sign in with email, wallet by Privy"; unset, the provider tree is unchanged.
+ * investor gets "Sign in with email or passkey, wallet by Privy"; unset, the provider tree is unchanged.
  */
 export const PRIVY_APP_ID: string | undefined = env.VITE_PRIVY_APP_ID && env.VITE_PRIVY_APP_ID !== '' ? env.VITE_PRIVY_APP_ID : undefined
 /** Key quorum id of the issuer's authorization key (Dashboard, Authorization keys); the signer the investor allows on her wallet. */

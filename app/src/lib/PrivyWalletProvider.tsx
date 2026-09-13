@@ -1,5 +1,5 @@
 /**
- * The provider tree with Privy (VITE_PRIVY_APP_ID set): PrivyProvider (email login, embedded wallet
+ * The provider tree with Privy (VITE_PRIVY_APP_ID set): PrivyProvider (email or passkey login, embedded wallet
  * created for users without one), then QueryClientProvider, then WagmiProvider from @privy-io/wagmi,
  * whose `createConfig` keeps no connector of ours and syncs Privy's wallets (the embedded wallet and
  * wallets connected through Privy's picker) into wagmi (FACT, @privy-io/wagmi 4.0.17
@@ -84,8 +84,12 @@ export function PrivyWalletProvider({ appId, children }: { appId: string; childr
     <PrivyProvider
       appId={appId}
       config={{
-        loginMethods: ['email'],
-        embeddedWallets: { ethereum: { createOnLogin: 'users-without-wallets' } },
+        loginMethods: ['email', 'passkey'],
+        // demo setting: no confirmation modals. showWalletUIs false makes the embedded wallet sign
+        // (EIP-191 personal_sign, the bridge's session signature) and send transactions without
+        // Privy's prompt (@privy-io/react-auth 3.40.0 dist/dts/index.d.mts, signMessage and
+        // sendTransaction docs). A product build sets it true or leaves it to the dashboard.
+        embeddedWallets: { showWalletUIs: false, ethereum: { createOnLogin: 'users-without-wallets' } },
         supportedChains: [chain],
         defaultChain: chain,
       }}

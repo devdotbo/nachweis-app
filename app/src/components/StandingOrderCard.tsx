@@ -88,9 +88,9 @@ export function StandingOrderCard({ address, wallet }: { address?: Address; wall
         Let the issuer's automation subscribe for you every month, from this wallet, under a policy that is a copy of your on-chain decision: only this fund's Subscription contract, only until the decision expires, closed when the issuer revokes.
       </p>
       <p className="caption">
-        Wallet by Privy: an embedded wallet created at email sign-in. Your identity evidence never goes to Privy. Privy sees this address, the transactions it signs, and one policy: the issuer's automation may send subscribe() for you to this fund until your decision expires on {expiryText}. When the issuer revokes your decision, its automation closes the policy; you can remove the signer here at any time. Sample identity from the official test wallet; testnet funds.
+        Wallet by Privy: an embedded wallet created at sign-in (email or passkey). Your identity evidence never goes to Privy. Privy sees this address, the transactions it signs, and one policy: the issuer's automation may send subscribe() for you to this fund until your decision expires on {expiryText}. When the issuer revokes your decision, its automation closes the policy; you can remove the signer here at any time. Sample identity from the official test wallet; testnet funds.
       </p>
-      {!address ? <div className="empty">Sign in with email to see the standing order for your wallet.</div> : null}
+      {!address ? <div className="empty">Sign in with email or passkey to see the standing order for your wallet.</div> : null}
       {address && !embedded ? <p className="note">The standing order runs on the embedded wallet by Privy. This connection is {wallet.connectorName ?? 'another wallet'}; sign in with email to use it.</p> : null}
       {address && policy === undefined && !policyError ? (
         <p className="note" data-testid="standing-order-no-policy">
