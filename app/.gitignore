@@ -4,3 +4,4 @@ _preview/
 .env
 .env.*
 !.env.example
+.vercel/
