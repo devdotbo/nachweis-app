@@ -19,6 +19,7 @@ stays out of git.
 ## Run records
 
 - `sepolia-phone-2026-09-12.md`: official wallet journey on Sepolia (commit 5f17c3a, fresh investor 0xC616…bA44): proof from the official test wallet in the browser, `attestWithProof` mined, approve, subscribe, swap (75.569 NDF for 100 mUSD), revoke, refused swap decoded to Unauthorized(); measured against the readiness review's acceptance steps.
+- `sepolia-public-2026-09-13.md`: the journey on the hosted app https://app.attestat.dev (app code a1f9cd2, relay and bridge on the builder's server): three addresses, four phone scans, three `attestWithProof` receipts from browser proofs, subscribe and two swaps on the operator's own address (already approved since the deployment), two refused swaps without approval (the recorded take among them, investor 0xFC61…92ef), the operator refill incident, and the post-deadline approve, swap, subscribe, swap on the take address; 35 receipts re-read.
 
 ## What may be committed
 
