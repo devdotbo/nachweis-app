@@ -146,3 +146,5 @@ Four external reviews of wiki/review-brief-2026-09-13.md (xAI Grok, Z.ai GLM 5.3
 - An edit above three minutes is accepted; the rule is two to four minutes, speech is not cut to land under three.
 
 Rejected: removing the Revolut retention sentence from the card (Astra; three reviewers accepted it scoped and attributed); replacing the description's problem sentence (Astra; three reviewers accepted it, the hero line is a question); any new hosting work inside the video.
+
+2026-09-13 about 15:47 Vienna: nachweis-app and nachweis-site flipped public by the lead's teammate on the builder's instruction; wiki stays private; post-2026-09-12 diff scanned (app e523a11..7ef18b2, site c733d50..5fa91ec), findings: no secrets, no tracked .env or .vercel, no local paths or emails in added lines; seven 64-hex values in the app are the six known Sepolia tx hashes of the 2026-09-12 phone journey plus the policy id; the site adds only the Vercel team slug and project id, kept as non-secret; anonymous GitHub access verified 200 for both repositories.
