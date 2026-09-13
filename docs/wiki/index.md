@@ -109,7 +109,8 @@ Only the builder can do: G0 with the official test wallet on the iPhone (unblock
 | wiki/incidents-idscan-revolut-2026-09.md | IDScan.net (2026-09-01) and Revolut (2026-09-11) identity-document incidents: timelines, exposed data, retention as product default versus legal duty, regulators, X reaction, what it means for the pitch, candidate sentences; tiefgang plus Grok, every claim labelled | 2026-09-13 (correction: "leaked" and "the only way to hold less" withdrawn) |
 | wiki/video-shotlist-spine.md | the one-journey shot list for the take: rules, chain gate (Sepolia, take commit placeholder, the 2026-09-12 hashes), ten beats with captions, spoken text and printed lines, notes for the take | 2026-09-13 |
 | wiki/handoff-2026-09-13.md | morning handoff: what was merged overnight, the decisions for confirmation, the video files, the order of the day | 2026-09-13 |
-| wiki/video-script.md | the video script for the take (written 2026-09-13 night by the video teammate, reviewed by the lead: 357 spoken words, beats 0 to 8 and 10, recording checklist and cut list) | 2026-09-13 |
+| wiki/review-brief-2026-09-13.md | review brief for the four external reviewers (Grok, GLM 5.3, modified GLM 5.3, Codex Astra): baseline commits, what each reviewer asked for on 2026-09-12 and what happened to it (applied, applied differently, rejected, with file and line), what else changed, the video as prepared, gates, what is not decided, nine verdict questions | 2026-09-13 |
+| wiki/video-script.md | the video script for the take (written 2026-09-13 night by the video teammate, reviewed by the lead: 395 spoken words, beats 0 to 8 and 10, recording checklist and cut list) | 2026-09-13 |
 | video/ | cards and teleprompter for the take (cards.html with title, limits, closing and route-diagram cards; teleprompter.html; README.md; written 2026-09-13 night by the video teammate, screenshots checked by the lead) | 2026-09-13 |
 
 ## Raw sources
