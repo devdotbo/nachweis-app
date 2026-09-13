@@ -83,18 +83,21 @@ vercel deploy --prebuilt --prod --yes
 
 `vercel deploy` without `--prebuilt` would build on Vercel and fail: `vite.config.ts` reads the circuit from `../prover-android/app/src/main/assets/pid_sdjwt.json`, outside `app/`, and the VITE_ values are not stored in the project's environment (deliberately: nothing lives on Vercel that is not in this file). `app/.vercel/` is git-ignored (`app/.gitignore`).
 
-## attestat.app: DNS records
+## Domain: app.attestat.dev (attestat.app is not used)
 
-- FACT: `vercel domains add attestat.app` (from `app/`, linked project) printed "Success! Domain attestat.app added to project attestat-app", then "You don't have access to attestat.app (403)" when fetching the domain object. `vercel domains inspect attestat.app` and `vercel domains ls` show no domain in this team. Reading: the domain is attached to the project but is not owned by this Vercel team, so the CLI cannot print the project-specific records. The Vercel dashboard (project `attestat-app`, Settings, Domains) shows them; the API is `GET /v6/domains/attestat.app/config?projectId=prj_TcsKswmpJTKMQhH43qBurhmhnl2j`.
-- CLAIM (Vercel's documented defaults for a domain whose DNS stays at the registrar; unverified for this project):
+Timeline, 2026-09-13 (FACT, all through the Vercel REST API with the CLI token and the Porkbun API v3; no value printed anywhere):
+
+1. 15:05 `vercel domains add attestat.app` attached attestat.app to the project; the CLI could not read the domain object (403), the REST API could: `GET /v9/projects/attestat-app/domains/attestat.app` returned `verified: true`, `GET /v6/domains/attestat.app/config` gave `recommendedIPv4` rank 1 `216.198.79.1`, `64.29.17.1` (rank 2 `76.76.21.21`) and `recommendedCNAME` rank 1 `4a089fa08595f01d.vercel-dns-017.com` (rank 2 `cname.vercel-dns.com`). At Porkbun the parking `ALIAS @ pixie.porkbun.com` was replaced by those A records and a `CNAME www` was added; `www.attestat.app` was attached as a redirect to the apex.
+2. 15:10 The builder moved the app to app.attestat.dev. Restored at Porkbun: the A records and the `www` CNAME were deleted and `ALIAS @ pixie.porkbun.com` (TTL 600) recreated; the wildcard `CNAME *.attestat.app pixie.porkbun.com` was never touched. attestat.app and www.attestat.app were detached from the project (`DELETE /v9/projects/attestat-app/domains/...`, both `{}`). attestat.app now holds exactly the records it had this morning (ALIAS, wildcard CNAME, four NS).
+3. 15:10 `POST /v10/projects/attestat-app/domains {"name":"app.attestat.dev"}` returned `verified: true`; the config endpoint recommended the same `4a089fa08595f01d.vercel-dns-017.com` (rank 1) for this project. At Porkbun, attestat.dev had no record named `app` (only the apex A records and the `www` CNAME of the site project, untouched); created:
 
 ```
-attestat.app      A      76.76.21.21
-www.attestat.app  CNAME  cname.vercel-dns.com
+app.attestat.dev  CNAME  4a089fa08595f01d.vercel-dns-017.com  TTL 600
 ```
 
-  Newer projects may be assigned `A 216.198.79.1` and a per-project `cname.vercel-dns-017.com` target instead; take the values the dashboard shows for this project. If the domain is registered in another Vercel team, Vercel additionally asks for a `TXT _vercel` verification record, shown in the same place.
-- No DNS was changed in this session.
+App URL: https://app.attestat.dev (alias https://attestat-app.vercel.app stays). .app and .dev are HSTS-preloaded, only https counts.
+
+Outcome (FACT, polled 15:11 and 15:12): `GET /v9/projects/attestat-app/domains/app.attestat.dev` `verified: true`, no TXT challenge; config `configuredBy: CNAME`, `misconfigured: false`; the CNAME answered at the Porkbun nameservers and publicly within one minute; `curl -sI https://app.attestat.dev/` returned `HTTP/2 200` at 15:12 (certificate issued by Vercel, no error), body contains `<title>Attestat</title>`, COOP and COEP headers present on the custom domain too.
 
 ## What a full public deployment needs (after the deadline)
 
