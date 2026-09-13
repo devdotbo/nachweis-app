@@ -86,7 +86,7 @@ function SessionRow({ s, registry, locked, busy, setBusy }: { s: Session; regist
           <ClaimRow key={i} label={c.label} value={c.value} strength={c.strength} />
         ))}
       </div>
-      <p className="note">{approveNote(s)}</p>
+      <p className="note">{approveNote(s, evidenceOnChain)}</p>
       {s.note ? <p className="note">{s.note}</p> : null}
       {s.reason ? <p className="note coral">rejected: {s.reason}</p> : null}
       <div className="row">
@@ -112,12 +112,15 @@ function SessionRow({ s, registry, locked, busy, setBusy }: { s: Session; regist
 }
 
 /**
- * What the issuer confirms with Approve, per proof route (proofRoute). Without a proof on record the
- * sentence describes the operator fallback instead. On the browser route it names the tab as the prover: the relay only passed ciphertext,
- * so the issuer's verifier never saw the presentation. On the SP1 route the bridge server proved and did
- * see it; the phone and companion routes proved on the investor's devices.
+ * What the issuer confirms with Approve, gated on the chain (evidenceOnChain = statusOf.hasDecision), then per
+ * proof route (proofRoute). Without a decision on chain Approve confirms nothing yet, whatever the session's
+ * bridge state says (the bridge reports 'proved' before it submits): the sentence describes the operator
+ * fallback instead. With a decision on chain and a proof route, the sentence names the prover. On the browser
+ * route that is the tab: the relay only passed ciphertext, so the issuer's verifier never saw the presentation.
+ * On the SP1 route the bridge server proved and did see it; the phone and companion routes proved on the
+ * investor's devices. With a decision on chain and no proof route, the decision came from the operator key.
  */
-function approveNote(s: Session): string {
+function approveNote(s: Session, evidenceOnChain: boolean): string {
   const proved: Record<ProofRoute, string> = {
     browser: "on the browser route the investor's tab made the proof from the official test wallet's answer, sample identity",
     phone: "the phone app made the proof from the official test wallet's answer, sample identity",
@@ -125,9 +128,12 @@ function approveNote(s: Session): string {
     noir: "the phone app or the desktop companion made the proof from the official test wallet's answer, sample identity",
     sp1: "on the SP1 route the issuer's bridge server made the proof from the presentation it received, official test wallet, sample identity",
   }
+  if (!evidenceOnChain) {
+    return "What Approve confirms: nothing yet. Approve needs a decision in the registry for this address. Attest directly stores a decision and approves it in one transaction from the operator key, without a proof. The bound address signed the session. Sanctions and other checks: simulated in this build."
+  }
   const route = proofRoute(s)
   if (!route) {
-    return "What Approve confirms: the bound address signed the session, and the issuer approves eligibility for that address. No proof is on record for this session yet; Attest directly stores the decision and approves it in one transaction from the operator key, without a proof. Sanctions and other checks: simulated in this build."
+    return "What Approve confirms: the registry holds a decision for this address that this session did not prove (stored from the operator key, without a proof); the bound address signed the session; the issuer approves eligibility for that address. Sanctions and other checks: simulated in this build."
   }
   return `What Approve confirms: the registry holds evidence for this session that its proof verifier accepted (${proved[route]}); the bound address signed the session; the issuer approves eligibility for that address. Sanctions and other checks: simulated in this build.`
 }

@@ -21,7 +21,7 @@ ETHOnline 2026 submission, Classic entry (decision of 2026-09-09: Attestat is a 
 7. The issuer approves in a separate step with its operator key (`approve`); `isEligible` requires the evidence and the approval (`docs/spec-issuer-approval.md`).
 8. Door one: the `FundToken` transfer hook reads that record; she subscribes to the demo fund.
 9. Door two: the Uniswap v4 permissioned pool's allowlist checker reads the same record; she swaps without a second presentation.
-10. The issuer revokes. Both doors refuse the same address in the same block.
+10. The issuer revokes. After one revoke, both doors refuse the same address.
 11. What the chain learned: an address holds a decision under a policy, and when it expires. No name or identity document is published; the public address may still be linked to a person.
 
 ## How a contract consumes a decision
