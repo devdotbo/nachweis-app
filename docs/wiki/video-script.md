@@ -14,19 +14,19 @@ sources:
 
 The spoken words for the take, in the builder's voice. "We" is the team, "she" is the investor, as in the shot list. Pace 140 to 150 words per minute; the runtime figures below use 145 words per minute (2.42 words per second). The seconds per beat are the shot list maxima; the screen action, not the words, fills the remainder of each beat. Beat 9 (standing order, Privy) is conditional and is not recorded: it is omitted here, and Privy appears nowhere in the script, the captions or the cards.
 
-Totals (FACT, counted from the lines below with a script on 2026-09-13): 395 spoken words, 2:43 of speech at 145 words per minute; beat budgets 212 s, that is 3:32 of runtime without beat 9, inside the 2 to 4 minute rule and inside the 2:45 to 3:30 target. Beat 10 is budgeted at 35 s, not the shot list's 20 s, because the closing card gained C11 and the four limit lines plus the product sentence plus C11 are 75 words (31.0 s); nothing else moves.
+Totals (FACT, counted from the lines below with `wc -w` on 2026-09-13 afternoon): 400 spoken words, 2:46 of speech at 145 words per minute; beat budgets 217 s, that is 3:37 of runtime without beat 9, inside the 2 to 4 minute rule (the cut list lands the edit at three minutes or above). Beat 10 is budgeted at 40 s, not the shot list's original 20 s, because the closing card gained C11 and the four limit lines plus the product sentence, the two sentences on the contracts and the compliance file, and C11 are 81 words (33.5 s); nothing else moves.
 
 Rules applied: no "first", no "only", no yield figures, no KYC, no incident, no date and no "this week" is spoken. The 40-word ZK line is spoken in beat 4 and nowhere else. Where the shot list's spoken column and the canonical copy differed, the canonical copy won (beats 4, 5 and 10).
 
-Rewrite, 2026-09-13 morning (lead, after the builder heard the first draft: "it just doesn't sound like a pitch, it's super mechanical"): the spoken lines were rewritten for a voice. The captions on screen keep the exact wording of the shot list and the app; the spoken lines carry the story in plain sentences and paraphrase the captions instead of reading them. Substance unchanged: official test wallet with a sample identity, proof in the browser tab, separate manual approval, simulated checks, manual revocation, the verifier adapter not built. Beat 0 is 14 s and beat 10 is 35 s to hold the new lines; total budget 212 s, speech 395 words.
+Rewrite, 2026-09-13 morning (lead, after the builder heard the first draft: "it just doesn't sound like a pitch, it's super mechanical"): the spoken lines were rewritten for a voice. The captions on screen keep the exact wording of the shot list and the app; the spoken lines carry the story in plain sentences and paraphrase the captions instead of reading them. Substance unchanged: official test wallet with a sample identity, proof in the browser tab, separate manual approval, simulated checks, manual revocation, the verifier adapter not built. Beat 0 is 14 s and beat 10 is 40 s to hold the new lines; total budget 217 s, speech 400 words. Beats 0 and 10 adjusted 2026-09-13 afternoon after the review round: no universal passport-copy claim, no claim that the issuer holds no documents; the contracts never receive one and the compliance file stays.
 
 ## The beats
 
 ### Beat 0, intro, 14 s
 
-Spoken (28 words, 11.6 s):
+Spoken (27 words, 11.2 s):
 
-Every fund and exchange you sign up for keeps a copy of your passport. Your ID wallet should work where you invest. Here is what that looks like.
+Sign up for a fund or an exchange, and you hand over your passport. The copy stays with them. Your ID wallet should work where you invest.
 
 On screen: cards.html card 1 (title "Attestat", then the C2 line fades in); no app yet.
 
@@ -60,7 +60,7 @@ She scans with the official German test wallet, a sample identity. It shows exac
 
 On screen: portal with "In this browser" selected and the QR; the QuickTime window with the phone: the official test wallet shows the request, one tap; portal stage chips `requesting`, `waiting`, `pickup`.
 
-Captions visible: official test wallet, sample identity (on the QR shot); names stay in the browser tab, not with the issuer, not on chain (on the phone shot); phone leg: recorded 2026-09-12, docs/evidence/sepolia-phone-2026-09-12.md
+Captions visible: official test wallet, sample identity (on the QR shot); names stay in the browser tab, not with the issuer, not on chain (on the phone shot); phone leg: recorded 2026-09-12, docs/evidence/sepolia-phone-2026-09-12.md. The gate note (phone leg recorded, file path) is a production note and is not burned onto the frame.
 
 ### Beat 4, the proof, 35 s
 
@@ -120,13 +120,13 @@ Captions visible: Sepolia; manual revocation; fund door: closed, Subscribe disab
 
 Conditional on a green Privy run on Sepolia and the builder's explicit yes; neither is on record. Omitted. Privy is not mentioned anywhere in the take.
 
-### Beat 10, limits, then stop, 35 s
+### Beat 10, limits, then stop, 40 s
 
-Spoken (75 words, 31.0 s):
+Spoken (81 words, 33.5 s):
 
-What this is not. Not a real identity: the official test wallet, with a sample person. Sanctions and the other checks: simulated. The proof runs in her browser; the relay never opened her answer. Revocation is manual. What it is: an issuer accepts the EU identity wallet once, and carries its approval everywhere it controls on chain, without ever holding a copy of your passport. The pool never learned about EUDI. It read one record.
+What this is not. The official test wallet, with a sample person. Sanctions and the other checks: simulated. The proof runs in her browser; the relay never opened her answer. Revocation is manual. What it is: an issuer accepts the EU identity wallet once and carries its approval everywhere it controls on chain. The contracts that enforce it never receive an identity document. It does not replace the issuer's compliance file. The pool never learned about EUDI. It read one record.
 
-On screen: cards.html card 2 (the four limit lines) while the four lines are read; then card 3 (the product sentence, then C11 fades in below it) for the last two sentences. Hold card 3 for two seconds of silence, then stop.
+On screen: cards.html card 2 (the four limit lines) while the four lines are read; then card 3 (the product sentence, then C11 fades in below it) from "What it is" on. Hold card 3 for two seconds of silence, then stop.
 
 Captions visible: the four limit lines verbatim from the shot list: official German test wallet, sample identity; sanctions and other checks: simulated; proof made in the browser tab on the investor's computer; the verifier relayed the encrypted answer unopened; revocation: manual. Then the product sentence (C3) and below it: The pool never learned about EUDI. It read one record.
 
@@ -134,7 +134,7 @@ Captions visible: the four limit lines verbatim from the shot list: official Ger
 
 | Beat | Seconds | Words | Speech at 145 wpm | Share of budget |
 |---|---|---|---|---|
-| 0 | 14 | 28 | 11.6 s | 83 % |
+| 0 | 14 | 27 | 11.2 s | 80 % |
 | 1 | 10 | 22 | 9.1 s | 91 % |
 | 2 | 8 | 16 | 6.6 s | 82 % |
 | 3 | 25 | 43 | 17.8 s | 71 % |
@@ -143,8 +143,8 @@ Captions visible: the four limit lines verbatim from the shot list: official Ger
 | 6 | 15 | 28 | 11.6 s | 77 % |
 | 7 | 25 | 39 | 16.1 s | 64 % |
 | 8 | 25 | 34 | 14.1 s | 56 % |
-| 10 | 35 | 75 | 31.0 s | 89 % |
-| total | 212 s (3:32) | 395 | 2:43 | |
+| 10 | 40 | 81 | 33.5 s | 84 % |
+| total | 217 s (3:37) | 400 | 2:46 | |
 
 Beat 10 has no click to wait for, so its high share is fine; the two sentences of the closing card are read over card 3 without a pause between them.
 
@@ -172,7 +172,7 @@ Before uploading: duration between 2:00 and 4:00, resolution at least 720p, voic
 
 ## Cut list for a 2:30 to 3:00 edit
 
-The raw take will be longer than 3:25 because of the Sepolia waits. Cuts, in this order, until the edit lands between 2:30 and 3:00:
+The raw take will be longer than 3:25 because of the Sepolia waits. An edit above three minutes is fine; the rule is two to four minutes, do not compress below three by cutting speech. Cuts, in this order, until the edit lands between 2:30 and 3:00:
 
 1. Beat 4, one cut inside `proving`: keep the chips `checking` and `witness`, cut from about 3 s into `proving` to about 2 s before `verifying`, caption "cut: <n> s from click to attested in this take" with the measured figure. This is the one planned cut; it removes about 8 to 12 s.
 2. Beat 5, the Approve block wait: cut the dead time between the Approve click and the `Approved` event; keep the click and the event on screen (about 8 s saved).

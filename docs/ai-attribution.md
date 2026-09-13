@@ -25,7 +25,7 @@ The agents:
 - Ran the local tests, fork tests, emulator and simulator runs and recorded the numbers in the READMEs and the wiki. Every number carries the machine it was measured on.
 - Wrote the wiki pages on the builder's instruction. The builder does not edit the wiki directly.
 
-State on 2026-09-13, `main` at `e523a11` (the earlier figures above stay as history): 341 commits on `main` (`git rev-list --count HEAD`, same author identity); `forge test` 155 passed, 20 skipped; app unit tests 8 (`cd app && bun test`); automation tests 19 (`cd automation && bun test`); 5 Playwright specs in `app/e2e/` (`*.spec.ts`). The official wallet journey on Sepolia with the phone leg (proof from the official wallet in the browser tab, separate approval, subscribe, swap, revoke, refused swap) is recorded in `evidence/sepolia-phone-2026-09-12.md`; the builder held the phone and clicked the page after the QR.
+State on 2026-09-13, `main` at `ac19956`, before the bundle re-copy commit that follows it (the earlier figures above stay as history): 349 commits on `main` (`git rev-list --count HEAD`, same author identity); `forge test` 155 passed, 20 skipped; app unit tests 8 (`cd app && bun test`); automation tests 19 (`cd automation && bun test`); 5 Playwright specs in `app/e2e/` (`*.spec.ts`). The official wallet journey on Sepolia with the phone leg (proof from the official wallet in the browser tab, separate approval, subscribe, swap, revoke, refused swap) is recorded in `evidence/sepolia-phone-2026-09-12.md`; the builder held the phone and clicked the page after the QR.
 
 Agent roles on 2026-09-12 (Claude Code lead session with teammates, one work package per branch, no names or session ids recorded here):
 
