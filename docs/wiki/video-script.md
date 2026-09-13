@@ -14,7 +14,7 @@ sources:
 
 The spoken words for the take, in the builder's voice. "We" is the team, "she" is the investor, as in the shot list. Pace 140 to 150 words per minute; the runtime figures below use 145 words per minute (2.42 words per second). The seconds per beat are the shot list maxima; the screen action, not the words, fills the remainder of each beat. Beat 9 (standing order, Privy) is conditional and is not recorded: it is omitted here, and Privy appears nowhere in the script, the captions or the cards.
 
-Totals (FACT, counted from the lines below with a script on 2026-09-13): 395 spoken words, 2:43 of speech at 145 words per minute; beat budgets 212 s, that is 3:32 of runtime without beat 9, inside the 2 to 4 minute rule and inside the 2:45 to 3:30 target. Beat 10 is budgeted at 35 s, not the shot list's 20 s, because the closing card gained C11 and the four limit lines plus the product sentence plus C11 are 65 words (26.9 s); nothing else moves.
+Totals (FACT, counted from the lines below with a script on 2026-09-13): 395 spoken words, 2:43 of speech at 145 words per minute; beat budgets 212 s, that is 3:32 of runtime without beat 9, inside the 2 to 4 minute rule and inside the 2:45 to 3:30 target. Beat 10 is budgeted at 35 s, not the shot list's 20 s, because the closing card gained C11 and the four limit lines plus the product sentence plus C11 are 75 words (31.0 s); nothing else moves.
 
 Rules applied: no "first", no "only", no yield figures, no KYC, no incident, no date and no "this week" is spoken. The 40-word ZK line is spoken in beat 4 and nowhere else. Where the shot list's spoken column and the canonical copy differed, the canonical copy won (beats 4, 5 and 10).
 
