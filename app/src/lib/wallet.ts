@@ -118,8 +118,8 @@ function useChainWallet(role: Role): Wallet {
       options.push({
         id: 'privy-email',
         kind: 'privy',
-        label: 'Sign in with email, wallet by Privy',
-        hint: 'An embedded wallet is created at email sign-in. Your identity evidence never goes to Privy; Privy sees this address and the transactions it signs.',
+        label: 'Sign in with email or passkey, wallet by Privy',
+        hint: 'An embedded wallet is created at sign-in. Your identity evidence never goes to Privy; Privy sees this address and the transactions it signs.',
         connect: privy.login,
       })
     }
